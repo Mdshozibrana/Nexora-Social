@@ -6,7 +6,7 @@ bots that message too aggressively)."""
 import httpx
 
 from . import models
-from .config import settings
+from .config import OFFICIAL_ID, settings
 from datetime import datetime, timedelta
 
 MAX_PER_HOUR = 20
@@ -41,3 +41,16 @@ async def notify_user(db, user_id: int, ntype: str, text: str) -> bool:
         db.add(models.NotificationLog(user_id=user_id, type=ntype))
         db.commit()
     return sent
+
+
+def record(db, user_id, ntype, actor_id=None, post_id=None, text=""):
+    """Write an in-app notification row (Phase 20, the 🔔 list). Kept
+    separate from the DM path: the list is not hourly-capped, and a
+    member who blocked the bot still sees their in-app list. Self
+    actions and the official system account never get rows."""
+    if not user_id or user_id == actor_id or user_id == OFFICIAL_ID:
+        return
+    db.add(models.Notification(
+        user_id=user_id, actor_id=actor_id, type=ntype,
+        post_id=post_id, text=text or ""))
+    db.commit()

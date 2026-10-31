@@ -35,7 +35,7 @@ def _migrate():
     on users) are added here, once, on whichever dialect is live."""
     existing = {c["name"] for c in inspect(engine).get_columns("users")}
     wanted = {"country": "VARCHAR(64)", "language_code": "VARCHAR(16)",
-              "last_seen_at": "TIMESTAMP"}
+              "last_seen_at": "TIMESTAMP", "is_managed": "BOOLEAN"}
     with engine.begin() as conn:
         for name, ddl in wanted.items():
             if name not in existing:
@@ -74,7 +74,30 @@ class AuthIn(BaseModel):
     initData: str
 
 
-def current_user(x_init_data: str = Header(default=""), db: Session = Depends(get_db)):
+def _resolve_act_as(db, real_user, x_act_as):
+    """Phase 20: the owner can operate a MANAGED account (one he
+    created in the Admin Panel) as if he were that member. Hard rules:
+    only admins may act as anyone, and the target must be a managed
+    account — impersonating a real member is impossible by design."""
+    if not x_act_as:
+        return real_user
+    if real_user.telegram_id not in settings.ADMIN_IDS:
+        raise HTTPException(403, "Only the admin can act as a managed user")
+    try:
+        target_id = int(x_act_as)
+    except (TypeError, ValueError):
+        raise HTTPException(400, "Bad act-as id")
+    target = db.get(models.User, target_id)
+    if target is None or not target.is_managed:
+        raise HTTPException(403, "Act-as target must be a managed user")
+    if target.is_banned:
+        raise HTTPException(403, "Account suspended")
+    return target
+
+
+def current_user(x_init_data: str = Header(default=""),
+                 x_act_as: str = Header(default=""),
+                 db: Session = Depends(get_db)):
     tg_user = validate_init_data(x_init_data, settings.BOT_TOKEN)
     if not tg_user:
         raise HTTPException(401, "Invalid Telegram login")
@@ -88,6 +111,10 @@ def current_user(x_init_data: str = Header(default=""), db: Session = Depends(ge
     if user.last_seen_at is None or (now - user.last_seen_at).total_seconds() >= 60:
         user.last_seen_at = now
         db.commit()
+    user = _resolve_act_as(db, user, x_act_as)
+    if user.last_seen_at is None or (now - user.last_seen_at).total_seconds() >= 60:
+        user.last_seen_at = now
+        db.commit()
     return user
 
 
@@ -97,13 +124,20 @@ def health():
 
 
 @app.post("/auth")
-async def auth(body: AuthIn, request: Request, db: Session = Depends(get_db)):
+async def auth(body: AuthIn, request: Request,
+               x_act_as: str = Header(default=""),
+               db: Session = Depends(get_db)):
     tg_user = validate_init_data(body.initData, settings.BOT_TOKEN)
     if not tg_user:
         raise HTTPException(401, "Invalid Telegram login")
     user, is_new = get_or_create_user(db, tg_user)
     user.last_seen_at = datetime.utcnow()
     db.commit()
+    # Phase 20: an admin acting as a managed user sees the app as that
+    # member (the response below is then the managed member's).
+    if x_act_as:
+        user = _resolve_act_as(db, user, x_act_as)
+        is_new = False
     # Phase 19: Telegram never reveals a member's country, so it is
     # approximated ONCE from the sign-in IP (only the name is stored).
     if not user.country:
@@ -264,7 +298,11 @@ async def _finish_video_post(user_id, src_path, caption):
         try:
             user = db.get(models.User, user_id)
             if user is not None and not user.is_banned:
-                register_post(db, user, "video", file_id, caption)
+                post, _, _ = register_post(db, user, "video", file_id,
+                                           caption)
+                notify.record(db, user_id, "post_live", post_id=post.id,
+                              text="Your video is now live on "
+                                   "Nexora Social!")
         finally:
             db.close()
         await notify.send_message(
@@ -380,6 +418,8 @@ async def toggle_like(post_id: int, user: models.User = Depends(current_user),
         await notify.notify_user(
             db, p.user_id, "like",
             f"\u2764\ufe0f {user.first_name} liked your post.")
+        notify.record(db, p.user_id, "like",
+                      actor_id=user.telegram_id, post_id=p.id)
     return {"liked": liked, "like_count": p.like_count}
 
 
@@ -455,6 +495,8 @@ async def share_post(post_id: int, body: ShareIn,
         f"\U0001F4E4 {user.first_name} shared a "
         f"{'video' if p.type == 'video' else 'post'} with you in "
         f"Nexora Social{f': {snippet}' if snippet else ''}")
+    notify.record(db, body.to_user_id, "share",
+                  actor_id=user.telegram_id, post_id=p.id)
     return {"ok": True, "post_id": p.id, "to_user_id": body.to_user_id}
 
 
@@ -523,6 +565,8 @@ async def add_comment(post_id: int, body: CommentIn,
         await notify.notify_user(
             db, p.user_id, "comment",
             f"\U0001F4AC {user.first_name} commented on your post: {text[:80]}")
+        notify.record(db, p.user_id, "comment",
+                      actor_id=user.telegram_id, post_id=p.id)
     return comment_dict(db, cm)
 
 
@@ -588,6 +632,8 @@ async def toggle_follow(telegram_id: int, user: models.User = Depends(current_us
         await notify.notify_user(
             db, telegram_id, "follow",
             f"\U0001F465 {user.first_name} started following you.")
+        notify.record(db, telegram_id, "follow",
+                      actor_id=user.telegram_id)
     return {"following": now_following, "followers": followers}
 
 
@@ -929,6 +975,61 @@ def ad_shown(user: models.User = Depends(current_user),
 
 
 # ---------------------------------------------------------------------------
+# Phase 20: in-app notifications (the 🔔 list). Until now members only
+# got bot DMs; this is the same events, readable inside the app.
+# ---------------------------------------------------------------------------
+
+_NOTIF_PHRASES = {
+    "like": "liked your post",
+    "comment": "commented on your post",
+    "follow": "started following you",
+    "share": "shared a post with you",
+    "post_live": "Your video is now live",
+    "announcement": "Announcement",
+}
+
+
+@app.get("/me/notifications")
+def my_notifications(cursor: int = 0, limit: int = 30,
+                     user: models.User = Depends(current_user),
+                     db: Session = Depends(get_db)):
+    unread = db.query(models.Notification).filter_by(
+        user_id=user.telegram_id, is_read=False).count()
+    q = db.query(models.Notification).filter_by(
+        user_id=user.telegram_id)
+    if cursor:
+        q = q.filter(models.Notification.id < cursor)
+    rows = q.order_by(models.Notification.id.desc()) \
+        .limit(max(1, min(limit, 50))).all()
+    out = []
+    for n in rows:
+        actor = db.get(models.User, n.actor_id) if n.actor_id else None
+        out.append({
+            "id": n.id, "type": n.type, "post_id": n.post_id,
+            "text": n.text or _NOTIF_PHRASES.get(n.type, ""),
+            "is_read": bool(n.is_read),
+            "actor_id": n.actor_id,
+            "actor_name": actor.first_name if actor else None,
+            "actor_username": actor.username if actor else None,
+            "actor_photo": actor.photo_file_id if actor else None,
+            "actor_verified": bool(actor.is_verified) if actor else False,
+            "created_at": n.created_at.isoformat() if n.created_at else None,
+        })
+    return {"notifications": out, "unread_count": unread,
+            "next_cursor": rows[-1].id if len(rows) == limit else None}
+
+
+@app.post("/me/notifications/read")
+def my_notifications_read(user: models.User = Depends(current_user),
+                          db: Session = Depends(get_db)):
+    db.query(models.Notification).filter_by(
+        user_id=user.telegram_id, is_read=False) \
+        .update({"is_read": True})
+    db.commit()
+    return {"ok": True, "unread_count": 0}
+
+
+# ---------------------------------------------------------------------------
 # Admin and moderation (PRD section 4, MVP item 10). Admins are the
 # telegram ids listed in the ADMIN_IDS env var.
 # ---------------------------------------------------------------------------
@@ -1015,6 +1116,8 @@ def admin_dashboard(admin: models.User = Depends(admin_user),
                              "sessions": r.sessions})
     return {
         "total_members": members.count(),
+        "managed_members": members.filter(
+            models.User.is_managed.is_(True)).count(),
         "new_today": members.filter(
             models.User.created_at >= today_start).count(),
         "active_now": members.filter(
@@ -1053,10 +1156,12 @@ def admin_stats(admin: models.User = Depends(admin_user),
 
 
 @app.get("/admin/users")
-def admin_users(q: str = "", limit: int = 50,
+def admin_users(q: str = "", limit: int = 50, managed: int = 0,
                 admin: models.User = Depends(admin_user),
                 db: Session = Depends(get_db)):
     query = db.query(models.User)
+    if managed:
+        query = query.filter(models.User.is_managed.is_(True))
     if q:
         like = f"%{q}%"
         query = query.filter(or_(
@@ -1069,6 +1174,7 @@ def admin_users(q: str = "", limit: int = 50,
         "telegram_id": u.telegram_id, "first_name": u.first_name,
         "username": u.username, "is_banned": bool(u.is_banned),
         "is_verified": bool(u.is_verified), "points": u.points_balance,
+        "is_managed": bool(u.is_managed),
         "country": u.country, "language_code": u.language_code,
         "last_seen_at": u.last_seen_at.isoformat() if u.last_seen_at else None,
         "created_at": u.created_at.isoformat() if u.created_at else None,
@@ -1098,6 +1204,7 @@ def admin_user_detail(telegram_id: int,
         "username": u.username, "bio": u.bio,
         "photo_file_id": u.photo_file_id,
         "is_banned": bool(u.is_banned), "is_verified": bool(u.is_verified),
+        "is_managed": bool(u.is_managed),
         "country": u.country, "language_code": u.language_code,
         "created_at": u.created_at.isoformat() if u.created_at else None,
         "last_seen_at": u.last_seen_at.isoformat() if u.last_seen_at else None,
@@ -1118,6 +1225,79 @@ def admin_user_detail(telegram_id: int,
         "sessions_today": act_today.sessions if act_today else 0,
         "active_days": len(act),
     }
+
+
+class FakeUserIn(BaseModel):
+    first_name: str
+    username: Optional[str] = None
+    bio: Optional[str] = None
+    country: Optional[str] = None
+    language_code: Optional[str] = None
+    count: int = 1
+
+
+@app.post("/admin/fake-users")
+def admin_create_fake_users(body: FakeUserIn,
+                            admin: models.User = Depends(admin_user),
+                            db: Session = Depends(get_db)):
+    """Phase 20: the owner can create managed accounts — members with
+    no Telegram account behind them, which he alone can operate via
+    Act-as (see _resolve_act_as). IDs live in a reserved 9.000.000.00x
+    range that real Telegram accounts do not use, so a managed account
+    can never collide with, or be confused for, a real member."""
+    name = body.first_name.strip()
+    if not name:
+        raise HTTPException(400, "A name is required")
+    count = max(1, min(body.count or 1, 20))
+    from .users import _follow_official
+    top = db.query(func.max(models.User.telegram_id)).filter(
+        models.User.is_managed.is_(True)).scalar()
+    next_id = max(top or 0, 9_000_000_000) + 1
+    created = []
+    for i in range(count):
+        while db.get(models.User, next_id) is not None:
+            next_id += 1
+        uname = body.username.strip() if body.username else None
+        if uname and count > 1:
+            uname = f"{uname}{i + 1}"
+        u = models.User(
+            telegram_id=next_id,
+            first_name=name if count == 1 else f"{name} {i + 1}",
+            username=uname, bio=body.bio or "",
+            country=body.country or None,
+            language_code=body.language_code or None,
+            is_managed=True)
+        db.add(u)
+        db.commit()
+        _follow_official(db, u)
+        created.append({"telegram_id": u.telegram_id,
+                        "first_name": u.first_name,
+                        "username": u.username})
+        next_id += 1
+    return {"created": created}
+
+
+@app.delete("/admin/fake-users/{telegram_id}")
+def admin_delete_fake_user(telegram_id: int,
+                           admin: models.User = Depends(admin_user),
+                           db: Session = Depends(get_db)):
+    """Remove a managed account. Only possible while it has no posts
+    (its content would orphan); ban it instead once it has posted."""
+    u = db.get(models.User, telegram_id)
+    if u is None or not u.is_managed:
+        raise HTTPException(404, "Managed user not found")
+    posts = db.query(models.Post).filter_by(user_id=telegram_id).count()
+    if posts:
+        raise HTTPException(
+            400, "This managed user has posts — ban it instead of deleting")
+    db.query(models.Follow).filter(
+        or_(models.Follow.follower_id == telegram_id,
+            models.Follow.following_id == telegram_id)).delete()
+    db.query(models.Notification).filter_by(user_id=telegram_id).delete()
+    db.query(models.UserActivity).filter_by(user_id=telegram_id).delete()
+    db.delete(u)
+    db.commit()
+    return {"deleted": telegram_id}
 
 
 @app.get("/admin/posts")
@@ -1213,6 +1393,12 @@ async def admin_broadcast(body: BroadcastIn,
             sent += 1
             db.add(models.NotificationLog(user_id=u.telegram_id,
                                            type="broadcast"))
+        # Phase 20: the announcement also lands in the in-app 🔔 list,
+        # including for managed accounts (they have no Telegram chat
+        # to DM) — recorded for every target, DM or not.
+        db.add(models.Notification(
+            user_id=u.telegram_id, type="announcement",
+            text=text[:250]))
     db.commit()
     return {"recipients": len(targets), "sent": sent}
 

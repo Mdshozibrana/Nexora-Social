@@ -41,6 +41,7 @@
   <div class="hero-top">
     <button id="hero-menu" class="icon-btn" title="Menu">☰</button>
     <div id="app-name">Nexora Social</div>
+    <button id="hero-bell" class="icon-btn" title="Notifications">🔔<span id="bell-badge" class="bell-badge" hidden></span></button>
     <button id="hero-search" class="icon-btn" title="Search">🔍</button>
   </div>
   <div class="hero-row">
@@ -51,6 +52,11 @@
     <div id="points-chip"></div>
   </div>
 </header>
+
+<div id="actas-banner" hidden>
+  <span id="actas-text">🎭 Acting as a managed user</span>
+  <button id="actas-stop">Stop &amp; back to admin</button>
+</div>
 
 <section id="view-feed">
   <div class="composer card">
@@ -116,6 +122,14 @@
   <p id="shared-empty" class="empty" hidden>Nobody has shared anything
   with you yet.</p>
   <button id="shared-back" class="wide">← Back to my profile</button>
+</section>
+
+<section id="view-notifications" hidden>
+  <h2 class="view-title">🔔 Notifications</h2>
+  <p class="hint">Likes, comments, follows, shares and announcements.</p>
+  <main id="notif-list"></main>
+  <p id="notif-empty" class="empty" hidden>No notifications yet.</p>
+  <button id="notif-more" class="wide" hidden>Load more</button>
 </section>
 
 <section id="view-tasks" hidden>
@@ -198,6 +212,19 @@
     <button id="admin-user-go">Search</button>
   </div>
   <div id="admin-users"></div>
+
+  <h3 class="admin-sec">🤖 Managed users</h3>
+  <p class="hint">Accounts you create and operate yourself — they post,
+  like, comment and follow like any member. Only you (the admin) can
+  create them or act as them; real members can never be impersonated.</p>
+  <div class="card bc-card">
+    <input id="mu-name" type="text" placeholder="Display name (e.g. Rahim Uddin)">
+    <input id="mu-username" type="text" placeholder="Username (optional)">
+    <input id="mu-count" type="number" min="1" max="20" value="1">
+    <button id="mu-create" class="wide">➕ Create managed user</button>
+    <p id="mu-result" class="hint"></p>
+  </div>
+  <div id="admin-managed"></div>
 
   <h3 class="admin-sec">📝 Recent posts</h3>
   <div id="admin-posts"></div>

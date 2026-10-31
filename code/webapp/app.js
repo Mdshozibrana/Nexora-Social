@@ -14,10 +14,16 @@ let profileCursor = null;
 
 const $ = id => document.getElementById(id);
 
+// Phase 20: while the admin acts as a managed user, every request
+// carries the act-as header and the server resolves the caller to
+// that managed member (admins only, managed targets only).
+function actAsId() { return sessionStorage.getItem("nx_actas") || ""; }
+
 async function api(path, options = {}) {
   const res = await fetch(path, {
     ...options,
     headers: { "X-Init-Data": initData, "Content-Type": "application/json",
+               ...(actAsId() ? { "X-Act-As": actAsId() } : {}),
                ...(options.headers || {}) },
   });
   if (!res.ok) throw new Error("API " + res.status);
@@ -26,7 +32,9 @@ async function api(path, options = {}) {
 
 async function apiForm(path, form) {
   const res = await fetch(path, { method: "POST",
-    headers: { "X-Init-Data": initData }, body: form });
+    headers: { "X-Init-Data": initData,
+               ...(actAsId() ? { "X-Act-As": actAsId() } : {}) },
+    body: form });
   if (!res.ok) {
     let msg = "API " + res.status;
     try { const j = await res.json(); if (j.detail) msg = j.detail; }
@@ -45,6 +53,7 @@ function apiFormProgress(path, form, onProgress) {
     const xhr = new XMLHttpRequest();
     xhr.open("POST", path);
     xhr.setRequestHeader("X-Init-Data", initData);
+    if (actAsId()) xhr.setRequestHeader("X-Act-As", actAsId());
     xhr.upload.onprogress = e => {
       if (e.lengthComputable) onProgress(Math.round(e.loaded / e.total * 100));
     };
@@ -63,10 +72,14 @@ function apiFormProgress(path, form, onProgress) {
 function setStatus(msg) { $("status").textContent = msg || ""; }
 
 function showView(name) {
+  // Phase 20: defense in depth — the admin view refuses to open for
+  // non-admins even if triggered programmatically (the API is guarded
+  // too; this keeps the shell itself private as the owner expects).
+  if (name === "admin" && !(me && me.is_admin)) name = "feed";
   const navFor = { feed: "nav-feed", videos: "nav-videos", games: "nav-games",
                    game: "nav-games", tasks: "nav-tasks",
                    leaderboard: "nav-ranks", profile: "nav-me" };
-  ["feed", "videos", "search", "tasks", "leaderboard", "profile", "saved", "shared", "games", "game", "admin"].forEach(v => {
+  ["feed", "videos", "search", "tasks", "leaderboard", "profile", "saved", "shared", "games", "game", "admin", "notifications"].forEach(v => {
     $("view-" + v).hidden = v !== name;
     const btn = navFor[v];
     if (btn) $(btn).classList.toggle("active", v === name);
@@ -76,6 +89,7 @@ function showView(name) {
   if (name === "saved") loadSaved();
   if (name === "shared") loadShared();
   if (name === "admin") loadAdmin();
+  if (name === "notifications") loadNotifications(true);
   if (name === "videos") { loadVideos(true); maybeShowAd(); }
   else document.querySelectorAll("#video-list video").forEach(v => v.pause());
   if (name === "leaderboard") loadRanks();
@@ -1032,6 +1046,7 @@ async function loadMe() {
   entryMode = me.is_new ? "signup" : "login";
   paintEntry();
   applyAdminVisibility();
+  refreshBell();
   initAds();
   if (!me.photo_file_id) {
     api("/me/photo/sync", { method: "POST" }).then(r => {
@@ -1270,6 +1285,98 @@ function statCard(label, val) {
   return d;
 }
 
+// ------------------------------------------------------- Phase 20: bell --
+// In-app notifications: badge in the hero, list in view-notifications.
+function paintBell(count) {
+  const b = $("bell-badge");
+  if (!b) return;
+  b.hidden = !count;
+  b.textContent = count > 99 ? "99+" : String(count || "");
+}
+async function refreshBell() {
+  try {
+    const r = await api("/me/notifications?limit=1");
+    paintBell(r.unread_count);
+  } catch (e) { /* badge just stays as-is */ }
+}
+
+let notifCursor = null;
+const NOTIF_ICONS = { like: "❤️", comment: "💬", follow: "👥",
+                      share: "📤", post_live: "🎬", announcement: "📣" };
+async function loadNotifications(reset) {
+  const box = $("notif-list");
+  if (reset) { box.innerHTML = ""; notifCursor = null; }
+  try {
+    const r = await api("/me/notifications?limit=30" +
+      (notifCursor ? "&cursor=" + notifCursor : ""));
+    notifCursor = r.next_cursor;
+    $("notif-more").hidden = !notifCursor;
+    $("notif-empty").hidden = box.children.length > 0 ||
+      r.notifications.length > 0;
+    r.notifications.forEach(n => {
+      const row = document.createElement("div");
+      row.className = "card notif-row" + (n.is_read ? "" : " unread");
+      if (n.actor_id) {
+        row.appendChild(avatarEl(n.actor_name || "?", n.actor_id,
+                                 false, n.actor_photo));
+      } else {
+        const ic = document.createElement("div");
+        ic.className = "avatar notif-ic";
+        ic.textContent = NOTIF_ICONS[n.type] || "🔔";
+        row.appendChild(ic);
+      }
+      const info = document.createElement("div");
+      info.className = "admin-info";
+      const t = document.createElement("div");
+      t.className = "notif-text";
+      if (n.actor_name) {
+        const nm = document.createElement("b");
+        nm.textContent = n.actor_name + (n.actor_verified ? " ✓" : "");
+        t.append(nm, document.createTextNode(" " + n.text));
+      } else {
+        t.textContent = (NOTIF_ICONS[n.type] || "🔔") + " " + n.text;
+      }
+      const s = document.createElement("div");
+      s.className = "admin-sub";
+      s.textContent = relTime(n.created_at);
+      info.append(t, s);
+      row.appendChild(info);
+      if (!n.is_read) {
+        const dot = document.createElement("span");
+        dot.className = "notif-dot";
+        row.appendChild(dot);
+      }
+      if (n.actor_id) {
+        row.style.cursor = "pointer";
+        row.onclick = () => openProfile(n.actor_id);
+      }
+      box.appendChild(row);
+    });
+    // Opening the list marks everything read.
+    await api("/me/notifications/read", { method: "POST" });
+    paintBell(0);
+  } catch (e) { box.textContent = "Could not load notifications."; }
+}
+$("notif-more").onclick = () => loadNotifications(false);
+$("hero-bell").onclick = () => showView("notifications");
+
+// ------------------------------------------------- Phase 20: act-as mode --
+function paintActAs() {
+  const on = !!actAsId();
+  $("actas-banner").hidden = !on;
+  if (on) {
+    $("actas-text").textContent = "🎭 Acting as " +
+      (sessionStorage.getItem("nx_actas_name") || "a managed user") +
+      " — posts, likes, comments and follows are theirs.";
+  }
+}
+$("actas-stop").onclick = () => {
+  sessionStorage.removeItem("nx_actas");
+  sessionStorage.removeItem("nx_actas_name");
+  location.reload();
+};
+paintActAs();
+
 // ------------------------------------------------------- Phase 19: dashboard
 function fmtDur(sec) {
   sec = Math.max(0, Math.round(sec || 0));
@@ -1320,6 +1427,7 @@ async function loadDashboard() {
     [["👥 Total members", d.total_members], ["🆕 New today", d.new_today],
      ["🟢 Active now", d.active_now], ["⏰ Active (1h)", d.active_last_hour],
      ["📅 Active today", d.active_today], ["📝 Posts", d.posts],
+     ["🤖 Managed", d.managed_members || 0],
      ["📺 Ads today", d.ads_today], ["📺 Ads total", d.ads_total],
      ["⏱️ Time today", fmtDur(d.time_today_seconds)],
      ["⏱️ Avg / member", fmtDur(d.avg_time_today_seconds)]
@@ -1437,6 +1545,7 @@ function loadAdmin() {
   loadAdminStats();
   loadAdminReports();
   loadAdminUsers($("admin-user-q").value.trim());
+  loadManaged();
   loadAdminPosts();
 }
 
@@ -1500,6 +1609,7 @@ async function loadAdminUsers(q) {
       const t = document.createElement("div");
       t.className = "admin-title";
       t.textContent = u.first_name + (u.is_verified ? " ✓" : "") +
+        (u.is_managed ? " 🤖" : "") +
         (u.is_banned ? " 🚫" : "");
       const s = document.createElement("div");
       s.className = "admin-sub";
@@ -1529,6 +1639,77 @@ async function loadAdminUsers(q) {
     });
   } catch (e) { box.textContent = "Could not load members."; }
 }
+
+async function loadManaged() {
+  const box = $("admin-managed");
+  box.innerHTML = "";
+  try {
+    const r = await api("/admin/users?managed=1&limit=100");
+    if (!r.users.length) {
+      box.innerHTML = '<p class="hint">No managed users yet — create ' +
+        'the first one above.</p>';
+      return;
+    }
+    r.users.forEach(u => {
+      const row = document.createElement("div");
+      row.className = "card admin-row";
+      const info = document.createElement("div");
+      info.className = "admin-info";
+      const t = document.createElement("div");
+      t.className = "admin-title";
+      t.textContent = "🤖 " + u.first_name + (u.is_banned ? " 🚫" : "");
+      const s = document.createElement("div");
+      s.className = "admin-sub";
+      s.textContent = (u.username ? "@" + u.username + " · " : "") +
+        "ID " + u.telegram_id + " · ⭐ " + u.points;
+      info.append(t, s);
+      const act = document.createElement("button");
+      act.textContent = "🎭 Act as";
+      act.onclick = () => {
+        sessionStorage.setItem("nx_actas", String(u.telegram_id));
+        sessionStorage.setItem("nx_actas_name", u.first_name);
+        location.reload();
+      };
+      const del = document.createElement("button");
+      del.className = "danger-btn";
+      del.textContent = "Delete";
+      del.onclick = async () => {
+        if (!confirm("Delete managed user " + u.first_name + "?")) return;
+        try {
+          await api("/admin/fake-users/" + u.telegram_id,
+                    { method: "DELETE" });
+          loadManaged(); loadDashboard();
+        } catch (e) {
+          alert("Could not delete — a managed user with posts can be " +
+                "banned instead.");
+        }
+      };
+      row.append(info, act, del);
+      box.appendChild(row);
+    });
+  } catch (e) { box.textContent = "Could not load managed users."; }
+}
+
+$("mu-create").onclick = async () => {
+  const name = $("mu-name").value.trim();
+  if (!name) { $("mu-result").textContent = "Give the user a name first."; return; }
+  const btn = $("mu-create");
+  btn.disabled = true;
+  try {
+    const r = await api("/admin/fake-users", { method: "POST",
+      body: JSON.stringify({
+        first_name: name,
+        username: $("mu-username").value.trim() || null,
+        count: parseInt($("mu-count").value || "1", 10) || 1 }) });
+    $("mu-result").textContent = "Created " + r.created.length +
+      " managed user(s): " +
+      r.created.map(u => u.first_name).join(", ") +
+      ". Use 🎭 Act as to operate one.";
+    $("mu-name").value = ""; $("mu-username").value = "";
+    loadManaged(); loadDashboard(); loadAdminStats();
+  } catch (e) { $("mu-result").textContent = "Could not create the user."; }
+  btn.disabled = false;
+};
 
 async function loadAdminPosts() {
   const box = $("admin-posts");

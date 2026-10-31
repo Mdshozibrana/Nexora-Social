@@ -26,6 +26,10 @@ class User(Base):
     country = Column(String(64), nullable=True)
     language_code = Column(String(16), nullable=True)
     last_seen_at = Column(DateTime, nullable=True)
+    # Phase 20: accounts the owner creates and operates from the Admin
+    # Panel (managed/test members). Only admins can create them or act
+    # as them; they are tagged in admin lists.
+    is_managed = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -165,4 +169,21 @@ class AdEvent(Base):
     __tablename__ = "ad_events"
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(BigInteger, ForeignKey("users.telegram_id"), index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
+class Notification(Base):
+    """In-app notification (Phase 20). Until now members only heard
+    about likes/comments/follows as bot DMs; this table powers the
+    🔔 list inside the app. `text` carries system messages (video
+    live, announcements); social rows resolve the actor at read time."""
+    __tablename__ = "notifications"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("users.telegram_id"), index=True)
+    actor_id = Column(BigInteger, nullable=True)
+    type = Column(String(32))  # like | comment | follow | share |
+                               # post_live | announcement
+    post_id = Column(Integer, nullable=True)
+    text = Column(String(256), default="")
+    is_read = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
