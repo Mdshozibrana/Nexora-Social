@@ -1,7 +1,9 @@
 """Phase-15 tests: owner palette theme — the stylesheet carries the
 exact palette hexes (#121212 base, #1F2937 surface, #334155 raised,
 #64748B muted, #F1F5F9 text, #EC4899 accent) and the games' buttons
-use the pink accent too."""
+use the pink accent too. NOTE: the palette theme was superseded by
+the Claymorphism theme in phase 17; these hexes remain in the layered
+stylesheet (and #EC4899 remains the brand accent throughout)."""
 import os
 
 os.environ["BOT_TOKEN"] = "123456789:AAE" + "x" * 32

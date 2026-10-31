@@ -54,6 +54,19 @@ function showView(name) {
   if (name === "videos") loadVideos(true);
   else document.querySelectorAll("#video-list video").forEach(v => v.pause());
   if (name === "leaderboard") loadRanks();
+  moveNavPill();
+}
+
+const NAV_IDS = ["nav-feed", "nav-videos", "nav-games", "nav-tasks",
+                 "nav-ranks", "nav-me"];
+
+function moveNavPill() {
+  const pill = $("nav-pill");
+  if (!pill) return;
+  const idx = NAV_IDS.findIndex(id => $(id) && $(id).classList.contains("active"));
+  if (idx < 0) { pill.style.opacity = "0"; return; }
+  pill.style.opacity = "1";
+  pill.style.transform = "translateX(" + idx * 100 + "%)";
 }
 
 function verifiedBadge() {
@@ -1174,3 +1187,4 @@ $("drawer-logout").onclick = () => {
   paintEntry();
   $("entry-screen").hidden = false;
 };
+moveNavPill();

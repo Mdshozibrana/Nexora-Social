@@ -5,11 +5,11 @@ S = 2
 W, H = 420, 780
 NOTO = "/usr/share/fonts/truetype/noto/NotoSans-{}.ttf"
 DEJA = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-PAGE = (18, 18, 18)
-TEXT = (241, 245, 249)
-GREY = (168, 182, 200)
-FAINT = (126, 147, 171)
-GA, GB, GC = (236, 72, 153), (219, 39, 119), (190, 24, 93)
+PAGE = (248, 234, 241)
+TEXT = (71, 42, 62)
+GREY = (150, 97, 126)
+FAINT = (188, 144, 166)
+GA, GB, GC = (255, 143, 190), (240, 110, 175), (232, 67, 147)
 
 
 def F(style, size):
@@ -58,28 +58,28 @@ d = gradient(img, [-8, -8, 428, 96], radius=24)
 d = ImageDraw.Draw(img)
 text(d, 52, 14, "Nexora Social", F("Bold", 24), (255, 255, 255))
 text(d, 16, 16, "☰", D(20), (255, 255, 255))
-rr(d, [16, 120, 404, 300], 16, fill=(31, 41, 55))
-rr(d, [16, 316, 404, 496], 16, fill=(31, 41, 55))
+rr(d, [16, 120, 404, 300], 16, fill=(255, 251, 252))
+rr(d, [16, 316, 404, 496], 16, fill=(255, 251, 252))
 d.ellipse([30 * S, 136 * S, 62 * S, 168 * S], fill=(16, 185, 129))
 # dim everything behind the drawer
-dim = Image.new("RGBA", img.size, (24, 18, 46, 84))
+dim = Image.new("RGBA", img.size, (96, 42, 72, 84))
 img = Image.alpha_composite(img.convert("RGBA"), dim).convert("RGB")
 d = ImageDraw.Draw(img)
 
 # panel shadow + panel
 sh = Image.new("L", img.size, 0)
 ImageDraw.Draw(sh).rounded_rectangle([26 * S, 22 * S, 318 * S, 782 * S], radius=28 * S, fill=110)
-img.paste((60, 55, 100), (0, 0), sh.filter(ImageFilter.GaussianBlur(14 * S)))
+img.paste((190, 130, 160), (0, 0), sh.filter(ImageFilter.GaussianBlur(14 * S)))
 d = ImageDraw.Draw(img)
-rr(d, [10, 10, 312, 770], 28, fill=(31, 41, 55))
+rr(d, [10, 10, 312, 770], 28, fill=(255, 251, 252))
 
 # head
 d = gradient(img, [24, 26, 68, 70], radius=14)
 d = ImageDraw.Draw(img)
-text(d, 46 - tw(d, "N", F("Bold", 21)) / 2, 36, "N", F("Bold", 21), (18, 18, 18))
+text(d, 46 - tw(d, "N", F("Bold", 21)) / 2, 36, "N", F("Bold", 21), (255, 255, 255))
 text(d, 78, 32, "Nexora Social", F("Bold", 16.5))
 text(d, 78, 54, "CONNECT ANYWHERE", F("Regular", 9.5), FAINT)
-d.ellipse([262 * S, 28 * S, 296 * S, 62 * S], fill=(51, 65, 85))
+d.ellipse([262 * S, 28 * S, 296 * S, 62 * S], fill=(255, 251, 252))
 text(d, 279 - tw(d, "‹", D(19)) / 2, 33, "‹", D(19), GREY)
 
 
@@ -87,7 +87,7 @@ def item(y, icon_kind, label, active=False, badge=None):
     d2 = d
     if active:
         d2 = gradient(img, [22, y, 300, y + 44], radius=15)
-    col = (18, 18, 18) if active else (215, 224, 234)
+    col = (255, 255, 255) if active else (110, 66, 88)
     cx = 52
     if icon_kind == "home":
         text(d2, cx - tw(d2, "⌂", D(17)) / 2, y + 12, "⌂", D(17), col)
@@ -123,7 +123,7 @@ def item(y, icon_kind, label, active=False, badge=None):
     text(d2, 74, y + 12, label, F("SemiBold", 14.5), col)
     if badge:
         d2.ellipse([(268) * S, (y + 12) * S, (289) * S, (y + 33) * S], fill=(236, 72, 153))
-        text(d2, 278.5 - tw(d2, badge, F("Bold", 11)) / 2, y + 16, badge, F("Bold", 11), (18, 18, 18))
+        text(d2, 278.5 - tw(d2, badge, F("Bold", 11)) / 2, y + 16, badge, F("Bold", 11), (255, 255, 255))
     return d2
 
 

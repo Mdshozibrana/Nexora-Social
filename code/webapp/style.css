@@ -661,3 +661,228 @@ button { background: #334155; color: var(--ink); }
 .entry-switch { color: var(--ink-faint); }
 .entry-switch a { color: #EC4899; }
 .entry-note { color: var(--ink-faint); }
+
+/* ==========================================================================
+   CLAYMORPHISM THEME (Phase 17, owner request Oct 31 — from the owner's
+   reference screenshot): soft, squishy 3D, playful and friendly. Light
+   pastel-pink world, chunky rounded clay surfaces with puffy multi-layer
+   shadows, pastel tiles, deep-plum text, and the pink accent carried
+   over from the palette theme. This section supersedes the dark
+   palette theme above (the cascade keeps the older rules as history).
+   ========================================================================== */
+:root {
+  --ink: #472A3E;
+  --ink-dim: #96617E;
+  --ink-faint: #BC90A6;
+  --clay-shadow: 10px 14px 28px rgba(219,150,183,.38),
+                 -6px -6px 14px rgba(255,255,255,.9),
+                 inset 2px 2px 4px rgba(255,255,255,.95),
+                 inset -6px -8px 12px rgba(240,196,216,.45);
+  --clay-shadow-sm: 6px 8px 16px rgba(219,150,183,.35),
+                 -4px -4px 10px rgba(255,255,255,.85),
+                 inset 1px 1px 3px rgba(255,255,255,.9),
+                 inset -4px -5px 9px rgba(240,196,216,.4);
+  --clay-inset: inset 5px 6px 12px rgba(219,150,183,.35),
+                 inset -5px -5px 10px rgba(255,255,255,.95);
+}
+body {
+  font-family: ui-rounded, "SF Pro Rounded", system-ui, sans-serif;
+  background-color: #F8EAF1;
+  background-image:
+    radial-gradient(640px 420px at -10% 4%, rgba(255,183,213,.55), rgba(255,183,213,0) 60%),
+    radial-gradient(720px 520px at 108% 18%, rgba(178,240,200,.5), rgba(178,240,200,0) 60%),
+    radial-gradient(700px 700px at 50% 112%, rgba(206,196,255,.45), rgba(206,196,255,0) 62%);
+  color: var(--ink);
+}
+.hero {
+  background: linear-gradient(135deg, #FFD9E8, #FFC4DA);
+  color: var(--ink);
+  border-bottom: none;
+  border-radius: 0 0 30px 30px;
+  box-shadow: 0 14px 28px rgba(219,150,183,.35),
+              inset 0 2px 3px rgba(255,255,255,.8);
+}
+#points-chip { background: #FFFBFC; color: #E84393; border: none;
+  box-shadow: var(--clay-shadow-sm); font-weight: 800; }
+.hero .icon-btn { background: #FFFBFC; color: var(--ink); border: none;
+  box-shadow: var(--clay-shadow-sm); }
+.post, .card, .task-card, .mon-card, .rank-row, .game-card, .user-row {
+  background: #FFFBFC;
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+  border: 1px solid rgba(255,255,255,.75);
+  border-radius: 24px;
+  box-shadow: var(--clay-shadow);
+}
+button { background: #FFFBFC; color: var(--ink); border-radius: 14px;
+  box-shadow: var(--clay-shadow-sm); }
+button:active { transform: scale(.96); }
+button { transition: transform .12s ease; }
+button.wide { background: #FFFBFC; -webkit-backdrop-filter: none;
+  backdrop-filter: none; }
+.tabs { background: #F6D9E7; border: 1px solid rgba(255,255,255,.6);
+  box-shadow: var(--clay-inset); -webkit-backdrop-filter: none;
+  backdrop-filter: none; }
+.tabs button { color: var(--ink-dim); box-shadow: none; background: transparent; }
+.tabs button.active { background: #FFFBFC; color: #E84393;
+  box-shadow: var(--clay-shadow-sm); }
+.composer button { background: linear-gradient(145deg, #FF8FBE, #E84393);
+  color: #fff; font-weight: 800;
+  box-shadow: 6px 10px 18px rgba(232,67,147,.4),
+              inset 1px 1px 3px rgba(255,255,255,.6),
+              inset -3px -4px 8px rgba(190,30,95,.35); }
+.composer .tool-btn { background: #FFFBFC; color: var(--ink);
+  box-shadow: var(--clay-shadow-sm); }
+.attach-chip { background: #FBE3EE; border: 1px solid rgba(232,67,147,.25);
+  color: var(--ink); }
+.attach-chip .attach-x { color: #E84393; box-shadow: none; }
+.searchbar input, .composer textarea, input, textarea {
+  background: #FFF5F9; border: 1px solid transparent;
+  box-shadow: var(--clay-inset); color: var(--ink);
+  -webkit-backdrop-filter: none; backdrop-filter: none; }
+.composer textarea { box-shadow: none; background: transparent; }
+::placeholder { color: #C79BB1; }
+.chip { background: #FFE4F0; border: 1px solid rgba(232,67,147,.18);
+  color: #D6336C; -webkit-backdrop-filter: none; backdrop-filter: none; }
+.actions button.liked { background: #FFE0EC; color: #E84393; }
+.post-media { border: 3px solid #fff; border-radius: 22px;
+  background: #F6D9E7; box-shadow: var(--clay-shadow-sm); }
+.post-media .play-badge { background: rgba(255,251,252,.92); color: #E84393;
+  border: 1px solid #fff; -webkit-backdrop-filter: none; backdrop-filter: none;
+  box-shadow: var(--clay-shadow-sm); }
+.bar { background: #F3D3E2; box-shadow: var(--clay-inset); }
+.bar > div { background: linear-gradient(90deg, #FF8FBE, #E84393); }
+.task-points { background: #FFE9A8; color: #92600A; }
+.task-claim { background: linear-gradient(145deg, #FF8FBE, #E84393);
+  color: #fff; font-weight: 800;
+  box-shadow: 5px 8px 16px rgba(232,67,147,.38),
+              inset 1px 1px 3px rgba(255,255,255,.55); }
+.task-claim.claimed { background: #CDEFD8; color: #1E7B45; box-shadow: none; }
+.mon-badge { background: #E9E2FA; color: #6B5CA5; }
+.mon-badge.open { background: #CDEFD8; color: #1E7B45; }
+.mon-row .done { color: #1E9E57; }
+.pick-send { background: linear-gradient(145deg, #FF8FBE, #E84393); color: #fff; }
+.pick-send.sent { background: #F3DCE7; color: var(--ink-dim); }
+.rank-num, .rank-points { color: #E84393; }
+.rank-me { outline: 3px solid #F79AC0; }
+.verified { background: #38BDF8;
+  box-shadow: 2px 3px 6px rgba(56,189,248,.45),
+              inset 1px 1px 2px rgba(255,255,255,.7); }
+.extras a { color: #D6336C; }
+/* Games in clay: pastel tiles like the reference dashboard */
+.game-card { box-shadow: var(--clay-shadow); }
+.game-card:nth-child(4n+1) { background: #EAFaf0; background: #EAF9F0; }
+.game-card:nth-child(4n+2) { background: #F1EDFE; }
+.game-card:nth-child(4n+3) { background: #FFF6E0; }
+.game-card:nth-child(4n+4) { background: #E8F6FE; }
+.game-card .g-play { background: linear-gradient(145deg, #FF8FBE, #E84393);
+  color: #fff; box-shadow: 4px 6px 12px rgba(232,67,147,.35); }
+.dpad button, .grow button { background: #FFFBFC; color: var(--ink);
+  box-shadow: var(--clay-shadow-sm); border-radius: 16px; }
+.mem-card { background: linear-gradient(145deg, #CFC2FF, #A78BFA); color: #fff;
+  box-shadow: var(--clay-shadow-sm); }
+.mem-card.open { background: #FFFBFC; color: var(--ink); }
+.mem-card.done { background: #BDE8C9; }
+.game-head #game-score { color: #E84393; }
+#game-stage canvas { border-radius: 20px; border: 4px solid #fff;
+  box-shadow: var(--clay-shadow); }
+/* Drawer in clay */
+#drawer-backdrop { background: rgba(96,42,72,.30); }
+#drawer { background: #FFF7FA; border: 1px solid rgba(255,255,255,.85);
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+  box-shadow: 18px 24px 48px rgba(150,80,120,.30),
+              inset 2px 2px 4px rgba(255,255,255,.95); }
+.drawer-logo { background: linear-gradient(145deg, #FF8FBE, #E84393);
+  color: #fff; border-radius: 16px;
+  box-shadow: 5px 8px 16px rgba(232,67,147,.4),
+              inset 1px 1px 3px rgba(255,255,255,.6); }
+.drawer-name { color: var(--ink); }
+.drawer-tag, .drawer-sec { color: var(--ink-faint); }
+#drawer-close { background: #FFFBFC; color: var(--ink-dim);
+  box-shadow: var(--clay-shadow-sm); }
+.drawer-item { color: #6E4258; box-shadow: none; background: transparent; }
+.drawer-item:active { background: #FBE9F2; box-shadow: var(--clay-inset); }
+.drawer-item.active { background: linear-gradient(145deg, #FF8FBE, #E84393);
+  color: #fff; box-shadow: 6px 10px 20px rgba(232,67,147,.4),
+              inset 1px 1px 3px rgba(255,255,255,.55); }
+.drawer-badge { background: #E84393; color: #fff; }
+.drawer-div { background: linear-gradient(90deg, transparent, rgba(190,120,155,.35), transparent); }
+/* Reel sheet + comments in clay (the video stage itself stays black) */
+#reel-sheet { background: #FFFBFC; color: var(--ink);
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+  border-radius: 26px 26px 0 0;
+  box-shadow: 0 -14px 34px rgba(96,42,72,.25); }
+.reel .comments { background: #FFFBFC; color: var(--ink);
+  border-radius: 26px 26px 0 0; }
+.reel-act button.liked { background: #E84393; }
+/* Entry screens in clay */
+#entry-screen { background-color: #F8EAF1;
+  background-image:
+    radial-gradient(700px 500px at 88% 0%, rgba(255,183,213,.55), rgba(255,183,213,0) 60%),
+    radial-gradient(700px 600px at 0% 100%, rgba(206,196,255,.5), rgba(206,196,255,0) 60%); }
+.entry-disc { background: linear-gradient(145deg, #FFFBFC, #FFE9F2);
+  box-shadow: 22px 26px 44px rgba(219,150,183,.45),
+              -14px -14px 30px rgba(255,255,255,.95),
+              inset 3px 3px 6px rgba(255,255,255,.95),
+              inset -8px -10px 18px rgba(240,196,216,.5); }
+.entry-logo { background: linear-gradient(145deg, #FF8FBE, #E84393);
+  color: #fff; box-shadow: 6px 10px 20px rgba(232,67,147,.45),
+              inset 1px 1px 3px rgba(255,255,255,.6); }
+.entry-disc h1 { color: var(--ink); }
+.entry-disc #entry-sub, .entry-row, .entry-switch, .entry-note { color: var(--ink-faint); }
+.entry-row a { color: var(--ink-faint); }
+.entry-field { background: #FFF0F6; color: #7A4A63;
+  box-shadow: var(--clay-inset); }
+.entry-remember .pill { background: #F0CBDC; box-shadow: var(--clay-inset); }
+.entry-remember input:checked + .pill { background: linear-gradient(120deg, #FF8FBE, #E84393); }
+.entry-btn { background: linear-gradient(145deg, #FF8FBE, #E84393);
+  color: #fff; box-shadow: 8px 12px 24px rgba(232,67,147,.42),
+              inset 1px 1px 3px rgba(255,255,255,.6),
+              inset -3px -4px 9px rgba(190,30,95,.3); }
+.entry-btn:active { box-shadow: var(--clay-inset); }
+.entry-switch a { color: #E84393; }
+
+/* ==========================================================================
+   3D ANIMATED BOTTOM NAV (Phase 17): a floating clay capsule with a
+   springy sliding pill behind the active tab, a pop animation when a
+   tab activates, and a squish on press — soft, squishy, playful.
+   ========================================================================== */
+.bottom-nav {
+  gap: 0;
+  background: #FFFBFC; border: 1px solid rgba(255,255,255,.85);
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+  box-shadow: 14px 20px 38px rgba(219,150,183,.45),
+              -8px -8px 20px rgba(255,255,255,.9),
+              inset 2px 2px 4px rgba(255,255,255,.95),
+              inset -5px -7px 12px rgba(240,196,216,.4);
+}
+#nav-pill {
+  position: absolute; top: 6px; bottom: 6px; left: 6px;
+  width: calc((100% - 12px) / 6); border-radius: 999px;
+  background: linear-gradient(160deg, #FF9CC6, #E84393);
+  box-shadow: 5px 9px 18px rgba(232,67,147,.45),
+              inset 2px 2px 4px rgba(255,255,255,.65),
+              inset -4px -6px 10px rgba(190,30,95,.35);
+  transition: transform .48s cubic-bezier(.34, 1.45, .64, 1), opacity .25s;
+  z-index: 0;
+}
+.bottom-nav button {
+  position: relative; z-index: 1; background: transparent;
+  box-shadow: none; color: var(--ink-dim); border-radius: 999px;
+  transition: transform .13s ease, color .2s;
+}
+.bottom-nav button:active { transform: scale(.85); }
+.bottom-nav button.active {
+  background: transparent; color: #fff;
+  box-shadow: none;
+  animation: navBtnPop .48s cubic-bezier(.34, 1.56, .64, 1);
+}
+@keyframes navBtnPop {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.14) translateY(-2px); }
+  70% { transform: scale(.95); }
+  100% { transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  #nav-pill { transition: none; }
+  .bottom-nav button.active { animation: none; }
+}
