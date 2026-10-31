@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from . import models, notify
 from .config import DAILY_TASKS, MONETIZATION, settings
@@ -421,13 +421,29 @@ def _task_progress(db, user_id, task, day_start, claimed):
     return 0
 
 
+def _checkin_streak(db, user_id):
+    """Consecutive days with a check-in claim, ending today (or yesterday
+    if today is not claimed yet — the streak is still alive until the day
+    ends). One missed day breaks it: the count simply stops there."""
+    days = {r[0] for r in db.query(models.DailyClaim.day).filter_by(
+        user_id=user_id, task_key="checkin").all()}
+    cur = datetime.utcnow().date()
+    if cur.isoformat() not in days:
+        cur -= timedelta(days=1)
+    streak = 0
+    while cur.isoformat() in days:
+        streak += 1
+        cur -= timedelta(days=1)
+    return streak
+
+
 def _task_state(db, user, task):
     day, day_start = _today()
     claimed = db.query(models.DailyClaim).filter_by(
         user_id=user.telegram_id, task_key=task["key"], day=day).first()
     progress = _task_progress(db, user.telegram_id, task, day_start,
                               bool(claimed))
-    return {
+    state = {
         "key": task["key"], "title": task["title"], "icon": task["icon"],
         "target": task["target"], "points": task["points"],
         "progress": min(progress, task["target"]),
@@ -435,6 +451,9 @@ def _task_state(db, user, task):
         "claimable": (not claimed) and (
             task["metric"] == "checkin" or progress >= task["target"]),
     }
+    if task["metric"] == "checkin":
+        state["streak"] = _checkin_streak(db, user.telegram_id)
+    return state
 
 
 @app.get("/me/tasks")
@@ -489,6 +508,9 @@ def my_monetization(user: models.User = Depends(current_user),
          "current": age_days, "required": MONETIZATION["account_days"]},
         {"key": "lifetime_points", "label": "Total points earned",
          "current": earned, "required": MONETIZATION["lifetime_points"]},
+        {"key": "checkin_streak", "label": "Check-in streak (days, no misses)",
+         "current": _checkin_streak(db, user.telegram_id),
+         "required": MONETIZATION["checkin_streak"]},
     ]
     for c in checks:
         c["done"] = c["current"] >= c["required"]

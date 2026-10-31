@@ -419,7 +419,8 @@ async function loadTasks() {
       const meta = document.createElement("div");
       meta.className = "task-meta";
       const prog = document.createElement("span");
-      prog.textContent = t.progress + " / " + t.target;
+      prog.textContent = t.progress + " / " + t.target +
+        (t.streak != null ? " · 🔥 " + t.streak + " day streak" : "");
       const btn = document.createElement("button");
       if (t.claimed) {
         btn.textContent = "✓ Claimed";

@@ -28,19 +28,21 @@ POINTS = {"post": 5, "referral": 20}
 #   comments -> Comment rows the user wrote today
 DAILY_TASKS = [
     {"key": "checkin", "title": "Daily check-in", "icon": "📅",
-     "target": 1, "points": 10, "metric": "checkin"},
+     "target": 1, "points": 20, "metric": "checkin"},
     {"key": "follow2", "title": "Follow 2 people", "icon": "👥",
-     "target": 2, "points": 20, "metric": "follows"},
+     "target": 2, "points": 5, "metric": "follows"},
     {"key": "comment5", "title": "Write 5 comments", "icon": "💬",
-     "target": 5, "points": 20, "metric": "comments"},
+     "target": 5, "points": 5, "metric": "comments"},
 ]
 
 # Monetization gate (owner request, Oct 31): ALL targets must be met
-# before a creator's monetization unlocks. PLACEHOLDER targets — the
-# owner can adjust these numbers freely.
+# before a creator's monetization unlocks. Numbers set by the owner:
+# followers 500, lifetime points 5000, and a 30-day UNBROKEN check-in
+# streak (one missed day resets the streak to zero).
 MONETIZATION = {
-    "followers": 100,        # at least this many followers
+    "followers": 500,        # at least this many followers
     "posts": 25,             # at least this many live posts
     "account_days": 14,      # account at least this many days old
-    "lifetime_points": 500,  # at least this many points earned in total
+    "lifetime_points": 5000,  # at least this many points earned in total
+    "checkin_streak": 30,    # consecutive daily check-ins, no misses
 }
