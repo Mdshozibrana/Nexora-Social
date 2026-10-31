@@ -872,8 +872,12 @@ async def media_proxy(file_id: str, request: Request):
     if request.headers.get("range"):
         fwd["Range"] = request.headers["range"]
     stream_client = httpx.AsyncClient(timeout=60)
-    req = stream_client.build_request(
-        "GET", f"{api}/file/{file_path}", headers=fwd)
+    # Telegram file downloads live at /file/bot<token>/<file_path> — the
+    # /file/ segment comes BEFORE /bot<token>. Building it as
+    # /bot<token>/file/... (the phase-16 bug) makes Telegram answer 404
+    # for every file, which is why posted photos never displayed.
+    file_url = f"https://api.telegram.org/file/bot{settings.BOT_TOKEN}/{file_path}"
+    req = stream_client.build_request("GET", file_url, headers=fwd)
     resp = await stream_client.send(req, stream=True)
     if resp.status_code not in (200, 206):
         await resp.aclose()

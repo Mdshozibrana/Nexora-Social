@@ -2,7 +2,15 @@
 /media proxy fix. The Telegram upload helper is stubbed (no network);
 httpx is faked for /media so the streamed body must arrive intact —
 the old handler closed its client before streaming and broke images.
-Also asserts the composer 📷 attach UI and Change-photo wiring."""
+Also asserts the composer 📷 attach UI and Change-photo wiring.
+
+REGRESSION LOCK (Oct 31, production): the first /media fix built the
+download URL as /bot<token>/file/<path>; Telegram's real layout is
+/file/bot<token>/<path>, so production answered 404 for every photo
+while this suite stayed green — the fake accepted ANY url. The fake
+below is now strict: getFile must be /bot<token>/getFile and the file
+download must be exactly /file/bot<token>/photos/file_1.jpg, anything
+else gets a Telegram-style 404."""
 import hashlib, hmac, json, os, urllib.parse
 
 os.environ["BOT_TOKEN"] = "123456789:AAE" + "x" * 32
@@ -50,6 +58,17 @@ class FakeStreamResp:
         pass
 
 
+class Fake404Resp:
+    status_code = 404
+    headers = {"content-type": "application/json"}
+
+    async def aiter_bytes(self):
+        yield b'{"ok":false}'
+
+    async def aclose(self):
+        pass
+
+
 class FakeAsyncClient:
     def __init__(self, *a, **k):
         pass
@@ -61,12 +80,19 @@ class FakeAsyncClient:
         return False
 
     async def get(self, url, params=None):
+        token = os.environ["BOT_TOKEN"]
+        assert url == f"https://api.telegram.org/bot{token}/getFile", url
+        assert params and params.get("file_id"), params
         return FakeGetFileResp()
 
     def build_request(self, method, url, headers=None):
         return (method, url, headers)
 
     async def send(self, req, stream=False):
+        token = os.environ["BOT_TOKEN"]
+        expected = f"https://api.telegram.org/file/bot{token}/photos/file_1.jpg"
+        if req[1] != expected:
+            return Fake404Resp()
         return FakeStreamResp()
 
     async def aclose(self):
