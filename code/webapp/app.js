@@ -1030,3 +1030,54 @@ if (localStorage.getItem("nx_remember") === "1" ||
   $("entry-screen").hidden = true;
 }
 paintEntry();
+
+// ---------------------------------------------------------- drawer menu ---
+// Side menu in the owner's chosen panel design (Oct 31). Items mirror
+// the bottom nav plus Library (Saved / Shared with count badges) and
+// Account (My Profile / Search / Log out back to the entry screen).
+function openDrawer() {
+  $("drawer-wrap").hidden = false;
+  requestAnimationFrame(() => $("drawer-wrap").classList.add("open"));
+  syncDrawerActive();
+  api("/me/saved").then(list => {
+    const b = $("badge-saved");
+    b.textContent = list.length;
+    b.hidden = !list.length;
+  }).catch(() => {});
+  api("/me/shared").then(list => {
+    const b = $("badge-shared");
+    b.textContent = list.length;
+    b.hidden = !list.length;
+  }).catch(() => {});
+}
+function closeDrawer() {
+  $("drawer-wrap").classList.remove("open");
+  setTimeout(() => { $("drawer-wrap").hidden = true; }, 260);
+}
+function syncDrawerActive() {
+  const current = ["feed", "videos", "search", "tasks", "leaderboard",
+    "profile", "saved", "shared", "games", "game"]
+    .find(v => !$("view-" + v).hidden) || "feed";
+  const key = current === "game" ? "games" : current;
+  document.querySelectorAll(".drawer-item[data-go]").forEach(b =>
+    b.classList.toggle("active", b.dataset.go === key));
+}
+$("hero-menu").onclick = openDrawer;
+$("drawer-close").onclick = closeDrawer;
+$("drawer-backdrop").onclick = closeDrawer;
+document.querySelectorAll(".drawer-item[data-go]").forEach(b => {
+  b.onclick = () => {
+    const go = b.dataset.go;
+    closeDrawer();
+    showView(go);
+    if (go === "profile") loadMe();
+  };
+});
+$("drawer-logout").onclick = () => {
+  closeDrawer();
+  localStorage.removeItem("nx_remember");
+  sessionStorage.removeItem("nx_entered");
+  entryMode = "login";
+  paintEntry();
+  $("entry-screen").hidden = false;
+};

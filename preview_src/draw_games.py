@@ -88,16 +88,16 @@ def avatar(d, cx, cy, r, name, hue):
 def bottom_nav(img, H, active):
     d = ImageDraw.Draw(img)
     y = H - 64
-    rr(d, [10, y + 2, 410, H - 6], 18, fill=(255, 255, 255))
+    rr(d, [10, y + 2, 410, H - 6], 30, fill=(255, 255, 255))
     items = ["house", "videos", "games", "tasks", "ranks", "me"]
     names = ["Feed", "Videos", "Games", "Tasks", "Ranks", "Me"]
     bw = (420 - 20 - 30) / 6
     for i, kind in enumerate(items):
         x = 10 + i * (bw + 6)
         if i == active:
-            d = gradient(img, [x, y + 8, x + bw, y + 48], radius=12)
-            d = ImageDraw.Draw(img)
-            tcol = (255, 255, 255)
+            rr(d, [x, y + 8, x + bw, y + 48], 20, fill=(255, 255, 255),
+               outline=(203, 207, 220), width=S)
+            tcol = TEXT
         else:
             tcol = GREY
         cx = x + bw / 2
