@@ -117,7 +117,7 @@ with TestClient(app) as c:
     SENT.clear()
     r = c.post("/admin/broadcast", headers=HA, json={"text": "Hello everyone"})
     body = r.json()
-    assert body == {"recipients": 2, "sent": 2}, body
+    assert body == {"recipients": 2, "sent": 2}, body  # official account excluded
     assert {cid for cid, _ in SENT} == {111, 222}
     print("broadcast OK")
 

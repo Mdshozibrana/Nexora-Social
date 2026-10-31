@@ -14,7 +14,8 @@ from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 
 from . import models, notify
-from .config import DAILY_TASKS, MONETIZATION, settings
+from .config import (DAILY_TASKS, MONETIZATION, OFFICIAL_FOLLOWER_BASE,
+                     OFFICIAL_ID, settings)
 from .db import Base, engine, get_db
 from .security import validate_init_data
 from .services import award_points, register_post
@@ -82,6 +83,7 @@ def auth(body: AuthIn, db: Session = Depends(get_db)):
         "username": user.username,
         "bio": user.bio,
         "points": user.points_balance,
+        "is_verified": bool(user.is_verified),
         "followers": followers,
         "following": following,
         "posts": posts,
@@ -121,6 +123,7 @@ def post_dict(db, p, liked=False):
         "author_id": p.user_id,
         "author_name": author.first_name if author else "",
         "author_username": author.username if author else None,
+        "author_verified": bool(author and author.is_verified),
         "created_at": p.created_at.isoformat() if p.created_at else None,
     }
 
@@ -247,6 +250,8 @@ def public_profile(telegram_id: int, user: models.User = Depends(current_user),
     if target is None:
         raise HTTPException(404, "User not found")
     followers = db.query(models.Follow).filter_by(following_id=telegram_id).count()
+    if telegram_id == OFFICIAL_ID:
+        followers += OFFICIAL_FOLLOWER_BASE  # official account starts at 10k
     following_count = db.query(models.Follow).filter_by(follower_id=telegram_id).count()
     posts = db.query(models.Post).filter_by(
         user_id=telegram_id, is_deleted=False).count()
@@ -259,6 +264,8 @@ def public_profile(telegram_id: int, user: models.User = Depends(current_user),
         "bio": target.bio,
         "photo_file_id": target.photo_file_id,
         "points": target.points_balance,
+        "is_verified": bool(target.is_verified),
+        "is_official": telegram_id == OFFICIAL_ID,
         "posts": posts,
         "followers": followers,
         "following_count": following_count,
@@ -276,6 +283,9 @@ async def toggle_follow(telegram_id: int, user: models.User = Depends(current_us
         raise HTTPException(404, "User not found")
     existing = db.query(models.Follow).filter_by(
         follower_id=user.telegram_id, following_id=telegram_id).first()
+    if telegram_id == OFFICIAL_ID and existing:
+        raise HTTPException(
+            400, "The official Nexora account cannot be unfollowed")
     if existing:
         db.delete(existing)
         now_following = False
@@ -285,6 +295,8 @@ async def toggle_follow(telegram_id: int, user: models.User = Depends(current_us
         now_following = True
     db.commit()
     followers = db.query(models.Follow).filter_by(following_id=telegram_id).count()
+    if telegram_id == OFFICIAL_ID:
+        followers += OFFICIAL_FOLLOWER_BASE
     if now_following:
         await notify.notify_user(
             db, telegram_id, "follow",
@@ -354,6 +366,7 @@ def search(q: str = "", user: models.User = Depends(current_user),
         "users": [{
             "telegram_id": u.telegram_id, "first_name": u.first_name,
             "username": u.username, "bio": u.bio,
+            "is_verified": bool(u.is_verified),
         } for u in users],
         "posts": [],
     }
@@ -404,14 +417,16 @@ def leaderboard(user: models.User = Depends(current_user),
                   models.User.telegram_id).limit(50).all()
     out = [{"rank": i + 1, "telegram_id": u.telegram_id,
             "first_name": u.first_name, "username": u.username,
-            "points": u.points_balance} for i, u in enumerate(rows)]
+            "points": u.points_balance,
+            "is_verified": bool(u.is_verified)} for i, u in enumerate(rows)]
     mine = next((r for r in out if r["telegram_id"] == user.telegram_id), None)
     if mine is None:
         higher = db.query(models.User).filter(
             models.User.points_balance > user.points_balance).count()
         mine = {"rank": higher + 1, "telegram_id": user.telegram_id,
                 "first_name": user.first_name, "username": user.username,
-                "points": user.points_balance}
+                "points": user.points_balance,
+                "is_verified": bool(user.is_verified)}
     return {"leaders": out, "me": mine}
 
 
@@ -631,7 +646,8 @@ async def admin_broadcast(body: BroadcastIn,
     text = body.text.strip()
     if not text:
         raise HTTPException(400, "Broadcast text is empty")
-    targets = db.query(models.User).filter_by(is_banned=False).all()
+    targets = db.query(models.User).filter_by(is_banned=False) \
+        .filter(models.User.telegram_id != OFFICIAL_ID).all()
     sent = 0
     for u in targets:
         if await notify.send_message(u.telegram_id, text):

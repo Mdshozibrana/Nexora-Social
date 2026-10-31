@@ -42,8 +42,11 @@ with TestClient(app) as c:
     print("tampered initData rejected: 401 OK")
 
     r = c.get("/feed", headers={"X-Init-Data": d1}); assert r.status_code == 200
-    assert r.json()["posts"] == []
-    print("empty feed OK")
+    posts0 = r.json()["posts"]
+    # Since Oct 31 the feed is never empty: the official account's welcome
+    # post is created with the first user.
+    assert len(posts0) == 1 and posts0[0]["author_id"] == 1, posts0
+    print("feed starts with the official welcome post OK")
 
     db = SessionLocal()
     db.add(models.Post(user_id=111, type="text", caption="Hello world #first"))
@@ -51,7 +54,7 @@ with TestClient(app) as c:
 
     r = c.get("/feed", headers={"X-Init-Data": d1}); assert r.status_code == 200
     posts = r.json()["posts"]
-    assert len(posts) == 1 and posts[0]["caption"] == "Hello world #first", posts
+    assert len(posts) == 2 and posts[0]["caption"] == "Hello world #first", posts
     print("feed with post OK:", posts[0]["author_name"], "| likes:", posts[0]["like_count"])
 
     r = c.get("/webapp/"); assert r.status_code == 200 and "Nexora" in r.text

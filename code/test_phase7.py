@@ -50,7 +50,7 @@ with TestClient(app) as c:
     photos = c.get("/feed?type=photo", headers=CY).json()["posts"]
     assert len(photos) == 1 and photos[0]["media_file_id"] == "IMG1"
     allp = c.get("/feed", headers=CY).json()["posts"]
-    assert len(allp) == 4
+    assert len(allp) == 5  # 4 user posts + the official welcome post
     print("feed type filter (Videos page source) OK")
 
     c.post("/users/101/follow", headers=CY)

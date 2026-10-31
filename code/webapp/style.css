@@ -29,6 +29,10 @@ body { font-family: system-ui, sans-serif; margin: 0; padding: 0 12px 84px;
 .rank-points { font-weight: 800; color: #b45309; }
 .rank-me { outline: 2px solid #7c3aed; }
 .rank-sep { text-align: center; opacity: .5; margin-top: 10px; }
+.verified { display: inline-flex; width: 16px; height: 16px; border-radius: 50%;
+  background: #1d9bf0; color: #fff; font-size: 11px; font-weight: 700;
+  align-items: center; justify-content: center; margin-left: 5px;
+  vertical-align: middle; flex: none; }
 
 .card, .post, .task-card, .mon-card, .user-row {
   background: var(--tg-theme-secondary-bg-color, #fff);

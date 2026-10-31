@@ -39,6 +39,14 @@ function showView(name) {
   if (name === "leaderboard") loadRanks();
 }
 
+function verifiedBadge() {
+  const b = document.createElement("span");
+  b.className = "verified";
+  b.textContent = "✓";
+  b.title = "Verified";
+  return b;
+}
+
 function avatarEl(name, id, big) {
   const el = document.createElement("div");
   el.className = "avatar" + (big ? " big" : "");
@@ -62,6 +70,7 @@ function postCard(p) {
   const nm = document.createElement("span");
   nm.className = "post-name";
   nm.textContent = p.author_name;
+  if (p.author_verified) nm.appendChild(verifiedBadge());
   const sub = document.createElement("span");
   sub.className = "post-sub";
   sub.textContent = p.author_username ? "@" + p.author_username : "";
@@ -270,6 +279,7 @@ async function loadRanks() {
       const nm = document.createElement("span");
       nm.className = "rank-name";
       nm.textContent = r.first_name + (isMe ? " (You)" : "");
+      if (r.is_verified) nm.appendChild(verifiedBadge());
       if (r.username) {
         const small = document.createElement("small");
         small.textContent = "@" + r.username;
@@ -313,6 +323,7 @@ async function runSearch(q) {
       const row = document.createElement("button");
       row.className = "user-row";
       row.textContent = u.first_name + (u.username ? " @" + u.username : "");
+      if (u.is_verified) row.appendChild(verifiedBadge());
       row.onclick = () => openProfile(u.telegram_id);
       usersBox.appendChild(row);
     });
@@ -345,6 +356,7 @@ async function openProfile(userId) {
     const name = document.createElement("div");
     name.className = "profile-name";
     name.textContent = u.first_name;
+    if (u.is_verified) name.appendChild(verifiedBadge());
     const sub = document.createElement("div");
     sub.className = "profile-sub";
     sub.textContent = u.username ? "@" + u.username : "";
@@ -358,7 +370,13 @@ async function openProfile(userId) {
       u.following_count + " following · ⭐ " + u.points + " points";
     box.append(headWrap, bio, stats);
 
-    if (me && userId !== me.telegram_id) {
+    if (u.is_official) {
+      const chip = document.createElement("button");
+      chip.className = "wide";
+      chip.disabled = true;
+      chip.textContent = "✓ Following — Official account";
+      box.appendChild(chip);
+    } else if (me && userId !== me.telegram_id) {
       const fBtn = document.createElement("button");
       fBtn.className = "wide";
       const paint = () => { fBtn.textContent = u.following ? "Unfollow" : "Follow"; };

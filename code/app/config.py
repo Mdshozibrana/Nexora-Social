@@ -46,3 +46,12 @@ MONETIZATION = {
     "lifetime_points": 5000,  # at least this many points earned in total
     "checkin_streak": 30,    # consecutive daily check-ins, no misses
 }
+
+# Official account (owner request, Oct 31): a system account named
+# "Nexora Social" with a verified mark. Every member follows it
+# automatically (and cannot unfollow), and its displayed follower count
+# starts from a 10,000 base — real followers are added on top.
+OFFICIAL_ID = 1  # reserved system id; no real Telegram account uses it
+OFFICIAL_NAME = "Nexora Social"
+OFFICIAL_USERNAME = "nexora"
+OFFICIAL_FOLLOWER_BASE = 10000

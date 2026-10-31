@@ -20,6 +20,7 @@ class User(Base):
     points_balance = Column(Integer, default=0)
     referrer_id = Column(BigInteger, ForeignKey("users.telegram_id"), nullable=True)
     is_banned = Column(Boolean, default=False)
+    is_verified = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
