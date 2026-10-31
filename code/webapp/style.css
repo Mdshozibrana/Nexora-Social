@@ -531,3 +531,122 @@ body { padding-bottom: 96px; }
   -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
 }
+
+/* ==========================================================================
+   OWNER PALETTE THEME (Oct 31, from the owner's colour chart):
+   #121212 base · #1F2937 surface · #334155 raised · #64748B muted ·
+   #F1F5F9 text · #EC4899 accent. Dark glassmorphism: every surface is
+   a slate glass layer over the near-black base with soft pink/teal
+   glows, like the palette image itself. Text colours are paired for
+   contrast: light text on dark surfaces, near-black text on pink.
+   ========================================================================== */
+:root {
+  --ink: #F1F5F9;
+  --ink-dim: #A8B6C8;
+  --ink-faint: #7E93AB;
+  --glass-bg: rgba(31,41,55,.68);
+  --glass-brd: rgba(241,245,249,.13);
+  --glass-shadow: 0 10px 34px rgba(0,0,0,.45),
+                  inset 0 1px 0 rgba(241,245,249,.08);
+}
+body {
+  background-color: #121212;
+  background-image:
+    radial-gradient(640px 420px at -10% 8%, rgba(236,72,153,.17), rgba(236,72,153,0) 60%),
+    radial-gradient(720px 520px at 108% 22%, rgba(45,212,191,.11), rgba(45,212,191,0) 60%),
+    radial-gradient(700px 700px at 50% 112%, rgba(51,65,85,.35), rgba(51,65,85,0) 62%);
+  color: var(--ink);
+}
+.hero {
+  background: linear-gradient(120deg, rgba(31,41,55,.96), rgba(51,65,85,.93) 58%, rgba(31,41,55,.96));
+  border-bottom: 1px solid rgba(236,72,153,.35);
+}
+#points-chip { background: #EC4899; color: #121212; border-color: transparent;
+  font-weight: 800; }
+.hero .icon-btn { color: var(--ink); background: rgba(241,245,249,.10);
+  border-color: rgba(241,245,249,.22); }
+button { background: #334155; color: var(--ink); }
+.tabs { background: rgba(31,41,55,.55); border-color: rgba(241,245,249,.10); }
+.tabs button { color: var(--ink-dim); }
+.tabs button.active { background: #EC4899; color: #121212;
+  box-shadow: 0 4px 16px rgba(236,72,153,.40); }
+.composer button { background: #EC4899; color: #121212; font-weight: 700; }
+.searchbar input, .composer textarea {
+  background: rgba(31,41,55,.60); border-color: rgba(241,245,249,.12);
+  color: var(--ink);
+}
+::placeholder { color: #64748B; }
+.chip { background: rgba(236,72,153,.13); border-color: rgba(236,72,153,.30);
+  color: #F472B6; }
+.actions button.liked { background: rgba(236,72,153,.18); color: #EC4899; }
+.post-media { border-color: rgba(241,245,249,.14);
+  background: rgba(241,245,249,.05); }
+.task-points { background: rgba(236,72,153,.15); color: #EC4899; }
+.bar > div { background: #EC4899; }
+.task-claim { background: #EC4899; color: #121212; font-weight: 700; }
+.task-claim.claimed { background: #334155; color: var(--ink); }
+.mon-badge { background: rgba(100,116,139,.28); color: #CBD5E1; }
+.mon-badge.open { background: rgba(236,72,153,.20); color: #EC4899; }
+.pick-send { background: #EC4899; color: #121212; }
+.pick-send.sent { background: #334155; color: var(--ink); }
+.game-card .g-play { background: #EC4899; color: #121212; }
+.dpad button, .grow button { background: #334155; color: var(--ink); }
+.mem-card { background: #334155; color: var(--ink); }
+.mem-card.open { background: #1F2937; }
+.mem-card.done { background: rgba(236,72,153,.30); }
+.game-head #game-score { color: #EC4899; }
+.bottom-nav { background: rgba(31,41,55,.85);
+  border-top: 1px solid rgba(241,245,249,.10);
+  box-shadow: 0 14px 34px rgba(0,0,0,.5),
+              inset 0 1px 0 rgba(241,245,249,.10); }
+.bottom-nav button { color: var(--ink-dim); }
+.bottom-nav button.active { background: #334155; color: var(--ink);
+  box-shadow: 4px 4px 12px rgba(0,0,0,.5),
+              -2px -2px 8px rgba(241,245,249,.06),
+              inset 0 1px 0 rgba(241,245,249,.14); }
+#reel-sheet { background: rgba(31,41,55,.96); color: var(--ink); }
+.reel-act button.liked { background: #EC4899; }
+/* Drawer in palette */
+#drawer { background: linear-gradient(165deg, rgba(51,65,85,.94), rgba(18,18,18,.97));
+  border-color: rgba(241,245,249,.12); }
+.drawer-name { color: var(--ink); }
+.drawer-tag { color: var(--ink-faint); }
+.drawer-sec { color: var(--ink-faint); }
+#drawer-close { background: rgba(241,245,249,.08); color: var(--ink);
+  box-shadow: none; }
+.drawer-item { color: #D7E0EA; }
+.drawer-item:active { background: rgba(241,245,249,.07);
+  box-shadow: inset 3px 3px 7px rgba(0,0,0,.4); }
+.drawer-item.active { background: #EC4899; color: #121212;
+  box-shadow: 0 8px 20px rgba(236,72,153,.35); }
+.drawer-badge { background: #EC4899; color: #121212; }
+.drawer-div { background: linear-gradient(90deg, transparent, rgba(241,245,249,.16), transparent); }
+/* Entry screens in palette (dark neumorphism) */
+#entry-screen { background: #121212;
+  background-image:
+    radial-gradient(700px 500px at 88% 0%, rgba(236,72,153,.13), rgba(236,72,153,0) 60%),
+    radial-gradient(700px 600px at 0% 100%, rgba(45,212,191,.08), rgba(45,212,191,0) 60%); }
+.entry-disc { background: linear-gradient(145deg, #1F2937, #141a24);
+  box-shadow: 20px 20px 42px rgba(0,0,0,.55),
+              -12px -12px 32px rgba(241,245,249,.05),
+              inset 2px 2px 4px rgba(241,245,249,.06),
+              inset -2px -2px 4px rgba(0,0,0,.4); }
+.entry-logo { background: #EC4899; color: #121212;
+  box-shadow: 0 8px 22px rgba(236,72,153,.4); }
+.entry-disc h1 { color: var(--ink); }
+.entry-disc #entry-sub { color: var(--ink-faint); }
+.entry-field { background: #121212; color: #C9D4E2;
+  box-shadow: inset 5px 5px 10px rgba(0,0,0,.55),
+              inset -5px -5px 10px rgba(241,245,249,.05); }
+.entry-row { color: var(--ink-faint); }
+.entry-row a { color: var(--ink-faint); }
+.entry-remember .pill { background: #334155;
+  box-shadow: inset 2px 2px 4px rgba(0,0,0,.5); }
+.entry-remember input:checked + .pill { background: #EC4899; }
+.entry-btn { background: #EC4899; color: #121212;
+  box-shadow: 0 10px 26px rgba(236,72,153,.35),
+              inset 0 1px 0 rgba(255,255,255,.35); }
+.entry-btn:active { box-shadow: inset 4px 4px 8px rgba(0,0,0,.35); }
+.entry-switch { color: var(--ink-faint); }
+.entry-switch a { color: #EC4899; }
+.entry-note { color: var(--ink-faint); }

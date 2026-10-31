@@ -5,10 +5,10 @@ S = 2
 W, H = 420, 780
 NOTO = "/usr/share/fonts/truetype/noto/NotoSans-{}.ttf"
 DEJA = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-TEXT = (51, 51, 60)
-GREY = (122, 122, 134)
-FAINT = (154, 154, 165)
-RED = (216, 27, 96)
+TEXT = (241, 245, 249)
+GREY = (168, 182, 200)
+FAINT = (126, 147, 171)
+RED = (236, 72, 153)
 
 
 def F(style, size):
@@ -28,12 +28,12 @@ def rr(d, box, r, **kw):
                         radius=r * S, **kw)
 
 
-img = Image.new("RGB", (W * S, H * S), (231, 232, 238))
+img = Image.new("RGB", (W * S, H * S), (18, 18, 18))
 # soft colour washes (glass background)
-wash = Image.new("RGB", img.size, (231, 232, 238))
+wash = Image.new("RGB", img.size, (18, 18, 18))
 wd = ImageDraw.Draw(wash)
-wd.ellipse([200 * S, -160 * S, 560 * S, 200 * S], fill=(243, 226, 238))
-wd.ellipse([-180 * S, 480 * S, 220 * S, 880 * S], fill=(228, 224, 248))
+wd.ellipse([200 * S, -160 * S, 560 * S, 200 * S], fill=(52, 20, 40))
+wd.ellipse([-180 * S, 480 * S, 220 * S, 880 * S], fill=(14, 42, 44))
 img = wash.filter(ImageFilter.GaussianBlur(60 * S))
 d = ImageDraw.Draw(img)
 
@@ -48,12 +48,12 @@ ImageDraw.Draw(glow).ellipse([(cx - rx - 14) * S, (cy - ry - 16) * S,
                               (cx + rx - 14) * S, (cy + ry - 16) * S], fill=140)
 img.paste((255, 255, 255), (0, 0), glow.filter(ImageFilter.GaussianBlur(18 * S)))
 d = ImageDraw.Draw(img)
-d.ellipse([(cx - rx) * S, (cy - ry) * S, (cx + rx) * S, (cy + ry) * S], fill=(238, 239, 244))
+d.ellipse([(cx - rx) * S, (cy - ry) * S, (cx + rx) * S, (cy + ry) * S], fill=(31, 41, 55))
 
 # logo
-d.ellipse([(cx - 27) * S, (cy - 158) * S, (cx + 27) * S, (cy - 104) * S], fill=(110, 60, 225))
-d.pieslice([(cx - 27) * S, (cy - 158) * S, (cx + 27) * S, (cy - 104) * S], -90, 90, fill=(196, 50, 150))
-text(d, cx - tw(d, "N", F("Bold", 26)) / 2, cy - 148, "N", F("Bold", 26), (255, 255, 255))
+d.ellipse([(cx - 27) * S, (cy - 158) * S, (cx + 27) * S, (cy - 104) * S], fill=(236, 72, 153))
+d.pieslice([(cx - 27) * S, (cy - 158) * S, (cx + 27) * S, (cy - 104) * S], -90, 90, fill=(190, 24, 93))
+text(d, cx - tw(d, "N", F("Bold", 26)) / 2, cy - 148, "N", F("Bold", 26), (18, 18, 18))
 text(d, cx - tw(d, "Login", F("Bold", 30)) / 2, cy - 96, "Login", F("Bold", 30))
 text(d, cx - tw(d, "Sign in to your account", F("Regular", 13)) / 2, cy - 58,
      "Sign in to your account", F("Regular", 13), FAINT)
@@ -61,32 +61,32 @@ text(d, cx - tw(d, "Sign in to your account", F("Regular", 13)) / 2, cy - 58,
 
 def field(y, glyph, label):
     x0, x1 = cx - 118, cx + 118
-    rr(d, [x0, y, x1, y + 42], 12, fill=(230, 231, 237))
-    d.line([(x0 + 10) * S, (y + 3) * S, (x1 - 10) * S, (y + 3) * S], fill=(196, 200, 214), width=2 * S)
-    d.line([(x0 + 10) * S, (y + 39) * S, (x1 - 10) * S, (y + 39) * S], fill=(255, 255, 255), width=2 * S)
+    rr(d, [x0, y, x1, y + 42], 12, fill=(18, 18, 18))
+    d.line([(x0 + 10) * S, (y + 3) * S, (x1 - 10) * S, (y + 3) * S], fill=(0, 0, 0), width=2 * S)
+    d.line([(x0 + 10) * S, (y + 39) * S, (x1 - 10) * S, (y + 39) * S], fill=(58, 72, 92), width=2 * S)
     if glyph == "user":
         d.ellipse([(x0 + 14) * S, (y + 10) * S, (x0 + 24) * S, (y + 20) * S], fill=GREY)
         d.pieslice([(x0 + 10) * S, (y + 18) * S, (x0 + 28) * S, (y + 34) * S], 180, 360, fill=GREY)
     else:
         rr(d, [x0 + 13, y + 16, x0 + 27, y + 30], 3, fill=GREY)
         d.arc([(x0 + 15) * S, (y + 7) * S, (x0 + 25) * S, (y + 20) * S], 180, 360, fill=GREY, width=2 * S)
-    text(d, x0 + 38, y + 12, label, F("Regular", 13.5), (110, 110, 120))
+    text(d, x0 + 38, y + 12, label, F("Regular", 13.5), (201, 212, 226))
 
 
 field(cy - 28, "user", "@shozib")
 field(cy + 26, "lock", "Telegram secure login")
 # remember row
 ry = cy + 82
-rr(d, [cx - 118, ry, cx - 86, ry + 17], 9, fill=(160, 90, 220))
+rr(d, [cx - 118, ry, cx - 86, ry + 17], 9, fill=(236, 72, 153))
 d.ellipse([(cx - 102) * S, (ry + 2) * S, (cx - 89) * S, (ry + 15) * S], fill=(255, 255, 255))
 text(d, cx - 80, ry + 1, "Remember me", F("Regular", 12), GREY)
 fp = "Forgot password?"
 text(d, cx + 118 - tw(d, fp, F("Regular", 12)), ry + 1, fp, F("Regular", 12), GREY)
 # button
 by = cy + 112
-rr(d, [cx - 118, by, cx + 118, by + 44], 12, fill=(237, 238, 243))
-d.line([(cx - 108) * S, (by + 41) * S, (cx + 108) * S, (by + 41) * S], fill=(203, 207, 220), width=2 * S)
-text(d, cx - tw(d, "S I G N   I N", F("Bold", 13.5)) / 2, by + 13, "S I G N   I N", F("Bold", 13.5), (61, 61, 70))
+rr(d, [cx - 118, by, cx + 118, by + 44], 12, fill=(236, 72, 153))
+d.line([(cx - 108) * S, (by + 41) * S, (cx + 108) * S, (by + 41) * S], fill=(190, 24, 93), width=2 * S)
+text(d, cx - tw(d, "S I G N   I N", F("Bold", 13.5)) / 2, by + 13, "S I G N   I N", F("Bold", 13.5), (18, 18, 18))
 sw = "Don't have an account?"
 text(d, cx - (tw(d, sw, F("Regular", 12.5)) + 6 + tw(d, "Sign up", F("Bold", 12.5))) / 2, by + 58, sw, F("Regular", 12.5), GREY)
 text(d, cx - (tw(d, sw, F("Regular", 12.5)) + 6 + tw(d, "Sign up", F("Bold", 12.5))) / 2 + tw(d, sw, F("Regular", 12.5)) + 6, by + 58, "Sign up", F("Bold", 12.5), RED)

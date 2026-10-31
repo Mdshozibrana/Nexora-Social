@@ -139,7 +139,7 @@ registerGame({
     toggleBtn.onclick = toggle;
     pad.after(toggleBtn);
     toggleBtn.className = "";
-    toggleBtn.style.cssText = "padding:10px 22px;border-radius:12px;font-size:15px;background:linear-gradient(120deg,#4f46e5,#db2777);color:#fff;font-weight:700;";
+    toggleBtn.style.cssText = "padding:10px 22px;border-radius:12px;font-size:15px;background:#EC4899;color:#121212;font-weight:700;";
     const wrap = document.createElement("div");
     wrap.className = "grow";
     wrap.appendChild(toggleBtn);
@@ -248,7 +248,7 @@ registerGame({
     const tBtn = document.createElement("button");
     tBtn.textContent = "▶ Start";
     tBtn.onclick = toggle;
-    tBtn.style.cssText = "padding:10px 22px;border-radius:12px;font-size:15px;background:linear-gradient(120deg,#4f46e5,#db2777);color:#fff;font-weight:700;";
+    tBtn.style.cssText = "padding:10px 22px;border-radius:12px;font-size:15px;background:#EC4899;color:#121212;font-weight:700;";
     const wrap = document.createElement("div");
     wrap.className = "grow";
     wrap.appendChild(tBtn);
@@ -363,7 +363,7 @@ registerGame({
     const tBtn = document.createElement("button");
     tBtn.textContent = "▶ Start";
     tBtn.onclick = toggle;
-    tBtn.style.cssText = "padding:10px 22px;border-radius:12px;font-size:15px;background:linear-gradient(120deg,#4f46e5,#db2777);color:#fff;font-weight:700;";
+    tBtn.style.cssText = "padding:10px 22px;border-radius:12px;font-size:15px;background:#EC4899;color:#121212;font-weight:700;";
     const wrap = document.createElement("div");
     wrap.className = "grow";
     wrap.appendChild(tBtn);
@@ -434,7 +434,7 @@ registerGame({
     setScore("Moves: 0");
     const again = document.createElement("button");
     again.textContent = "↻ Shuffle & restart";
-    again.style.cssText = "padding:10px 22px;border-radius:12px;font-size:15px;background:linear-gradient(120deg,#4f46e5,#db2777);color:#fff;font-weight:700;";
+    again.style.cssText = "padding:10px 22px;border-radius:12px;font-size:15px;background:#EC4899;color:#121212;font-weight:700;";
     again.onclick = () => openGame("memory");
     const wrap = document.createElement("div");
     wrap.className = "grow";

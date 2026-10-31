@@ -9,12 +9,12 @@ W = 420
 NOTO = "/usr/share/fonts/truetype/noto/NotoSans-{}.ttf"
 DEJA = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 PAGE = (233, 235, 243)
-CARD = (252, 252, 254)
-TEXT = (26, 26, 32)
-GREY = (102, 107, 120)
-FAINT = (150, 152, 164)
-PINK = (219, 39, 119)
-GA, GB, GC = (79, 70, 229), (124, 58, 237), (219, 39, 119)
+CARD = (31, 41, 55)
+TEXT = (241, 245, 249)
+GREY = (168, 182, 200)
+FAINT = (126, 147, 171)
+PINK = (236, 72, 153)
+GA, GB, GC = (236, 72, 153), (219, 39, 119), (190, 24, 93)
 OUT = "/tmp/previews"
 import os
 os.makedirs(OUT, exist_ok=True)
@@ -63,12 +63,12 @@ def gradient(img, box, radius=12, colors=(GA, GB, GC)):
 
 
 def page_bg(H):
-    img = Image.new("RGB", (W * S, H * S), (231, 232, 238))
-    wash = Image.new("RGB", img.size, (231, 232, 238))
+    img = Image.new("RGB", (W * S, H * S), (18, 18, 18))
+    wash = Image.new("RGB", img.size, (18, 18, 18))
     wd = ImageDraw.Draw(wash)
-    wd.ellipse([180 * S, -180 * S, 580 * S, 220 * S], fill=(226, 214, 250))
-    wd.ellipse([240 * S, 120 * S, 620 * S, 480 * S], fill=(250, 222, 238))
-    wd.ellipse([-200 * S, (H - 320) * S, 200 * S, (H + 80) * S], fill=(252, 236, 210))
+    wd.ellipse([180 * S, -180 * S, 580 * S, 220 * S], fill=(52, 20, 40))
+    wd.ellipse([240 * S, 120 * S, 620 * S, 480 * S], fill=(14, 42, 44))
+    wd.ellipse([-200 * S, (H - 320) * S, 200 * S, (H + 80) * S], fill=(34, 42, 56))
     return wash.filter(ImageFilter.GaussianBlur(50 * S))
 
 
@@ -98,39 +98,39 @@ def badge(d, x, y, r=7.5):
 
 
 def hero(img, points="25"):
-    d = gradient(img, [-8, -8, 428, 98], radius=24)
+    d = gradient(img, [-8, -8, 428, 98], radius=24, colors=((31, 41, 55), (51, 65, 85), (31, 41, 55)))
     d = ImageDraw.Draw(img)
     text(d, 16, 15, "☰", D(19), (255, 255, 255))
     text(d, 46, 14, "Nexora Social", F("Bold", 23), (255, 255, 255))
-    d.ellipse([372 * S, 12 * S, 404 * S, 44 * S], fill=(158, 140, 245), outline=(205, 195, 255), width=S)
+    d.ellipse([372 * S, 12 * S, 404 * S, 44 * S], fill=(51, 65, 85), outline=(100, 116, 139), width=S)
     d.ellipse([382 * S, 21 * S, 394 * S, 33 * S], outline=(255, 255, 255), width=2 * S)
     d.line([392 * S, 31 * S, 399 * S, 38 * S], fill=(255, 255, 255), width=2 * S)
     avatar(d, 38, 70, 20, "MD Shozib Rana", 150, photo=True)
     nm = "MD Shozib Rana"
     text(d, 66, 56, nm, F("SemiBold", 14.5), (255, 255, 255))
     badge(d, 66 + tw(d, nm, F("SemiBold", 14.5)) + 12, 65)
-    text(d, 66, 77, "1 posts · 2 followers · 2 following", F("Regular", 11), (226, 223, 255))
+    text(d, 66, 77, "1 posts · 2 followers · 2 following", F("Regular", 11), (168, 182, 200))
     chip = "★ " + points
     cw = tw(d, chip, D(13)) + 20
-    rr(d, [404 - cw, 56, 404, 84], 14, fill=(255, 255, 255))
-    text(d, 404 - cw + 10, 64, chip, D(13), (180, 83, 9))
+    rr(d, [404 - cw, 56, 404, 84], 14, fill=(236, 72, 153))
+    text(d, 404 - cw + 10, 64, chip, D(13), (18, 18, 18))
     return 112
 
 
 def bottom_nav(img, H, active):
     sh = Image.new("L", img.size, 0)
     ImageDraw.Draw(sh).rounded_rectangle([14 * S, (H - 58) * S, 414 * S, (H - 2) * S], radius=30 * S, fill=90)
-    img.paste((120, 118, 160), (0, 0), sh.filter(ImageFilter.GaussianBlur(8 * S)))
+    img.paste((0, 0, 0), (0, 0), sh.filter(ImageFilter.GaussianBlur(8 * S)))
     d = ImageDraw.Draw(img)
     y = H - 66
-    rr(d, [10, y, 410, H - 8], 29, fill=(250, 250, 253))
+    rr(d, [10, y, 410, H - 8], 29, fill=(31, 41, 55))
     items = ["house", "videos", "games", "tasks", "ranks", "me"]
     names = ["Feed", "Videos", "Games", "Tasks", "Ranks", "Me"]
     bw = (420 - 20 - 12 - 30) / 6
     for i, kind in enumerate(items):
         x = 16 + i * (bw + 6)
         if i == active:
-            rr(d, [x, y + 7, x + bw, y + 51], 22, fill=(255, 255, 255), outline=(203, 207, 220), width=S)
+            rr(d, [x, y + 7, x + bw, y + 51], 22, fill=(51, 65, 85), outline=(100, 116, 139), width=S)
             tcol = TEXT
         else:
             tcol = GREY
@@ -157,7 +157,7 @@ def bottom_nav(img, H, active):
 
 
 def card(d, x, y, x2, y2):
-    rr(d, [x, y, x2, y2], 16, fill=CARD, outline=(226, 227, 238), width=S)
+    rr(d, [x, y, x2, y2], 16, fill=CARD, outline=(58, 72, 92), width=S)
 
 
 def wrap(d, s, f, maxw):
@@ -226,7 +226,7 @@ def entry_signup():
     ImageDraw.Draw(gl).ellipse([(cx - rx - 14) * S, (cy - ry - 16) * S, (cx + rx - 14) * S, (cy + ry - 16) * S], fill=140)
     img.paste((255, 255, 255), (0, 0), gl.filter(ImageFilter.GaussianBlur(18 * S)))
     d = ImageDraw.Draw(img)
-    d.ellipse([(cx - rx) * S, (cy - ry) * S, (cx + rx) * S, (cy + ry) * S], fill=(238, 239, 244))
+    d.ellipse([(cx - rx) * S, (cy - ry) * S, (cx + rx) * S, (cy + ry) * S], fill=(31, 41, 55))
     d = gradient(img, [cx - 27, cy - 162, cx + 27, cy - 108], radius=27)
     d = ImageDraw.Draw(img)
     text(d, cx - tw(d, "N", F("Bold", 26)) / 2, cy - 152, "N", F("Bold", 26), (255, 255, 255))
@@ -236,24 +236,24 @@ def entry_signup():
 
     def field(y, label, lock=False):
         x0, x1 = cx - 118, cx + 118
-        rr(d, [x0, y, x1, y + 42], 12, fill=(230, 231, 237))
-        d.line([(x0 + 10) * S, (y + 3) * S, (x1 - 10) * S, (y + 3) * S], fill=(196, 200, 214), width=2 * S)
-        d.line([(x0 + 10) * S, (y + 39) * S, (x1 - 10) * S, (y + 39) * S], fill=(255, 255, 255), width=2 * S)
+        rr(d, [x0, y, x1, y + 42], 12, fill=(18, 18, 18))
+        d.line([(x0 + 10) * S, (y + 3) * S, (x1 - 10) * S, (y + 3) * S], fill=(0, 0, 0), width=2 * S)
+        d.line([(x0 + 10) * S, (y + 39) * S, (x1 - 10) * S, (y + 39) * S], fill=(58, 72, 92), width=2 * S)
         if lock:
             rr(d, [x0 + 13, y + 16, x0 + 27, y + 30], 3, fill=GREY)
             d.arc([(x0 + 15) * S, (y + 7) * S, (x0 + 25) * S, (y + 20) * S], 180, 360, fill=GREY, width=2 * S)
         else:
             d.ellipse([(x0 + 14) * S, (y + 10) * S, (x0 + 24) * S, (y + 20) * S], fill=GREY)
             d.pieslice([(x0 + 10) * S, (y + 18) * S, (x0 + 28) * S, (y + 34) * S], 180, 360, fill=GREY)
-        text(d, x0 + 38, y + 12, label, F("Regular", 13.5), (110, 110, 120))
+        text(d, x0 + 38, y + 12, label, F("Regular", 13.5), (201, 212, 226))
 
     field(cy - 32, "MD Shozib Rana")
     field(cy + 22, "@shozib")
     field(cy + 76, "Telegram secure login", lock=True)
     by = cy + 136
-    rr(d, [cx - 118, by, cx + 118, by + 44], 12, fill=(237, 238, 243))
+    rr(d, [cx - 118, by, cx + 118, by + 44], 12, fill=(236, 72, 153))
     text(d, cx - tw(d, "C R E A T E   A C C O U N T", F("Bold", 12.5)) / 2, by + 14,
-         "C R E A T E   A C C O U N T", F("Bold", 12.5), (61, 61, 70))
+         "C R E A T E   A C C O U N T", F("Bold", 12.5), (18, 18, 18))
     sw, lk = "Already have an account?", "Login"
     total = tw(d, sw, F("Regular", 12.5)) + 6 + tw(d, lk, F("Bold", 12.5))
     text(d, cx - total / 2, by + 58, sw, F("Regular", 12.5), GREY)
@@ -273,12 +273,12 @@ def feed():
     text(d, 24, y + 12, "Share something… use #tags", F("Regular", 13), FAINT)
     d = gradient(img, [322, y + 38, 396, y + 66], radius=10)
     d = ImageDraw.Draw(img)
-    text(d, 359 - tw(d, "Post", F("SemiBold", 13)) / 2, y + 44, "Post", F("SemiBold", 13), (255, 255, 255))
+    text(d, 359 - tw(d, "Post", F("SemiBold", 13)) / 2, y + 44, "Post", F("SemiBold", 13), (18, 18, 18))
     y += 86
-    rr(d, [12, y, 408, y + 38], 19, fill=(226, 227, 240))
+    rr(d, [12, y, 408, y + 38], 19, fill=(31, 41, 55))
     d = gradient(img, [14, y + 2, 208, y + 36], radius=17)
     d = ImageDraw.Draw(img)
-    text(d, 111 - tw(d, "Explore", F("SemiBold", 13)) / 2, y + 9, "Explore", F("SemiBold", 13), (255, 255, 255))
+    text(d, 111 - tw(d, "Explore", F("SemiBold", 13)) / 2, y + 9, "Explore", F("SemiBold", 13), (18, 18, 18))
     text(d, 308 - tw(d, "Following", F("SemiBold", 13)) / 2, y + 9, "Following", F("SemiBold", 13), GREY)
     y += 50
     y = post_card(img, y, "Nexora Social", 265,
@@ -315,8 +315,8 @@ def search():
         avatar(d, 40, y + 29, 16, name, hue, photo=True)
         text(d, 66, y + 10, name, F("SemiBold", 13.5))
         text(d, 66, y + 31, un, F("Regular", 11.5), FAINT)
-        rr(d, [318, y + 14, 396, y + 42], 14, fill=(238, 238, 246))
-        text(d, 357 - tw(d, "View", F("SemiBold", 12)) / 2, y + 21, "View", F("SemiBold", 12), (90, 90, 105))
+        rr(d, [318, y + 14, 396, y + 42], 14, fill=(51, 65, 85))
+        text(d, 357 - tw(d, "View", F("SemiBold", 12)) / 2, y + 21, "View", F("SemiBold", 12), TEXT)
         y += 70
     text(d, 14, y, "Posts", F("Bold", 15)); y += 26
     y = post_card(img, y, "Ayesha Rahman", 320, "3h",
@@ -347,18 +347,18 @@ def tasks():
         text(d, 56, y + 10, name, F("SemiBold", 14.5))
         text(d, 56, y + 31, desc, F("Regular", 12), GREY)
         if extra:
-            text(d, 56, y + 52, extra, F("SemiBold", 12), (217, 119, 6))
+            text(d, 56, y + 52, extra, F("SemiBold", 12), PINK)
         bx0, bx1, by = 248, 396, y + 52
         if done >= total:
             d = gradient(img, [bx0, by, bx1, by + 32], radius=10)
             d = ImageDraw.Draw(img)
             lb = "Claim " + pts
-            text(d, (bx0 + bx1) / 2 - tw(d, lb, F("Bold", 12.5)) / 2, by + 7, lb, F("Bold", 12.5), (255, 255, 255))
+            text(d, (bx0 + bx1) / 2 - tw(d, lb, F("Bold", 12.5)) / 2, by + 7, lb, F("Bold", 12.5), (18, 18, 18))
         else:
-            rr(d, [bx0, by, bx1, by + 32], 10, fill=(238, 238, 246))
+            rr(d, [bx0, by, bx1, by + 32], 10, fill=(51, 65, 85))
             lb = f"{done}/{total} · Claim {pts}"
             text(d, (bx0 + bx1) / 2 - tw(d, lb, F("SemiBold", 12)) / 2, by + 7, lb, F("SemiBold", 12), FAINT)
-            rr(d, [56, y + 74, 56 + 180 * done / total, y + 79], 2, fill=(124, 58, 237))
+            rr(d, [56, y + 74, 56 + 180 * done / total, y + 79], 2, fill=PINK)
         y += 108
     bottom_nav(img, H, 3)
     img.save(f"{OUT}/nexora_tasks.png")
@@ -390,7 +390,7 @@ def ranks():
         if ver:
             badge(d, 102 + tw(d, name, F("SemiBold", 13.5)) + 11, y + 27, 6.5)
         pt = "⭐ " + pts
-        text(d, 396 - tw(d, pt, F("Bold", 13)), y + 19, pt, F("Bold", 13), (180, 83, 9))
+        text(d, 396 - tw(d, pt, F("Bold", 13)), y + 19, pt, F("Bold", 13), PINK)
         y += 68
     d = gradient(img, [12, y + 2, 408, y + 60], radius=16)
     d = ImageDraw.Draw(img)
@@ -422,8 +422,8 @@ def me_page():
     card(d, 12, y, 408, y + 64)
     text(d, 24, y + 10, "🔗 Your referral link", F("SemiBold", 13))
     text(d, 24, y + 33, "t.me/NexoraSocial_bot?start=ref_2", F("Regular", 12), GREY)
-    rr(d, [322, y + 16, 396, y + 46], 10, fill=(238, 238, 246))
-    text(d, 359 - tw(d, "Copy", F("SemiBold", 12)) / 2, y + 24, "Copy", F("SemiBold", 12), (90, 90, 105))
+    rr(d, [322, y + 16, 396, y + 46], 10, fill=(51, 65, 85))
+    text(d, 359 - tw(d, "Copy", F("SemiBold", 12)) / 2, y + 24, "Copy", F("SemiBold", 12), TEXT)
     y += 76
     for i, lb in enumerate(["🔖 Saved", "📥 Shared with me"]):
         bx = 12 + i * 202
@@ -432,8 +432,8 @@ def me_page():
     y += 58
     card(d, 12, y, 408, y + 218)
     text(d, 24, y + 12, "💰 Monetization", F("Bold", 14.5))
-    rr(d, [316, y + 10, 396, y + 36], 13, fill=(254, 226, 226))
-    text(d, 356 - tw(d, "🔒 Locked", F("Bold", 11.5)) / 2, y + 17, "🔒 Locked", F("Bold", 11.5), (185, 28, 28))
+    rr(d, [316, y + 10, 396, y + 36], 13, fill=(51, 65, 85))
+    text(d, 356 - tw(d, "🔒 Locked", F("Bold", 11.5)) / 2, y + 17, "🔒 Locked", F("Bold", 11.5), TEXT)
     checks = [("Followers", 2, 500), ("Posts", 1, 25), ("Account age (days)", 3, 14),
               ("Lifetime points", 25, 5000), ("Check-in streak (days)", 3, 30)]
     yy = y + 46
@@ -441,8 +441,8 @@ def me_page():
         text(d, 24, yy, ("✓ " if done >= total else "○ ") + label, F("Regular", 12.5))
         val = f"{done}/{total}"
         text(d, 396 - tw(d, val, F("SemiBold", 12)), yy, val, F("SemiBold", 12), GREY)
-        rr(d, [24, yy + 19, 396, yy + 24], 2, fill=(232, 233, 240))
-        rr(d, [24, yy + 19, 24 + max(6, 372 * min(done / total, 1)), yy + 24], 2, fill=(124, 58, 237))
+        rr(d, [24, yy + 19, 396, yy + 24], 2, fill=(51, 65, 85))
+        rr(d, [24, yy + 19, 24 + max(6, 372 * min(done / total, 1)), yy + 24], 2, fill=PINK)
         yy += 34
     y += 230
     y = post_card(img, y, "MD Shozib Rana", 150, "Your post · 2h",
@@ -465,7 +465,7 @@ def profile_page():
     text(d, 24, y + 106, "48 posts · 1,204 followers · 312 following", F("SemiBold", 12.5))
     d = gradient(img, [24, y + 128, 396, y + 158], radius=10)
     d = ImageDraw.Draw(img)
-    text(d, 210 - tw(d, "Following ✓", F("Bold", 13)) / 2, y + 136, "Following ✓", F("Bold", 13), (255, 255, 255))
+    text(d, 210 - tw(d, "Following ✓", F("Bold", 13)) / 2, y + 136, "Following ✓", F("Bold", 13), (18, 18, 18))
     y += 180
     y = post_card(img, y, "Ayesha Rahman", 320, "3h",
                   "Sunset over the Padma river today 🌅 #nature #bangladesh",
@@ -522,9 +522,9 @@ def reel_menu():
     dim = Image.new("RGBA", img.size, (8, 6, 20, 110))
     img = Image.alpha_composite(img.convert("RGBA"), dim).convert("RGB")
     d = ImageDraw.Draw(img)
-    rr(d, [0, 470, W, H], 0, fill=(250, 250, 252))
-    d.rounded_rectangle([-4 * S, 466 * S, (W + 4) * S, 520 * S], radius=22 * S, fill=(250, 250, 252))
-    rr(d, [186, 480, 234, 484], 2, fill=(205, 206, 218))
+    rr(d, [0, 470, W, H], 0, fill=(31, 41, 55))
+    d.rounded_rectangle([-4 * S, 466 * S, (W + 4) * S, 520 * S], radius=22 * S, fill=(31, 41, 55))
+    rr(d, [186, 480, 234, 484], 2, fill=(100, 116, 139))
     rows = [("🔖", "Save"), ("↗", "Share"), ("🔗", "Copy link"), ("⬇️", "Download"),
             ("👤", "View profile"), ("➕", "Follow"), ("🙈", "Not interested"),
             ("🚩", "Report"), ("🗑", "Delete")]
@@ -534,7 +534,7 @@ def reel_menu():
         text(d, 56, yy + 1, lb, F("SemiBold" if lb in ("Save", "Share") else "Regular", 14.5),
              (185, 28, 28) if lb == "Delete" else TEXT)
         yy += 34
-    rr(d, [16, yy + 2, 404, yy + 40], 12, fill=(238, 238, 246))
+    rr(d, [16, yy + 2, 404, yy + 40], 12, fill=(51, 65, 85))
     text(d, 210 - tw(d, "Cancel", F("SemiBold", 13.5)) / 2, yy + 11, "Cancel", F("SemiBold", 13.5), GREY)
     img.save(f"{OUT}/nexora_reel_menu.png")
 
@@ -546,11 +546,11 @@ def share_picker():
     dim = Image.new("RGBA", img.size, (8, 6, 20, 110))
     img = Image.alpha_composite(img.convert("RGBA"), dim).convert("RGB")
     d = ImageDraw.Draw(img)
-    rr(d, [0, 430, W, H], 0, fill=(250, 250, 252))
-    d.rounded_rectangle([-4 * S, 426 * S, (W + 4) * S, 480 * S], radius=22 * S, fill=(250, 250, 252))
-    rr(d, [186, 440, 234, 444], 2, fill=(205, 206, 218))
+    rr(d, [0, 430, W, H], 0, fill=(31, 41, 55))
+    d.rounded_rectangle([-4 * S, 426 * S, (W + 4) * S, 480 * S], radius=22 * S, fill=(31, 41, 55))
+    rr(d, [186, 440, 234, 444], 2, fill=(100, 116, 139))
     text(d, 20, 456, "Share with…", F("Bold", 16))
-    rr(d, [16, 490, 404, 530], 12, fill=(238, 238, 246))
+    rr(d, [16, 490, 404, 530], 12, fill=(51, 65, 85))
     text(d, 28, 501, "🔍  Search people", F("Regular", 13), FAINT)
     people = [("Nexora Social", 265, True, False), ("Tanvir Ahmed", 20, False, False),
               ("Rahim Uddin", 200, False, True), ("Sadia Islam", 280, False, False)]
@@ -561,16 +561,16 @@ def share_picker():
         if ver:
             badge(d, 70 + tw(d, name, F("SemiBold", 14)) + 11, yy + 18, 6.5)
         if sent:
-            rr(d, [322, yy + 4, 396, yy + 34], 15, fill=(220, 252, 231))
-            text(d, 359 - tw(d, "Sent ✓", F("Bold", 12)) / 2, yy + 12, "Sent ✓", F("Bold", 12), (22, 120, 60))
+            rr(d, [322, yy + 4, 396, yy + 34], 15, fill=(51, 65, 85))
+            text(d, 359 - tw(d, "Sent ✓", F("Bold", 12)) / 2, yy + 12, "Sent ✓", F("Bold", 12), (134, 239, 172))
         else:
             d = gradient(img, [322, yy + 4, 396, yy + 34], radius=15)
             d = ImageDraw.Draw(img)
-            text(d, 359 - tw(d, "Send", F("Bold", 12.5)) / 2, yy + 12, "Send", F("Bold", 12.5), (255, 255, 255))
+            text(d, 359 - tw(d, "Send", F("Bold", 12.5)) / 2, yy + 12, "Send", F("Bold", 12.5), (18, 18, 18))
         yy += 52
-    rr(d, [16, yy + 6, 404, yy + 46], 12, fill=(238, 238, 246))
+    rr(d, [16, yy + 6, 404, yy + 46], 12, fill=(51, 65, 85))
     text(d, 210 - tw(d, "↗  Share via Telegram", F("SemiBold", 13)) / 2, yy + 16,
-         "↗  Share via Telegram", F("SemiBold", 13), (90, 90, 105))
+         "↗  Share via Telegram", F("SemiBold", 13), TEXT)
     img.save(f"{OUT}/nexora_share.png")
 
 
@@ -589,7 +589,7 @@ def saved():
     y = post_card(img, y, "Nexora Social", 265, "Official · 2h",
                   "Welcome to Nexora Social! Follow for updates and tips. #nexora",
                   likes="128", comments="24", verified=True)
-    rr(d, [12, y + 2, 408, y + 44], 12, fill=(250, 250, 253))
+    rr(d, [12, y + 2, 408, y + 44], 12, fill=(31, 41, 55))
     text(d, 210 - tw(d, "← Back to my profile", F("SemiBold", 13)) / 2, y + 13,
          "← Back to my profile", F("SemiBold", 13), GREY)
     bottom_nav(img, H, 5)

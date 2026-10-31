@@ -7,11 +7,11 @@ S = 2
 W = 420 * S
 NOTO = "/usr/share/fonts/truetype/noto/NotoSans-{}.ttf"
 DEJA = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-PAGE = (244, 245, 250)
-CARD = (255, 255, 255)
-TEXT = (17, 17, 17)
-GREY = (95, 100, 112)
-GRAD_A, GRAD_B, GRAD_C = (79, 70, 229), (124, 58, 237), (219, 39, 119)
+PAGE = (18, 18, 18)
+CARD = (31, 41, 55)
+TEXT = (241, 245, 249)
+GREY = (168, 182, 200)
+GRAD_A, GRAD_B, GRAD_C = (236, 72, 153), (219, 39, 119), (190, 24, 93)
 
 
 def F(style, size):
@@ -59,16 +59,16 @@ def hero(img):
     d = gradient(img, [-8, -8, 428, 96], radius=24)
     d = ImageDraw.Draw(img)
     text(d, 16, 14, "Nexora Social", F("Bold", 24), (255, 255, 255))
-    d.ellipse([372 * S, 12 * S, 404 * S, 44 * S], fill=(158, 140, 245), outline=(200, 190, 255), width=S)
+    d.ellipse([372 * S, 12 * S, 404 * S, 44 * S], fill=(51, 65, 85), outline=(100, 116, 139), width=S)
     d.ellipse([382 * S, 21 * S, 394 * S, 33 * S], outline=(255, 255, 255), width=2 * S)
     d.line([392 * S, 31 * S, 398 * S, 37 * S], fill=(255, 255, 255), width=2 * S)
     avatar(d, 40, 68, 22, "MD Shozib Rana", 150)
     text(d, 72, 56, "MD Shozib Rana @shozib", F("SemiBold", 14.5), (255, 255, 255))
-    text(d, 72, 76, "1 posts · 1 followers · 1 following", F("Regular", 11.5), (225, 222, 255))
+    text(d, 72, 76, "1 posts · 1 followers · 1 following", F("Regular", 11.5), (255, 220, 238))
     chip = "★ 25"
     cw = tw(d, chip, D(13)) + 20
-    rr(d, [404 - cw, 54, 404, 82], 14, fill=(255, 255, 255))
-    text(d, 404 - cw + 10, 60, chip, D(13), (180, 83, 9))
+    rr(d, [404 - cw, 54, 404, 82], 14, fill=(18, 18, 18))
+    text(d, 404 - cw + 10, 60, chip, D(13), (236, 72, 153))
     return 108
 
 
@@ -88,15 +88,15 @@ def avatar(d, cx, cy, r, name, hue):
 def bottom_nav(img, H, active):
     d = ImageDraw.Draw(img)
     y = H - 64
-    rr(d, [10, y + 2, 410, H - 6], 30, fill=(255, 255, 255))
+    rr(d, [10, y + 2, 410, H - 6], 30, fill=(31, 41, 55))
     items = ["house", "videos", "games", "tasks", "ranks", "me"]
     names = ["Feed", "Videos", "Games", "Tasks", "Ranks", "Me"]
     bw = (420 - 20 - 30) / 6
     for i, kind in enumerate(items):
         x = 10 + i * (bw + 6)
         if i == active:
-            rr(d, [x, y + 8, x + bw, y + 48], 20, fill=(255, 255, 255),
-               outline=(203, 207, 220), width=S)
+            rr(d, [x, y + 8, x + bw, y + 48], 20, fill=(51, 65, 85),
+               outline=(100, 116, 139), width=S)
             tcol = TEXT
         else:
             tcol = GREY
@@ -197,11 +197,11 @@ print("games ok")
 H = 780
 img = Image.new("RGB", (W, H * S), PAGE)
 d = ImageDraw.Draw(img)
-rr(d, [12, 14, 92, 46], 10, fill=(233, 234, 242))
+rr(d, [12, 14, 92, 46], 10, fill=(51, 65, 85))
 text(d, 24, 22, "← Games", F("SemiBold", 13))
 text(d, 104, 20, "Snake", F("Bold", 16))
 sc = "Score: 40"
-text(d, 408 - tw(d, sc, F("Bold", 14)), 21, sc, F("Bold", 14), (180, 83, 9))
+text(d, 408 - tw(d, sc, F("Bold", 14)), 21, sc, F("Bold", 14), (236, 72, 153))
 # LCD board
 bx, by, cell, N = 60, 70, 15, 20
 rr(d, [bx - 6, by - 6, bx + N * cell + 6, by + N * cell + 6], 12, fill=(38, 48, 10))
@@ -217,7 +217,7 @@ for (dx, dy, glyph) in [(0, -1, "▲"), (-1, 0, "◀"), (0, 1, "▼"), (1, 0, "�
     y0 = cy + (0 if dy < 0 else 56) if dx == 0 else cy + 28
     if dx != 0:
         y0 = cy + 28
-    rr(d, [x0, y0, x0 + 58, y0 + 48], 12, fill=(233, 234, 242))
+    rr(d, [x0, y0, x0 + 58, y0 + 48], 12, fill=(51, 65, 85))
     text(d, x0 + 29 - tw(d, glyph, D(16)) / 2, y0 + 14, glyph, D(16))
 d = gradient(img, [150, 620, 270, 656], radius=14)
 d = ImageDraw.Draw(img)
