@@ -8,7 +8,7 @@ class Settings:
     BOT_USERNAME: str = os.environ.get("BOT_USERNAME", "")
     DATABASE_URL: str = os.environ.get("DATABASE_URL", "sqlite:///./tgsocial.db")
     WEBAPP_URL: str = os.environ.get("WEBAPP_URL", "")
-    APP_NAME: str = os.environ.get("APP_NAME", "Nexora")
+    APP_NAME: str = os.environ.get("APP_NAME", "Nexora Social")
     ADMIN_IDS: list = [
         int(x) for x in os.environ.get("ADMIN_IDS", "").split(",") if x.strip()
     ]

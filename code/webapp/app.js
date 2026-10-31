@@ -36,6 +36,7 @@ function showView(name) {
   });
   if (name === "tasks") loadTasks();
   if (name === "videos") loadVideos(true);
+  else document.querySelectorAll("#video-list video").forEach(v => v.pause());
   if (name === "leaderboard") loadRanks();
 }
 
@@ -238,16 +239,145 @@ function setTab(next) {
 }
 
 // --------------------------------------------------------------- videos ---
+// Reels mode (owner request, Oct 31): full-screen vertical videos that
+// autoplay (muted) as they snap into view, like other social apps.
+// Tap a video to pause/resume; the corner button toggles sound.
 let vtab = "explore";
 let vCursor = null;
+let reelMuted = true;
+
+const reelObserver = new IntersectionObserver(entries => {
+  entries.forEach(en => {
+    const v = en.target.querySelector("video");
+    if (!v) return;
+    if (en.isIntersecting) v.play().catch(() => {});
+    else v.pause();
+  });
+}, { root: document.getElementById("view-videos"), threshold: 0.6 });
+
+function reelCard(p) {
+  const el = document.createElement("section");
+  el.className = "reel";
+
+  const vid = document.createElement("video");
+  vid.src = "/media/" + encodeURIComponent(p.media_file_id || "");
+  vid.loop = true;
+  vid.muted = reelMuted;
+  vid.playsInline = true;
+  vid.preload = "metadata";
+  vid.onclick = () => { if (vid.paused) vid.play().catch(() => {}); else vid.pause(); };
+  el.appendChild(vid);
+
+  const shade = document.createElement("div");
+  shade.className = "reel-shade";
+  const author = document.createElement("button");
+  author.className = "reel-author";
+  const nm = document.createElement("span");
+  nm.className = "post-name";
+  nm.textContent = p.author_name;
+  if (p.author_verified) nm.appendChild(verifiedBadge());
+  const who = document.createElement("span");
+  who.className = "post-who";
+  const sub = document.createElement("span");
+  sub.className = "post-sub";
+  sub.textContent = p.author_username ? "@" + p.author_username : "";
+  who.append(nm, sub);
+  author.append(avatarEl(p.author_name, p.author_id, false), who);
+  author.onclick = () => openProfile(p.author_id);
+  shade.appendChild(author);
+  if (p.caption) {
+    const cap = document.createElement("p");
+    cap.className = "reel-caption";
+    cap.textContent = p.caption;
+    shade.appendChild(cap);
+  }
+  el.appendChild(shade);
+
+  const side = document.createElement("div");
+  side.className = "reel-side";
+  const likeWrap = document.createElement("div");
+  likeWrap.className = "reel-act";
+  const likeBtn = document.createElement("button");
+  const likeCount = document.createElement("span");
+  const paintLike = () => {
+    likeBtn.textContent = p.liked ? "❤️" : "🤍";
+    likeBtn.classList.toggle("liked", !!p.liked);
+    likeCount.textContent = p.like_count;
+  };
+  paintLike();
+  likeBtn.onclick = async () => {
+    try {
+      const r = await api("/posts/" + p.id + "/like", { method: "POST" });
+      p.liked = r.liked; p.like_count = r.like_count; paintLike();
+    } catch (e) { setStatus("Could not update like."); }
+  };
+  likeWrap.append(likeBtn, likeCount);
+  const cWrap = document.createElement("div");
+  cWrap.className = "reel-act";
+  const cBtn = document.createElement("button");
+  cBtn.textContent = "💬";
+  const cCount = document.createElement("span");
+  cCount.textContent = p.comment_count;
+  cWrap.append(cBtn, cCount);
+  side.append(likeWrap, cWrap);
+  el.appendChild(side);
+
+  const cBox = document.createElement("div");
+  cBox.className = "comments";
+  cBox.hidden = true;
+  const cList = document.createElement("div");
+  const cForm = document.createElement("div");
+  cForm.className = "comment-form";
+  const cInput = document.createElement("input");
+  cInput.type = "text";
+  cInput.placeholder = "Write a comment…";
+  cInput.maxLength = 500;
+  const cSend = document.createElement("button");
+  cSend.textContent = "Send";
+  cForm.append(cInput, cSend);
+  cBox.append(cList, cForm);
+  el.appendChild(cBox);
+
+  let commentsLoaded = false;
+  cBtn.onclick = async () => {
+    cBox.hidden = !cBox.hidden;
+    if (!cBox.hidden && !commentsLoaded) {
+      commentsLoaded = true;
+      try {
+        const data = await api("/posts/" + p.id + "/comments");
+        data.comments.forEach(cm => cList.appendChild(commentRow(cm)));
+      } catch (e) { setStatus("Could not load comments."); }
+    }
+  };
+  cSend.onclick = async () => {
+    const text = cInput.value.trim();
+    if (!text) return;
+    try {
+      const cm = await api("/posts/" + p.id + "/comments", {
+        method: "POST", body: JSON.stringify({ text }) });
+      cList.appendChild(commentRow(cm));
+      cInput.value = "";
+      p.comment_count += 1;
+      cCount.textContent = p.comment_count;
+    } catch (e) { setStatus("Could not send the comment."); }
+  };
+  return el;
+}
 
 async function loadVideos(reset) {
   try {
     const url = "/feed?type=video&tab=" + vtab +
       (reset || !vCursor ? "" : "&cursor=" + vCursor);
     const data = await api(url);
-    if (reset) $("video-list").innerHTML = "";
-    data.posts.forEach(p => $("video-list").appendChild(postCard(p)));
+    if (reset) {
+      $("video-list").querySelectorAll(".reel").forEach(r => reelObserver.unobserve(r));
+      $("video-list").innerHTML = "";
+    }
+    data.posts.forEach(p => {
+      const card = reelCard(p);
+      $("video-list").appendChild(card);
+      reelObserver.observe(card);
+    });
     vCursor = data.next_cursor;
     $("video-more").hidden = !vCursor;
     $("video-empty").hidden = data.posts.length > 0 || !reset;
@@ -577,6 +707,12 @@ $("hero-search").onclick = () => showView("search");
 $("vtab-explore").onclick = () => setVTab("explore");
 $("vtab-following").onclick = () => setVTab("following");
 $("video-more").onclick = () => loadVideos(false);
+$("reel-close").onclick = () => showView("feed");
+$("reel-sound").onclick = () => {
+  reelMuted = !reelMuted;
+  document.querySelectorAll("#video-list video").forEach(v => { v.muted = reelMuted; });
+  $("reel-sound").textContent = reelMuted ? "🔇" : "🔊";
+};
 
 loadMe().then(() => loadFeed(true)).catch(() => {
   $("profile-line").textContent = "Please open this app from inside Telegram.";

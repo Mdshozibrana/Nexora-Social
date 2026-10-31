@@ -3,7 +3,7 @@ from . import models
 from .config import OFFICIAL_ID, OFFICIAL_NAME, OFFICIAL_USERNAME
 
 WELCOME_POST = (
-    "Welcome to Nexora! This is the official account — follow for updates, "
+    "Welcome to Nexora Social! This is the official account — follow for updates, "
     "tips and announcements. Post your first photo or video, complete "
     "daily tasks, and grow with the community. #nexora"
 )
@@ -18,7 +18,7 @@ def ensure_official(db):
         official = models.User(
             telegram_id=OFFICIAL_ID, username=OFFICIAL_USERNAME,
             first_name=OFFICIAL_NAME, is_verified=True,
-            bio="Official Nexora account — updates, tips and announcements.")
+            bio="Official Nexora Social account — updates, tips and announcements.")
         db.add(official)
         db.commit()
         from .services import register_post

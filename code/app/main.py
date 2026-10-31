@@ -285,7 +285,7 @@ async def toggle_follow(telegram_id: int, user: models.User = Depends(current_us
         follower_id=user.telegram_id, following_id=telegram_id).first()
     if telegram_id == OFFICIAL_ID and existing:
         raise HTTPException(
-            400, "The official Nexora account cannot be unfollowed")
+            400, "The official Nexora Social account cannot be unfollowed")
     if existing:
         db.delete(existing)
         now_following = False
