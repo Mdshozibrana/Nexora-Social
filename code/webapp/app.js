@@ -1086,11 +1086,15 @@ $("composer-post").onclick = async () => {
       const form = new FormData();
       form.append("file", composerFile);
       form.append("caption", text);
-      await apiFormProgress("/posts/upload", form, pct => {
+      const res = await apiFormProgress("/posts/upload", form, pct => {
         btn.textContent = pct === null
-          ? "Processing… keep the app open"
+          ? "Sending… keep the app open"
           : "Uploading… " + pct + "%";
       });
+      if (res && res.status === "processing") {
+        setStatus("🎬 Video received! It's being processed — the bot " +
+          "will message you when it's live in the feed.");
+      }
       composerFile = null;
       $("composer-file").value = "";
       paintAttach();

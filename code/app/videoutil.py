@@ -90,14 +90,14 @@ def transcode_to_mp4(src_path, dst_path, ffmpeg=None):
           "force_original_aspect_ratio=decrease")
     cmd = [ffmpeg, "-y", "-i", src_path,
            "-vf", vf,
-           "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+           "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
            "-b:v", f"{video_kbps}k", "-maxrate", f"{video_kbps}k",
            "-bufsize", f"{video_kbps * 2}k",
            "-c:a", "aac", "-b:a", "96k", "-ac", "2",
            "-movflags", "+faststart", dst_path]
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True,
-                              timeout=300)
+                              timeout=900)
     except subprocess.TimeoutExpired:
         raise VideoError("Video processing timed out — please try a "
                          "shorter clip")

@@ -10,7 +10,7 @@ from typing import Optional
 import httpx
 from fastapi import (Depends, FastAPI, File, Form, Header, HTTPException,
                      Request, UploadFile)
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy import func, inspect, or_, text
@@ -21,7 +21,7 @@ from datetime import datetime, timedelta
 from . import geoip, models, notify, tgupload, videoutil
 from .config import (DAILY_TASKS, MONETIZATION, OFFICIAL_FOLLOWER_BASE,
                      OFFICIAL_ID, settings)
-from .db import Base, engine, get_db
+from .db import Base, SessionLocal, engine, get_db
 from .security import validate_init_data
 from .services import award_points, register_post
 from .users import get_or_create_user
@@ -232,14 +232,73 @@ async def _send_to_telegram(user, filename, data, content_type):
         raise HTTPException(502, "Upload failed — please try again")
 
 
-async def _telegram_upload_or_400(user, file: UploadFile):
+# --- Phase 19.1: background video processing ------------------------------
+# The first cut transcoded inside the upload request; a 105-second
+# 1080p clip outlasted the connection on the free instance and the
+# post died with it. Now the request only receives the file: the
+# transcode + Telegram send run as a background job (one at a time —
+# the free instance has ~512 MB), and the member hears the outcome
+# from the bot. The post, with its +5 points, appears when it is ready.
+_video_jobs = set()
+_transcode_sem = asyncio.Semaphore(1)
+
+
+def _schedule_video_job(coro):
+    task = asyncio.get_running_loop().create_task(coro)
+    _video_jobs.add(task)
+    task.add_done_callback(_video_jobs.discard)
+    return task
+
+
+async def _finish_video_post(user_id, src_path, caption):
+    dst = src_path + ".mp4"
+    try:
+        async with _transcode_sem:
+            await asyncio.to_thread(videoutil.transcode_to_mp4,
+                                    src_path, dst)
+        with open(dst, "rb") as f:
+            mp4 = f.read()
+        _, file_id = await tgupload.upload_media(
+            user_id, "video.mp4", mp4, "video/mp4")
+        db = SessionLocal()
+        try:
+            user = db.get(models.User, user_id)
+            if user is not None and not user.is_banned:
+                register_post(db, user, "video", file_id, caption)
+        finally:
+            db.close()
+        await notify.send_message(
+            user_id, "✅ Your video is now live on Nexora Social!")
+    except tgupload.TelegramUploadError as e:
+        msg = ("Open @NexoraSocial_bot once and press Start, then try "
+               "uploading your video again"
+               if e.kind == "not_started" else
+               "Your video could not be posted — please try again")
+        await notify.send_message(user_id, "⚠️ " + msg)
+    except videoutil.VideoError as e:
+        await notify.send_message(
+            user_id, "⚠️ Your video could not be posted: " + str(e))
+    except Exception:
+        await notify.send_message(
+            user_id, "⚠️ Your video could not be posted — please try again")
+    finally:
+        for p in (src_path, dst):
+            try:
+                os.unlink(p)
+            except OSError:
+                pass
+
+
+async def _telegram_upload_or_400(user, file: UploadFile, caption=""):
     """Validate an uploaded file and push it to Telegram; returns
-    (kind, file_id). Errors are user-facing HTTPExceptions.
+    (kind, file_id) — or ("processing", None) for a video that needs
+    transcoding, which then finishes as a background job (the caller
+    answers 202). Errors are user-facing HTTPExceptions.
 
     Phase 19: videos no longer die on the old "MP4 only, max 20 MB"
     rule — real phone clips are bigger and often .mov/.webm. A small
     MP4 still goes straight through; anything else is transcoded to a
-    compact MP4 (max 720p, sized to fit Telegram) before the send."""
+    compact MP4 (max 720p, sized to fit Telegram) in the background."""
     kind = tgupload.classify(file.content_type or "")
     if kind is None:
         raise HTTPException(
@@ -262,27 +321,12 @@ async def _telegram_upload_or_400(user, file: UploadFile):
     if ct == "video/mp4" and len(data) <= tgupload.MAX_MEDIA_BYTES:
         return await _send_to_telegram(
             user, file.filename or "upload", data, file.content_type)
-    src = dst = None
-    try:
-        with tempfile.NamedTemporaryFile(delete=False,
-                                         suffix=".src") as f:
-            f.write(data)
-            src = f.name
-        dst = src + ".mp4"
-        await asyncio.to_thread(videoutil.transcode_to_mp4, src, dst)
-        with open(dst, "rb") as f:
-            mp4 = f.read()
-    except videoutil.VideoError as e:
-        raise HTTPException(400, str(e))
-    finally:
-        for p in (src, dst):
-            if p:
-                try:
-                    os.unlink(p)
-                except OSError:
-                    pass
-    return await _send_to_telegram(
-        user, "video.mp4", mp4, "video/mp4")
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".src") as f:
+        f.write(data)
+        src = f.name
+    _schedule_video_job(_finish_video_post(
+        user.telegram_id, src, caption))
+    return "processing", None
 
 
 @app.post("/posts/upload")
@@ -292,8 +336,16 @@ async def upload_post(caption: str = Form(""),
                       db: Session = Depends(get_db)):
     """Post a photo/video picked inside the app. The file is sent to
     Telegram (as the bot) to obtain its file_id, then the post is created
-    exactly like a bot-submitted media post."""
-    kind, file_id = await _telegram_upload_or_400(user, file)
+    exactly like a bot-submitted media post. A video that needs
+    transcoding is accepted with 202 instead: the post (and a bot
+    message to the member) follow when processing finishes."""
+    kind, file_id = await _telegram_upload_or_400(
+        user, file, caption.strip())
+    if kind == "processing":
+        return JSONResponse(status_code=202, content={
+            "status": "processing",
+            "detail": "Video received — it will appear in the feed "
+                      "shortly, and the bot will message you"})
     post, _, _ = register_post(db, user, kind, file_id, caption.strip())
     return post_dict(db, post)
 

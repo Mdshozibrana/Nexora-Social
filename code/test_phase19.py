@@ -40,9 +40,44 @@ async def fake_country(raw_ip):
 geoip.lookup_country = fake_country
 
 from fastapi.testclient import TestClient
+import app.main as main_mod
 from app.main import app
 from app.db import SessionLocal
-from app import models
+from app import models, notify
+
+# Phase 19.1: transcoding finishes as a background job. Collect the
+# jobs instead of scheduling them, then drain them deterministically;
+# bot notifications are recorded, not sent.
+JOBS = []
+NOTES = []
+
+def collect_job(coro):
+    JOBS.append(coro)
+
+main_mod._schedule_video_job = collect_job
+
+async def fake_send(chat_id, text):
+    NOTES.append((chat_id, text))
+    return True
+
+notify.send_message = fake_send
+
+import asyncio
+
+_DRAIN_LOOP = None
+
+def drain_jobs():
+    # One persistent loop for every drain: asyncio primitives inside
+    # the jobs (the transcode semaphore) bind to the first loop that
+    # runs them, and gather() needs the jobs on ITS loop.
+    global _DRAIN_LOOP
+    jobs, JOBS[:] = JOBS[:], []
+    if not jobs:
+        return
+    if _DRAIN_LOOP is None or _DRAIN_LOOP.is_closed():
+        _DRAIN_LOOP = asyncio.new_event_loop()
+    asyncio.set_event_loop(_DRAIN_LOOP)
+    _DRAIN_LOOP.run_until_complete(asyncio.gather(*jobs))
 
 
 def make_init_data(user):
@@ -90,34 +125,39 @@ with TestClient(app) as c:
     assert SENT["content_type"] == "video/mp4" and SENT["data"] == raw
     print("small MP4 fast path OK")
 
-    # --- MOV: transcoded to real MP4 before the send ------------------
+    # --- MOV: accepted (202), transcoded by the background job --------
     r = c.post("/posts/upload", headers=RAFI, data={"caption": "mov"},
                files={"file": ("tiny.mov", open(MOV, "rb").read(),
                                "video/quicktime")})
-    assert r.status_code == 200 and r.json()["type"] == "video", r.text
+    assert r.status_code == 202 and r.json()["status"] == "processing", r.text
+    assert len(JOBS) == 1
+    drain_jobs()
     assert SENT["content_type"] == "video/mp4"
     assert SENT["data"][4:8] == b"ftyp", SENT["data"][:12]
-    print("MOV transcoded to MP4 OK")
+    assert any("now live" in t for uid, t in NOTES if uid == 555), NOTES
+    print("MOV transcoded to MP4 (background) OK")
 
-    # --- WebM: transcoded too -----------------------------------------
+    # --- WebM: same background treatment --------------------------------
     r = c.post("/posts/upload", headers=RAFI, data={"caption": "webm"},
                files={"file": ("tiny.webm", open(WEBM, "rb").read(),
                                "video/webm")})
-    assert r.status_code == 200 and r.json()["type"] == "video", r.text
+    assert r.status_code == 202, r.text
+    drain_jobs()
     assert SENT["data"][4:8] == b"ftyp"
-    print("WebM transcoded to MP4 OK")
+    print("WebM transcoded to MP4 (background) OK")
 
-    # --- oversize MP4 (cap patched small) takes the transcode path ----
+    # --- oversize MP4 (cap patched small) also goes to the job ---------
     old_max = tgupload.MAX_MEDIA_BYTES
     tgupload.MAX_MEDIA_BYTES = 10000
     try:
         r = c.post("/posts/upload", headers=RAFI, data={"caption": "big"},
                    files={"file": ("tiny.mp4", raw, "video/mp4")})
-        assert r.status_code == 200, r.text
+        assert r.status_code == 202, r.text
+        drain_jobs()
         assert SENT["data"] != raw and SENT["data"][4:8] == b"ftyp"
     finally:
         tgupload.MAX_MEDIA_BYTES = old_max
-    print("oversize MP4 transcode path OK")
+    print("oversize MP4 background path OK")
 
     # --- raw cap + unsupported type -----------------------------------
     old_raw = tgupload.RAW_VIDEO_MAX_BYTES
