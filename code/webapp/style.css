@@ -152,7 +152,18 @@ input, textarea { font: inherit; width: 100%; padding: 10px; border-radius: 10px
   background: var(--tg-theme-bg-color, #fff);
   color: var(--tg-theme-text-color, #111); }
 
-.composer { display: flex; gap: 8px; align-items: stretch; padding: 10px; }
+.composer { display: flex; flex-direction: column; gap: 8px; padding: 10px; }
+.composer-row { display: flex; align-items: center; gap: 8px; }
+.composer-row #composer-post { margin-left: auto; }
+.composer .tool-btn { background: #334155; color: #F1F5F9;
+                      border-radius: 999px; padding: 8px 13px; font-size: 17px; }
+.attach-chip { background: rgba(51,65,85,.55); border: 1px solid rgba(100,116,139,.5);
+               border-radius: 999px; padding: 4px 6px 4px 10px; font-size: 13px;
+               color: #F1F5F9; max-width: 55%; overflow: hidden;
+               text-overflow: ellipsis; white-space: nowrap; }
+.attach-chip .attach-x { background: transparent; color: #EC4899;
+                         padding: 0 4px; font-weight: 700; }
+.photo-change { margin-top: 10px; }
 .composer textarea { flex: 1; resize: none; border: 0; background: transparent; }
 .composer button { background: linear-gradient(135deg, #4f46e5, #7c3aed);
                    color: #fff; font-weight: 600; padding: 8px 18px; }

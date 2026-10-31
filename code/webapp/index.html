@@ -56,10 +56,15 @@
   <div class="composer card">
     <textarea id="composer-text" rows="2" maxlength="2000"
       placeholder="Share something… use #tags"></textarea>
-    <button id="composer-post">Post</button>
+    <div class="composer-row">
+      <button id="composer-media" class="tool-btn" title="Add a photo or video">📷</button>
+      <span id="composer-attach" class="attach-chip" hidden></span>
+      <button id="composer-post">Post</button>
+    </div>
+    <input type="file" id="composer-file" accept="image/*,video/mp4" hidden>
   </div>
-  <p class="hint">Tip: you can also send a photo or video to the bot with a
-  caption, and it will be posted for you.</p>
+  <p class="hint">Tip: pick a photo or video with 📷 to post it directly,
+  or send media to the bot with a caption and it will be posted for you.</p>
   <nav class="tabs">
     <button id="tab-explore" class="active">Explore</button>
     <button id="tab-following">Following</button>
@@ -146,6 +151,7 @@
 
 <section id="view-profile" hidden>
   <div id="profile-box"></div>
+  <input type="file" id="profile-file" accept="image/*" hidden>
   <div id="profile-posts"></div>
   <button id="profile-more" class="wide" hidden>Load more</button>
 </section>

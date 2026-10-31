@@ -5,3 +5,4 @@ psycopg[binary]
 python-telegram-bot
 pydantic
 httpx
+python-multipart

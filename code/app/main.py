@@ -5,7 +5,8 @@ from pathlib import Path
 from typing import Optional
 
 import httpx
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import (Depends, FastAPI, File, Form, Header, HTTPException,
+                     Request, UploadFile)
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -13,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from datetime import datetime, timedelta
 
-from . import models, notify
+from . import models, notify, tgupload
 from .config import (DAILY_TASKS, MONETIZATION, OFFICIAL_FOLLOWER_BASE,
                      OFFICIAL_ID, settings)
 from .db import Base, engine, get_db
@@ -176,6 +177,42 @@ def create_post(body: PostIn, user: models.User = Depends(current_user),
         raise HTTPException(400, "type must be photo, video or text")
     post, _, _ = register_post(db, user, body.type, body.media_file_id,
                                body.caption)
+    return post_dict(db, post)
+
+
+async def _telegram_upload_or_400(user, file: UploadFile):
+    """Validate an uploaded file and push it to Telegram; returns
+    (kind, file_id). Errors are user-facing HTTPExceptions."""
+    if tgupload.classify(file.content_type or "") is None:
+        raise HTTPException(
+            400, "Only photos (JPG, PNG, WebP) and MP4 videos are supported")
+    data = await file.read()
+    if not data:
+        raise HTTPException(400, "Empty file")
+    if len(data) > tgupload.MAX_MEDIA_BYTES:
+        raise HTTPException(400, "File is too large — maximum 20 MB")
+    try:
+        return await tgupload.upload_media(
+            user.telegram_id, file.filename or "upload", data,
+            file.content_type)
+    except tgupload.TelegramUploadError as e:
+        if e.kind == "not_started":
+            raise HTTPException(
+                400, "Open @NexoraSocial_bot once and press Start, "
+                     "then try uploading again")
+        raise HTTPException(502, "Upload failed — please try again")
+
+
+@app.post("/posts/upload")
+async def upload_post(caption: str = Form(""),
+                      file: UploadFile = File(...),
+                      user: models.User = Depends(current_user),
+                      db: Session = Depends(get_db)):
+    """Post a photo/video picked inside the app. The file is sent to
+    Telegram (as the bot) to obtain its file_id, then the post is created
+    exactly like a bot-submitted media post."""
+    kind, file_id = await _telegram_upload_or_400(user, file)
+    post, _, _ = register_post(db, user, kind, file_id, caption.strip())
     return post_dict(db, post)
 
 
@@ -437,6 +474,21 @@ async def sync_photo(user: models.User = Depends(current_user),
             user.photo_file_id = fid
             db.commit()
     return {"photo_file_id": user.photo_file_id}
+
+
+@app.post("/me/photo/upload")
+async def upload_my_photo(file: UploadFile = File(...),
+                          user: models.User = Depends(current_user),
+                          db: Session = Depends(get_db)):
+    """Set the member's profile picture from a photo picked in the app.
+    The upload goes to Telegram (as the bot) for its file_id; the new
+    photo then appears everywhere avatars render."""
+    if tgupload.classify(file.content_type or "") != "photo":
+        raise HTTPException(400, "Please choose a photo (JPG, PNG or WebP)")
+    _, file_id = await _telegram_upload_or_400(user, file)
+    user.photo_file_id = file_id
+    db.commit()
+    return {"photo_file_id": file_id}
 
 
 @app.get("/me/referrals")
@@ -797,12 +849,17 @@ async def admin_broadcast(body: BroadcastIn,
 
 
 @app.get("/media/{file_id}")
-async def media_proxy(file_id: str):
+async def media_proxy(file_id: str, request: Request):
     """Stream a Telegram-hosted file to the Mini App. The bot token is used
     only in server-side requests and never appears in a client-visible URL.
     file_id values are long unguessable strings, the same protection
     Telegram's own file links rely on. Needs a live token, so this path is
-    verified at deploy time; without a token it answers 503."""
+    verified at deploy time; without a token it answers 503.
+
+    The upstream response is opened HERE (not inside an `async with` that
+    exits before the body streams — that closed-client bug silently broke
+    every posted image) and its lifetime is tied to the body generator.
+    Range requests are forwarded so video seeking works in reels."""
     if not settings.BOT_TOKEN:
         raise HTTPException(503, "Media unavailable until the bot is live")
     api = f"https://api.telegram.org/bot{settings.BOT_TOKEN}"
@@ -811,17 +868,34 @@ async def media_proxy(file_id: str):
         if info.status_code != 200:
             raise HTTPException(404, "File not found")
         file_path = info.json()["result"]["file_path"]
-        req = client.build_request("GET", f"{api}/file/{file_path}")
-        resp = await client.send(req, stream=True)
-        if resp.status_code != 200:
-            raise HTTPException(404, "File not found")
-        headers = {}
-        if resp.headers.get("content-type"):
-            headers["content-type"] = resp.headers["content-type"]
-        if resp.headers.get("content-length"):
-            headers["content-length"] = resp.headers["content-length"]
-        return StreamingResponse(resp.aiter_bytes(), headers=headers,
-                                 media_type=resp.headers.get("content-type"))
+    fwd = {}
+    if request.headers.get("range"):
+        fwd["Range"] = request.headers["range"]
+    stream_client = httpx.AsyncClient(timeout=60)
+    req = stream_client.build_request(
+        "GET", f"{api}/file/{file_path}", headers=fwd)
+    resp = await stream_client.send(req, stream=True)
+    if resp.status_code not in (200, 206):
+        await resp.aclose()
+        await stream_client.aclose()
+        raise HTTPException(404, "File not found")
+
+    async def body():
+        try:
+            async for chunk in resp.aiter_bytes():
+                yield chunk
+        finally:
+            await resp.aclose()
+            await stream_client.aclose()
+
+    headers = {}
+    for key in ("content-type", "content-length", "content-range",
+                "accept-ranges"):
+        if resp.headers.get(key):
+            headers[key] = resp.headers[key]
+    return StreamingResponse(body(), status_code=resp.status_code,
+                             headers=headers,
+                             media_type=resp.headers.get("content-type"))
 
 
 if WEBAPP_DIR.exists():

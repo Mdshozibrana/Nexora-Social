@@ -24,6 +24,18 @@ async function api(path, options = {}) {
   return res.json();
 }
 
+async function apiForm(path, form) {
+  const res = await fetch(path, { method: "POST",
+    headers: { "X-Init-Data": initData }, body: form });
+  if (!res.ok) {
+    let msg = "API " + res.status;
+    try { const j = await res.json(); if (j.detail) msg = j.detail; }
+    catch (e) { /* keep the generic message */ }
+    throw new Error(msg);
+  }
+  return res.json();
+}
+
 function setStatus(msg) { $("status").textContent = msg || ""; }
 
 function showView(name) {
@@ -785,6 +797,14 @@ async function openProfile(userId) {
       box.appendChild(fBtn);
     }
 
+    if (me && userId === me.telegram_id) {
+      const pBtn = document.createElement("button");
+      pBtn.className = "wide photo-change";
+      pBtn.textContent = "📷 Change profile photo";
+      pBtn.onclick = () => $("profile-file").click();
+      box.appendChild(pBtn);
+    }
+
     if (me && userId === me.telegram_id) box.appendChild(await myExtras());
     await loadProfilePosts(true);
   } catch (e) { box.textContent = "Could not load the profile."; }
@@ -962,16 +982,72 @@ async function loadMe() {
   }
 }
 
+let composerFile = null;
+
+function paintAttach() {
+  const chip = $("composer-attach");
+  if (!composerFile) { chip.hidden = true; chip.textContent = ""; return; }
+  chip.hidden = false;
+  chip.textContent = (composerFile.type.startsWith("video") ? "🎬 " : "🖼 ") +
+    composerFile.name + " ";
+  const x = document.createElement("button");
+  x.className = "attach-x";
+  x.textContent = "✕";
+  x.title = "Remove";
+  x.onclick = () => { composerFile = null; $("composer-file").value = ""; paintAttach(); };
+  chip.appendChild(x);
+}
+
+$("composer-media").onclick = () => $("composer-file").click();
+$("composer-file").onchange = () => {
+  composerFile = $("composer-file").files[0] || null;
+  if (composerFile && composerFile.size > 20 * 1024 * 1024) {
+    setStatus("That file is over 20 MB — please pick a smaller one.");
+    composerFile = null;
+    $("composer-file").value = "";
+  }
+  paintAttach();
+};
+
 $("composer-post").onclick = async () => {
   const text = $("composer-text").value.trim();
-  if (!text) return;
+  if (!text && !composerFile) return;
+  const btn = $("composer-post");
+  btn.disabled = true;
   try {
-    await api("/posts", { method: "POST",
-      body: JSON.stringify({ type: "text", caption: text }) });
+    if (composerFile) {
+      btn.textContent = "Uploading…";
+      const form = new FormData();
+      form.append("file", composerFile);
+      form.append("caption", text);
+      await apiForm("/posts/upload", form);
+      composerFile = null;
+      $("composer-file").value = "";
+      paintAttach();
+    } else {
+      await api("/posts", { method: "POST",
+        body: JSON.stringify({ type: "text", caption: text }) });
+    }
     $("composer-text").value = "";
     setTab("explore");
     loadMe().catch(() => {});
-  } catch (e) { setStatus("Could not post."); }
+  } catch (e) { setStatus(e.message || "Could not post."); }
+  btn.disabled = false;
+  btn.textContent = "Post";
+};
+
+$("profile-file").onchange = async () => {
+  const f = $("profile-file").files[0];
+  $("profile-file").value = "";
+  if (!f) return;
+  const form = new FormData();
+  form.append("file", f);
+  try {
+    const r = await apiForm("/me/photo/upload", form);
+    if (me) me.photo_file_id = r.photo_file_id;
+    setStatus("Profile photo updated.");
+    if (me) openProfile(me.telegram_id);
+  } catch (e) { setStatus(e.message || "Could not update the photo."); }
 };
 $("tab-explore").onclick = () => setTab("explore");
 $("tab-following").onclick = () => setTab("following");
