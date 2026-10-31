@@ -934,6 +934,10 @@ async function loadMe() {
   $("stats").textContent = me.posts + " posts · " + me.followers +
     " followers · " + me.following + " following";
   $("points-chip").textContent = "⭐ " + me.points;
+  $("entry-name").textContent = me.first_name || "Full name";
+  $("entry-user").textContent = me.username ? "@" + me.username : "Username";
+  entryMode = me.is_new ? "signup" : "login";
+  paintEntry();
   if (!me.photo_file_id) {
     api("/me/photo/sync", { method: "POST" }).then(r => {
       if (r && r.photo_file_id) me.photo_file_id = r.photo_file_id;
@@ -979,4 +983,50 @@ $("reel-sound").onclick = () => {
 
 loadMe().then(() => loadFeed(true)).catch(() => {
   $("profile-line").textContent = "Please open this app from inside Telegram.";
+  $("entry-go").disabled = true;
+  $("entry-note").textContent =
+    "Please open Nexora Social from inside Telegram to continue.";
 });
+
+// ---------------------------------------------------- entry (Sign Up/Login) ---
+// Neumorphic entry screens in the owner's chosen design (Oct 31).
+// Inside Telegram there is no password: Telegram itself is the secure
+// sign-in, so the fields show the member's real name/username and the
+// button simply enters the app. "Remember me" skips this screen on
+// future opens; without it, the screen greets every fresh open.
+let entryMode = "login";
+
+function paintEntry() {
+  const signup = entryMode === "signup";
+  $("entry-title").textContent = signup ? "Sign Up" : "Login";
+  $("entry-sub").textContent = signup
+    ? "Create your account" : "Sign in to your account";
+  $("entry-go").textContent = signup ? "CREATE ACCOUNT" : "SIGN IN";
+  $("entry-switch-text").textContent = signup
+    ? "Already have an account?" : "Don't have an account?";
+  $("entry-toggle").textContent = signup ? "Login" : "Sign up";
+  $("entry-field-name").hidden = !signup;
+  $("entry-remember-row").hidden = signup;
+}
+
+$("entry-toggle").onclick = e => {
+  e.preventDefault();
+  entryMode = entryMode === "signup" ? "login" : "signup";
+  paintEntry();
+};
+$("entry-forgot").onclick = e => {
+  e.preventDefault();
+  $("entry-note").textContent =
+    "No password to reset — your Telegram account is your key. 🔐";
+};
+$("entry-go").onclick = () => {
+  if ($("entry-remember").checked) localStorage.setItem("nx_remember", "1");
+  else localStorage.removeItem("nx_remember");
+  sessionStorage.setItem("nx_entered", "1");
+  $("entry-screen").hidden = true;
+};
+if (localStorage.getItem("nx_remember") === "1" ||
+    sessionStorage.getItem("nx_entered") === "1") {
+  $("entry-screen").hidden = true;
+}
+paintEntry();

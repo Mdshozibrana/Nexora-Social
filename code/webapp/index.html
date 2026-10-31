@@ -8,6 +8,35 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+<div id="entry-screen">
+  <div class="entry-disc">
+    <div class="entry-logo">N</div>
+    <h1 id="entry-title">Login</h1>
+    <p id="entry-sub">Sign in to your account</p>
+    <div class="entry-field" id="entry-field-name" hidden>
+      <span class="ef-ic">👤</span><span id="entry-name">Full name</span>
+    </div>
+    <div class="entry-field">
+      <span class="ef-ic">👤</span><span id="entry-user">Username</span>
+    </div>
+    <div class="entry-field">
+      <span class="ef-ic">🔒</span><span>Telegram secure login</span>
+    </div>
+    <div class="entry-row" id="entry-remember-row">
+      <label class="entry-remember">
+        <input type="checkbox" id="entry-remember" checked>
+        <span class="pill"></span> Remember me
+      </label>
+      <a href="#" id="entry-forgot">Forgot password?</a>
+    </div>
+    <button id="entry-go" class="entry-btn">SIGN IN</button>
+    <p class="entry-switch"><span id="entry-switch-text">Don't have an account?</span>
+      <a href="#" id="entry-toggle">Sign up</a></p>
+    <p class="entry-note" id="entry-note">No password needed — Telegram signs
+    you in securely.</p>
+  </div>
+</div>
+
 <header class="hero">
   <div class="hero-top">
     <div id="app-name">Nexora Social</div>

@@ -239,3 +239,137 @@ input, textarea { font: inherit; width: 100%; padding: 10px; border-radius: 10px
 .bottom-nav button span { font-size: 11px; }
 .bottom-nav button.active { background: linear-gradient(135deg, #4f46e5, #7c3aed);
   color: #fff; }
+
+/* ==========================================================================
+   Clean AI Glass theme + neumorphic entry screens (owner request, Oct 31):
+   frosted-glass background across the whole app, and Sign Up / Login entry
+   screens in the soft circular style of the owner's reference screenshots.
+   ========================================================================== */
+body {
+  background-color: #e9ebf3;
+  background-image:
+    radial-gradient(640px 420px at 12% -5%, rgba(124,58,237,.22), rgba(124,58,237,0) 60%),
+    radial-gradient(720px 520px at 95% 15%, rgba(219,39,119,.16), rgba(219,39,119,0) 60%),
+    radial-gradient(700px 700px at 50% 110%, rgba(245,158,66,.15), rgba(245,158,66,0) 62%);
+  background-attachment: fixed;
+}
+.post, .card, .task-card, .mon-card, .game-card, .user-row {
+  background: rgba(255,255,255,.55);
+  -webkit-backdrop-filter: blur(14px) saturate(1.25);
+  backdrop-filter: blur(14px) saturate(1.25);
+  border: 1px solid rgba(255,255,255,.65);
+  box-shadow: 0 8px 28px rgba(31,27,75,.10);
+}
+.rank-row {
+  background: rgba(255,255,255,.55);
+  -webkit-backdrop-filter: blur(14px) saturate(1.25);
+  backdrop-filter: blur(14px) saturate(1.25);
+  border: 1px solid rgba(255,255,255,.65);
+  box-shadow: 0 8px 28px rgba(31,27,75,.10);
+  border-radius: 16px;
+}
+.hero {
+  background: linear-gradient(120deg, rgba(79,70,229,.85), rgba(124,58,237,.85), rgba(219,39,119,.85));
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+.bottom-nav {
+  background: rgba(255,255,255,.62);
+  -webkit-backdrop-filter: blur(16px) saturate(1.3);
+  backdrop-filter: blur(16px) saturate(1.3);
+  border-top: 1px solid rgba(255,255,255,.65);
+}
+.tabs {
+  background: rgba(255,255,255,.45);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+input, textarea {
+  background: rgba(255,255,255,.55);
+}
+#reel-sheet {
+  background: rgba(255,255,255,.85);
+  -webkit-backdrop-filter: blur(18px) saturate(1.3);
+  backdrop-filter: blur(18px) saturate(1.3);
+}
+button.wide {
+  background: rgba(255,255,255,.6);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+
+/* Entry screens: soft neumorphic disc, like the reference design. */
+#entry-screen {
+  position: fixed; inset: 0; z-index: 90; overflow-y: auto;
+  display: flex; align-items: center; justify-content: center;
+  padding: 18px 12px;
+  background: #e7e8ee;
+  background-image:
+    radial-gradient(700px 500px at 85% 0%, rgba(219,39,119,.10), rgba(219,39,119,0) 60%),
+    radial-gradient(700px 600px at 0% 100%, rgba(124,58,237,.13), rgba(124,58,237,0) 60%);
+}
+#entry-screen[hidden] { display: none; }
+.entry-disc {
+  width: min(94vw, 372px); aspect-ratio: 0.94; border-radius: 50%;
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 10px; padding: 30px 42px;
+  background: linear-gradient(145deg, #f5f5f9, #e1e2e9);
+  box-shadow: 20px 20px 42px rgba(163,177,198,.5),
+              -20px -20px 42px rgba(255,255,255,.95),
+              inset 2px 2px 4px rgba(255,255,255,.8),
+              inset -2px -2px 4px rgba(163,177,198,.25);
+}
+.entry-logo {
+  width: 56px; height: 56px; border-radius: 50%; flex: none;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 27px; font-weight: 800; color: #fff;
+  background: linear-gradient(135deg, #4f46e5, #7c3aed, #db2777);
+  box-shadow: 6px 6px 14px rgba(124,58,237,.35);
+}
+.entry-disc h1 { margin: 2px 0 0; font-size: 31px; font-weight: 800; color: #33333c; }
+.entry-disc #entry-sub { margin: 0 0 4px; font-size: 13.5px; color: #8a8a96; }
+.entry-field {
+  width: 100%; height: 44px; flex: none; border-radius: 13px;
+  display: flex; align-items: center; gap: 10px; padding: 0 14px;
+  background: #e8e9ef; color: #5c5c66; font-size: 14.5px;
+  box-shadow: inset 5px 5px 10px rgba(163,177,198,.45),
+              inset -5px -5px 10px rgba(255,255,255,.9);
+  white-space: nowrap; overflow: hidden;
+}
+.entry-field .ef-ic { opacity: .7; font-size: 14px; }
+.entry-row {
+  width: 100%; display: flex; align-items: center;
+  justify-content: space-between; font-size: 12.5px; color: #7a7a86;
+  padding: 0 2px;
+}
+.entry-row[hidden] { display: none; }
+.entry-row a { color: #7a7a86; text-decoration: none; }
+.entry-remember { display: flex; align-items: center; gap: 7px; cursor: pointer; }
+.entry-remember input { display: none; }
+.entry-remember .pill {
+  width: 32px; height: 18px; border-radius: 999px; flex: none;
+  background: #d7d8e0; position: relative; transition: background .2s;
+  box-shadow: inset 2px 2px 4px rgba(163,177,198,.5);
+}
+.entry-remember .pill::after {
+  content: ""; position: absolute; top: 2px; left: 2px;
+  width: 14px; height: 14px; border-radius: 50%; background: #fff;
+  box-shadow: 1px 1px 3px rgba(0,0,0,.25); transition: left .2s;
+}
+.entry-remember input:checked + .pill { background: linear-gradient(120deg, #4f46e5, #db2777); }
+.entry-remember input:checked + .pill::after { left: 16px; }
+.entry-btn {
+  width: 100%; height: 46px; flex: none; border-radius: 13px; margin-top: 2px;
+  background: #edeef3; color: #3d3d46; font-size: 14px; font-weight: 800;
+  letter-spacing: 2.5px;
+  box-shadow: 6px 6px 12px rgba(163,177,198,.5),
+              -6px -6px 12px rgba(255,255,255,.95);
+}
+.entry-btn:active {
+  box-shadow: inset 4px 4px 8px rgba(163,177,198,.5),
+              inset -4px -4px 8px rgba(255,255,255,.9);
+}
+.entry-btn:disabled { opacity: .5; }
+.entry-switch { margin: 2px 0 0; font-size: 13px; color: #7a7a86; }
+.entry-switch a { color: #d81b60; font-weight: 700; text-decoration: none; }
+.entry-note { margin: 0; font-size: 11.5px; color: #9a9aa5; text-align: center; }

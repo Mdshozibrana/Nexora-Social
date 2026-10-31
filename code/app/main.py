@@ -73,7 +73,7 @@ def auth(body: AuthIn, db: Session = Depends(get_db)):
     tg_user = validate_init_data(body.initData, settings.BOT_TOKEN)
     if not tg_user:
         raise HTTPException(401, "Invalid Telegram login")
-    user, _ = get_or_create_user(db, tg_user)
+    user, is_new = get_or_create_user(db, tg_user)
     followers = db.query(models.Follow).filter_by(following_id=user.telegram_id).count()
     following = db.query(models.Follow).filter_by(follower_id=user.telegram_id).count()
     posts = db.query(models.Post).filter_by(user_id=user.telegram_id, is_deleted=False).count()
@@ -84,6 +84,7 @@ def auth(body: AuthIn, db: Session = Depends(get_db)):
         "bio": user.bio,
         "points": user.points_balance,
         "is_verified": bool(user.is_verified),
+        "is_new": is_new,
         "photo_file_id": user.photo_file_id,
         "followers": followers,
         "following": following,
