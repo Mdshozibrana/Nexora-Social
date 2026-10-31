@@ -102,6 +102,17 @@ class NotificationLog(Base):
     sent_at = Column(DateTime, default=datetime.utcnow)
 
 
+class SavedPost(Base):
+    """A bookmark: posts/videos a user saved from the options menu
+    (owner request, Oct 31). Listed under /me/saved."""
+    __tablename__ = "saved_posts"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    post_id = Column(Integer, ForeignKey("posts.id"), index=True)
+    user_id = Column(BigInteger, ForeignKey("users.telegram_id"))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    __table_args__ = (UniqueConstraint("post_id", "user_id"),)
+
+
 class DailyClaim(Base):
     """One row per user per daily task per day — the once-a-day guard for
     the daily-tasks points (owner request, Oct 31)."""

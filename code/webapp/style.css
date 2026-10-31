@@ -70,6 +70,19 @@ body { font-family: system-ui, sans-serif; margin: 0; padding: 0 12px 84px;
 #view-videos .empty { color: #ccc; text-align: center; padding: 42vh 24px 0; }
 #video-more { margin: 12px; width: calc(100% - 24px);
   background: rgba(255,255,255,.16); color: #fff; }
+/* Options sheet for reels (Report / Save / Share / ...). */
+#reel-sheet-wrap { position: fixed; inset: 0; z-index: 70; }
+#reel-sheet-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.45); }
+#reel-sheet { position: absolute; left: 0; right: 0; bottom: 0;
+  border-radius: 18px 18px 0 0; padding: 8px 12px 16px;
+  background: var(--tg-theme-bg-color, #fff);
+  color: var(--tg-theme-text-color, #111); }
+.sheet-row { display: flex; align-items: center; gap: 12px; width: 100%;
+  text-align: left; background: none; padding: 13px 6px; font-size: 15.5px;
+  border-bottom: 1px solid rgba(127,127,127,.15); }
+.sheet-row:last-child { border-bottom: none; }
+.sheet-row .ic { font-size: 19px; width: 26px; text-align: center; }
+.sheet-row.danger { color: #d81b60; }
 
 .card, .post, .task-card, .mon-card, .user-row {
   background: var(--tg-theme-secondary-bg-color, #fff);

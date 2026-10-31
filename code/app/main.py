@@ -105,7 +105,9 @@ def feed(tab: str = "explore", type: str = "", cursor: int = 0,
         q = q.filter(models.Post.id < cursor)
     rows = q.order_by(models.Post.id.desc()).limit(20).all()
     liked = liked_ids(db, user.telegram_id, rows)
-    out = [post_dict(db, p, liked=p.id in liked) for p in rows]
+    saved = saved_ids(db, user.telegram_id, rows)
+    out = [post_dict(db, p, liked=p.id in liked, saved=p.id in saved)
+           for p in rows]
     return {"posts": out, "next_cursor": rows[-1].id if len(rows) == 20 else None}
 
 
@@ -113,13 +115,14 @@ def feed(tab: str = "explore", type: str = "", cursor: int = 0,
 # Posts, likes, comments (PRD section 4, MVP items 3-5)
 # ---------------------------------------------------------------------------
 
-def post_dict(db, p, liked=False):
+def post_dict(db, p, liked=False, saved=False):
     author = db.get(models.User, p.user_id)
     return {
         "id": p.id, "type": p.type, "media_file_id": p.media_file_id,
         "caption": p.caption, "hashtags": p.hashtags,
         "like_count": p.like_count, "comment_count": p.comment_count,
         "liked": liked,
+        "saved": saved,
         "author_id": p.user_id,
         "author_name": author.first_name if author else "",
         "author_username": author.username if author else None,
@@ -136,6 +139,17 @@ def liked_ids(db, viewer_id, posts):
     rows = db.query(models.Like.post_id).filter(
         models.Like.user_id == viewer_id,
         models.Like.post_id.in_(ids)).all()
+    return {r[0] for r in rows}
+
+
+def saved_ids(db, viewer_id, posts):
+    """Which of these posts has the viewer bookmarked."""
+    ids = [p.id for p in posts]
+    if not ids:
+        return set()
+    rows = db.query(models.SavedPost.post_id).filter(
+        models.SavedPost.user_id == viewer_id,
+        models.SavedPost.post_id.in_(ids)).all()
     return {r[0] for r in rows}
 
 
@@ -193,6 +207,36 @@ async def toggle_like(post_id: int, user: models.User = Depends(current_user),
             db, p.user_id, "like",
             f"\u2764\ufe0f {user.first_name} liked your post.")
     return {"liked": liked, "like_count": p.like_count}
+
+
+@app.post("/posts/{post_id}/save")
+def toggle_save(post_id: int, user: models.User = Depends(current_user),
+                db: Session = Depends(get_db)):
+    """Bookmark toggle behind the video/post options menu (Save)."""
+    p = get_live_post(db, post_id)
+    existing = db.query(models.SavedPost).filter_by(
+        post_id=p.id, user_id=user.telegram_id).first()
+    if existing:
+        db.delete(existing)
+        saved = False
+    else:
+        db.add(models.SavedPost(post_id=p.id, user_id=user.telegram_id))
+        saved = True
+    db.commit()
+    return {"saved": saved, "post_id": p.id}
+
+
+@app.get("/me/saved")
+def my_saved(user: models.User = Depends(current_user),
+             db: Session = Depends(get_db)):
+    rows = db.query(models.Post).join(
+        models.SavedPost, models.SavedPost.post_id == models.Post.id) \
+        .filter(models.SavedPost.user_id == user.telegram_id,
+                models.Post.is_deleted == False) \
+        .order_by(models.SavedPost.id.desc()).limit(50).all()
+    liked = liked_ids(db, user.telegram_id, rows)
+    return {"posts": [post_dict(db, p, liked=p.id in liked, saved=True)
+                      for p in rows]}
 
 
 class CommentIn(BaseModel):
@@ -354,7 +398,9 @@ def search(q: str = "", user: models.User = Depends(current_user),
             .order_by(models.Post.id.desc()).limit(100).all()
         matched = [p for p in rows if tag in (p.hashtags or "").split()][:20]
         liked = liked_ids(db, user.telegram_id, matched)
-        return {"users": [], "posts": [post_dict(db, p, liked=p.id in liked)
+        saved = saved_ids(db, user.telegram_id, matched)
+        return {"users": [], "posts": [post_dict(db, p, liked=p.id in liked,
+                                                 saved=p.id in saved)
                                        for p in matched]}
     if not q:
         return {"users": [], "posts": []}
@@ -405,7 +451,9 @@ def user_posts(telegram_id: int, cursor: int = 0,
         q = q.filter(models.Post.id < cursor)
     rows = q.order_by(models.Post.id.desc()).limit(20).all()
     liked = liked_ids(db, user.telegram_id, rows)
-    return {"posts": [post_dict(db, p, liked=p.id in liked) for p in rows],
+    saved = saved_ids(db, user.telegram_id, rows)
+    return {"posts": [post_dict(db, p, liked=p.id in liked,
+                                saved=p.id in saved) for p in rows],
             "next_cursor": rows[-1].id if len(rows) == 20 else None}
 
 

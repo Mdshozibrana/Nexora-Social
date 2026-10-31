@@ -29,12 +29,13 @@ function setStatus(msg) { $("status").textContent = msg || ""; }
 function showView(name) {
   const navFor = { feed: "nav-feed", videos: "nav-videos", tasks: "nav-tasks",
                    leaderboard: "nav-ranks", profile: "nav-me" };
-  ["feed", "videos", "search", "tasks", "leaderboard", "profile"].forEach(v => {
+  ["feed", "videos", "search", "tasks", "leaderboard", "profile", "saved"].forEach(v => {
     $("view-" + v).hidden = v !== name;
     const btn = navFor[v];
     if (btn) $(btn).classList.toggle("active", v === name);
   });
   if (name === "tasks") loadTasks();
+  if (name === "saved") loadSaved();
   if (name === "videos") loadVideos(true);
   else document.querySelectorAll("#video-list video").forEach(v => v.pause());
   if (name === "leaderboard") loadRanks();
@@ -319,7 +320,14 @@ function reelCard(p) {
   const cCount = document.createElement("span");
   cCount.textContent = p.comment_count;
   cWrap.append(cBtn, cCount);
-  side.append(likeWrap, cWrap);
+  const mWrap = document.createElement("div");
+  mWrap.className = "reel-act";
+  const mBtn = document.createElement("button");
+  mBtn.textContent = "⋮";
+  mBtn.title = "Options";
+  mBtn.onclick = () => openReelMenu(p, el);
+  mWrap.appendChild(mBtn);
+  side.append(likeWrap, cWrap, mWrap);
   el.appendChild(side);
 
   const cBox = document.createElement("div");
@@ -362,6 +370,113 @@ function reelCard(p) {
     } catch (e) { setStatus("Could not send the comment."); }
   };
   return el;
+}
+
+// ------------------------------------------------------- options sheet ---
+function closeReelMenu() { $("reel-sheet-wrap").hidden = true; }
+
+async function openReelMenu(p, reelEl) {
+  const sheet = $("reel-sheet");
+  sheet.innerHTML = "";
+  const row = (icon, label, fn, danger) => {
+    const b = document.createElement("button");
+    b.className = "sheet-row" + (danger ? " danger" : "");
+    const ic = document.createElement("span");
+    ic.className = "ic";
+    ic.textContent = icon;
+    b.append(ic, document.createTextNode(label));
+    b.onclick = async () => { closeReelMenu(); await fn(); };
+    sheet.appendChild(b);
+    return b;
+  };
+  const appLink = "https://t.me/" +
+    (me && me.bot_username ? me.bot_username : "NexoraSocial_bot");
+  const mine = me && p.author_id === me.telegram_id;
+
+  row("🔖", p.saved ? "Saved — tap to remove" : "Save", async () => {
+    try {
+      const r = await api("/posts/" + p.id + "/save", { method: "POST" });
+      p.saved = r.saved;
+      setStatus(r.saved ? "Saved to your collection." : "Removed from Saved.");
+    } catch (e) { setStatus("Could not save."); }
+  });
+  row("📤", "Share", () => {
+    const text = (p.caption || "Check this out on Nexora Social").slice(0, 200);
+    const url = "https://t.me/share/url?url=" + encodeURIComponent(appLink) +
+      "&text=" + encodeURIComponent(text);
+    if (tg.openTelegramLink) tg.openTelegramLink(url);
+    else window.open(url, "_blank");
+  });
+  row("🔗", "Copy link", async () => {
+    const link = appLink + "?start=post_" + p.id;
+    try {
+      await navigator.clipboard.writeText(link);
+      setStatus("Link copied.");
+    } catch (e) { setStatus(link); }
+  });
+  if (p.media_file_id) row("⬇️", "Download", () => {
+    const a = document.createElement("a");
+    a.href = "/media/" + encodeURIComponent(p.media_file_id);
+    a.download = "";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  });
+  row("👤", "View profile", () => openProfile(p.author_id));
+  if (!mine) {
+    const fRow = row("➕", "Follow @" + (p.author_username || p.author_name),
+                     async () => {});
+    try {
+      const u = await api("/users/" + p.author_id);
+      if (u.is_official) fRow.remove();
+      else {
+        fRow.lastChild.textContent =
+          (u.following ? "Unfollow @" : "Follow @") +
+          (p.author_username || p.author_name);
+        fRow.onclick = async () => {
+          closeReelMenu();
+          try {
+            const r = await api("/users/" + p.author_id + "/follow",
+                                { method: "POST" });
+            setStatus(r.following ? "Following " + p.author_name + "."
+                                  : "Unfollowed " + p.author_name + ".");
+          } catch (e) { setStatus("Could not update follow."); }
+        };
+      }
+    } catch (e) { /* keep the generic row */ }
+    row("🚫", "Not interested", () => {
+      reelEl.remove();
+      setStatus("Got it — this video was hidden.");
+    });
+    row("⚑", "Report", async () => {
+      try {
+        await api("/reports", { method: "POST",
+          body: JSON.stringify({ post_id: p.id, reason: "user report" }) });
+        setStatus("Thanks, the video was reported.");
+      } catch (e) { setStatus("Could not report."); }
+    }, true);
+  }
+  if (mine) row("🗑", "Delete", async () => {
+    try {
+      await api("/posts/" + p.id, { method: "DELETE" });
+      reelEl.remove();
+      setStatus("Deleted.");
+    } catch (e) { setStatus("Could not delete."); }
+  }, true);
+  row("✕", "Cancel", () => {});
+  $("reel-sheet-wrap").hidden = false;
+}
+
+// ---------------------------------------------------------------- saved ---
+async function loadSaved() {
+  const box = $("saved-list");
+  box.innerHTML = "Loading…";
+  try {
+    const data = await api("/me/saved");
+    box.innerHTML = "";
+    data.posts.forEach(p => box.appendChild(postCard(p)));
+    $("saved-empty").hidden = data.posts.length > 0;
+  } catch (e) { box.textContent = "Could not load your saved posts."; }
 }
 
 async function loadVideos(reset) {
@@ -578,6 +693,11 @@ async function myExtras() {
       wrap.append(rh, a, copy);
     }
   } catch (e) { setStatus("Could not load points/referrals."); }
+  const savedBtn = document.createElement("button");
+  savedBtn.className = "wide";
+  savedBtn.textContent = "🔖 Saved posts & videos";
+  savedBtn.onclick = () => showView("saved");
+  wrap.appendChild(savedBtn);
   try {
     const mon = await api("/me/monetization");
     const card = document.createElement("div");
@@ -708,6 +828,8 @@ $("vtab-explore").onclick = () => setVTab("explore");
 $("vtab-following").onclick = () => setVTab("following");
 $("video-more").onclick = () => loadVideos(false);
 $("reel-close").onclick = () => showView("feed");
+$("reel-sheet-backdrop").onclick = () => closeReelMenu();
+$("saved-back").onclick = () => { if (me) openProfile(me.telegram_id); };
 $("reel-sound").onclick = () => {
   reelMuted = !reelMuted;
   document.querySelectorAll("#video-list video").forEach(v => { v.muted = reelMuted; });
