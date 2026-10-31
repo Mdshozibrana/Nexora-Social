@@ -9,7 +9,10 @@
 </head>
 <body>
 <header class="hero">
-  <div id="app-name">Nexora</div>
+  <div class="hero-top">
+    <div id="app-name">Nexora</div>
+    <button id="hero-search" class="icon-btn" title="Search">🔍</button>
+  </div>
   <div class="hero-row">
     <div>
       <div id="profile-line">Loading…</div>
@@ -45,11 +48,29 @@
   <div id="search-posts"></div>
 </section>
 
+<section id="view-videos" hidden>
+  <nav class="tabs">
+    <button id="vtab-explore" class="active">Explore</button>
+    <button id="vtab-following">Following</button>
+  </nav>
+  <main id="video-list"></main>
+  <p id="video-empty" class="empty" hidden>No videos yet. Send a video to the
+  bot with a caption to post the first one!</p>
+  <button id="video-more" class="wide" hidden>Load more</button>
+</section>
+
 <section id="view-tasks" hidden>
   <h2 class="view-title">⭐ Daily Tasks</h2>
   <p class="hint">Complete tasks to earn points. Each task can be claimed
   once per day — progress resets tomorrow.</p>
   <div id="task-list"></div>
+</section>
+
+<section id="view-leaderboard" hidden>
+  <h2 class="view-title">🏆 Leaderboard</h2>
+  <p class="hint">Top members by points. Earn points from posts, referrals
+  and daily tasks.</p>
+  <div id="rank-list"></div>
 </section>
 
 <section id="view-profile" hidden>
@@ -62,8 +83,9 @@
 
 <nav class="bottom-nav">
   <button id="nav-feed" class="active">🏠<span>Feed</span></button>
-  <button id="nav-search">🔍<span>Search</span></button>
+  <button id="nav-videos">🎬<span>Videos</span></button>
   <button id="nav-tasks">⭐<span>Tasks</span></button>
+  <button id="nav-ranks">🏆<span>Ranks</span></button>
   <button id="nav-me">👤<span>Me</span></button>
 </nav>
 

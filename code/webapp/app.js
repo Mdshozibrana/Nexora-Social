@@ -27,13 +27,16 @@ async function api(path, options = {}) {
 function setStatus(msg) { $("status").textContent = msg || ""; }
 
 function showView(name) {
-  const navFor = { feed: "nav-feed", search: "nav-search",
-                   tasks: "nav-tasks", profile: "nav-me" };
-  ["feed", "search", "tasks", "profile"].forEach(v => {
+  const navFor = { feed: "nav-feed", videos: "nav-videos", tasks: "nav-tasks",
+                   leaderboard: "nav-ranks", profile: "nav-me" };
+  ["feed", "videos", "search", "tasks", "leaderboard", "profile"].forEach(v => {
     $("view-" + v).hidden = v !== name;
-    $(navFor[v]).classList.toggle("active", v === name);
+    const btn = navFor[v];
+    if (btn) $(btn).classList.toggle("active", v === name);
   });
   if (name === "tasks") loadTasks();
+  if (name === "videos") loadVideos(true);
+  if (name === "leaderboard") loadRanks();
 }
 
 function avatarEl(name, id, big) {
@@ -223,6 +226,79 @@ function setTab(next) {
   $("tab-explore").classList.toggle("active", tab === "explore");
   $("tab-following").classList.toggle("active", tab === "following");
   loadFeed(true);
+}
+
+// --------------------------------------------------------------- videos ---
+let vtab = "explore";
+let vCursor = null;
+
+async function loadVideos(reset) {
+  try {
+    const url = "/feed?type=video&tab=" + vtab +
+      (reset || !vCursor ? "" : "&cursor=" + vCursor);
+    const data = await api(url);
+    if (reset) $("video-list").innerHTML = "";
+    data.posts.forEach(p => $("video-list").appendChild(postCard(p)));
+    vCursor = data.next_cursor;
+    $("video-more").hidden = !vCursor;
+    $("video-empty").hidden = data.posts.length > 0 || !reset;
+  } catch (e) { setStatus("Could not load videos."); }
+}
+
+function setVTab(next) {
+  vtab = next;
+  vCursor = null;
+  $("vtab-explore").classList.toggle("active", vtab === "explore");
+  $("vtab-following").classList.toggle("active", vtab === "following");
+  loadVideos(true);
+}
+
+// ----------------------------------------------------------- leaderboard ---
+async function loadRanks() {
+  const box = $("rank-list");
+  box.innerHTML = "Loading…";
+  try {
+    const data = await api("/leaderboard");
+    box.innerHTML = "";
+    const medals = { 1: "🥇", 2: "🥈", 3: "🥉" };
+    const rowFor = (r, isMe) => {
+      const row = document.createElement("div");
+      row.className = "rank-row" + (isMe ? " rank-me" : "");
+      const num = document.createElement("span");
+      num.className = "rank-num";
+      num.textContent = medals[r.rank] || r.rank;
+      const nm = document.createElement("span");
+      nm.className = "rank-name";
+      nm.textContent = r.first_name + (isMe ? " (You)" : "");
+      if (r.username) {
+        const small = document.createElement("small");
+        small.textContent = "@" + r.username;
+        nm.appendChild(small);
+      }
+      const pts = document.createElement("span");
+      pts.className = "rank-points";
+      pts.textContent = "⭐ " + r.points;
+      const btn = document.createElement("button");
+      btn.append(avatarEl(r.first_name, r.telegram_id, false));
+      btn.className = "post-top";
+      btn.style.width = "auto";
+      btn.onclick = () => openProfile(r.telegram_id);
+      row.append(num, btn, nm, pts);
+      return row;
+    };
+    let meInList = false;
+    data.leaders.forEach(r => {
+      const isMe = me && r.telegram_id === me.telegram_id;
+      if (isMe) meInList = true;
+      box.appendChild(rowFor(r, isMe));
+    });
+    if (!meInList && data.me) {
+      const sep = document.createElement("div");
+      sep.className = "rank-sep";
+      sep.textContent = "···";
+      box.append(sep, rowFor(data.me, true));
+    }
+  } catch (e) { box.textContent = "Could not load the leaderboard."; }
 }
 
 // --------------------------------------------------------------- search ---
@@ -475,9 +551,14 @@ $("feed-more").onclick = () => loadFeed(false);
 $("profile-more").onclick = () => loadProfilePosts(false);
 $("search-go").onclick = () => runSearch($("search-input").value.trim());
 $("nav-feed").onclick = () => showView("feed");
-$("nav-search").onclick = () => showView("search");
+$("nav-videos").onclick = () => showView("videos");
 $("nav-tasks").onclick = () => showView("tasks");
+$("nav-ranks").onclick = () => showView("leaderboard");
 $("nav-me").onclick = () => { if (me) openProfile(me.telegram_id); };
+$("hero-search").onclick = () => showView("search");
+$("vtab-explore").onclick = () => setVTab("explore");
+$("vtab-following").onclick = () => setVTab("following");
+$("video-more").onclick = () => loadVideos(false);
 
 loadMe().then(() => loadFeed(true)).catch(() => {
   $("profile-line").textContent = "Please open this app from inside Telegram.";

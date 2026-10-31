@@ -90,9 +90,11 @@ def auth(body: AuthIn, db: Session = Depends(get_db)):
 
 
 @app.get("/feed")
-def feed(tab: str = "explore", cursor: int = 0,
+def feed(tab: str = "explore", type: str = "", cursor: int = 0,
          user: models.User = Depends(current_user), db: Session = Depends(get_db)):
     q = db.query(models.Post).filter_by(is_deleted=False)
+    if type in ("photo", "video", "text"):
+        q = q.filter_by(type=type)
     if tab == "following":
         ids = [f.following_id for f in
                db.query(models.Follow).filter_by(follower_id=user.telegram_id)]
@@ -392,6 +394,25 @@ def user_posts(telegram_id: int, cursor: int = 0,
     liked = liked_ids(db, user.telegram_id, rows)
     return {"posts": [post_dict(db, p, liked=p.id in liked) for p in rows],
             "next_cursor": rows[-1].id if len(rows) == 20 else None}
+
+
+@app.get("/leaderboard")
+def leaderboard(user: models.User = Depends(current_user),
+                db: Session = Depends(get_db)):
+    rows = db.query(models.User).filter_by(is_banned=False) \
+        .order_by(models.User.points_balance.desc(),
+                  models.User.telegram_id).limit(50).all()
+    out = [{"rank": i + 1, "telegram_id": u.telegram_id,
+            "first_name": u.first_name, "username": u.username,
+            "points": u.points_balance} for i, u in enumerate(rows)]
+    mine = next((r for r in out if r["telegram_id"] == user.telegram_id), None)
+    if mine is None:
+        higher = db.query(models.User).filter(
+            models.User.points_balance > user.points_balance).count()
+        mine = {"rank": higher + 1, "telegram_id": user.telegram_id,
+                "first_name": user.first_name, "username": user.username,
+                "points": user.points_balance}
+    return {"leaders": out, "me": mine}
 
 
 # ---------------------------------------------------------------------------
