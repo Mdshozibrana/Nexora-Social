@@ -99,3 +99,15 @@ class NotificationLog(Base):
     user_id = Column(BigInteger, ForeignKey("users.telegram_id"), index=True)
     type = Column(String(32))
     sent_at = Column(DateTime, default=datetime.utcnow)
+
+
+class DailyClaim(Base):
+    """One row per user per daily task per day — the once-a-day guard for
+    the daily-tasks points (owner request, Oct 31)."""
+    __tablename__ = "daily_claims"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("users.telegram_id"), index=True)
+    task_key = Column(String(32))
+    day = Column(String(10))  # ISO date, UTC — the day the reward was claimed
+    claimed_at = Column(DateTime, default=datetime.utcnow)
+    __table_args__ = (UniqueConstraint("user_id", "task_key", "day"),)

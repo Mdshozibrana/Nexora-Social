@@ -27,10 +27,24 @@ async function api(path, options = {}) {
 function setStatus(msg) { $("status").textContent = msg || ""; }
 
 function showView(name) {
-  ["feed", "search", "profile"].forEach(v => {
+  const navFor = { feed: "nav-feed", search: "nav-search",
+                   tasks: "nav-tasks", profile: "nav-me" };
+  ["feed", "search", "tasks", "profile"].forEach(v => {
     $("view-" + v).hidden = v !== name;
-    $("nav-" + (v === "profile" ? "me" : v)).classList.toggle("active", v === name);
+    $(navFor[v]).classList.toggle("active", v === name);
   });
+  if (name === "tasks") loadTasks();
+}
+
+function avatarEl(name, id, big) {
+  const el = document.createElement("div");
+  el.className = "avatar" + (big ? " big" : "");
+  const parts = (name || "?").trim().split(/\s+/);
+  el.textContent = (parts[0][0] || "?") + (parts.length > 1 ? parts[parts.length - 1][0] : "");
+  const hue = Math.abs(Number(id) || 0) % 360;
+  el.style.background = "linear-gradient(135deg, hsl(" + hue +
+    ",70%,45%), hsl(" + ((hue + 50) % 360) + ",75%,55%))";
+  return el;
 }
 
 // ---------------------------------------------------------------- posts ---
@@ -39,8 +53,17 @@ function postCard(p) {
   el.className = "post";
 
   const head = document.createElement("button");
-  head.className = "post-head";
-  head.textContent = p.author_name + (p.author_username ? " @" + p.author_username : "");
+  head.className = "post-top";
+  const who = document.createElement("span");
+  who.className = "post-who";
+  const nm = document.createElement("span");
+  nm.className = "post-name";
+  nm.textContent = p.author_name;
+  const sub = document.createElement("span");
+  sub.className = "post-sub";
+  sub.textContent = p.author_username ? "@" + p.author_username : "";
+  who.append(nm, sub);
+  head.append(avatarEl(p.author_name, p.author_id, false), who);
   head.onclick = () => openProfile(p.author_id);
   el.appendChild(head);
 
@@ -84,7 +107,7 @@ function postCard(p) {
   const likeBtn = document.createElement("button");
   const paintLike = () => {
     likeBtn.textContent = (p.liked ? "❤️ " : "🤍 ") + p.like_count;
-    likeBtn.classList.toggle("active", !!p.liked);
+    likeBtn.classList.toggle("liked", !!p.liked);
   };
   paintLike();
   likeBtn.onclick = async () => {
@@ -240,16 +263,24 @@ async function openProfile(userId) {
   try {
     const u = await api("/users/" + userId);
     box.innerHTML = "";
+    const headWrap = document.createElement("div");
+    headWrap.className = "profile-head";
+    const col = document.createElement("div");
     const name = document.createElement("div");
     name.className = "profile-name";
-    name.textContent = u.first_name + (u.username ? " @" + u.username : "");
+    name.textContent = u.first_name;
+    const sub = document.createElement("div");
+    sub.className = "profile-sub";
+    sub.textContent = u.username ? "@" + u.username : "";
+    col.append(name, sub);
+    headWrap.append(avatarEl(u.first_name, u.telegram_id, true), col);
     const bio = document.createElement("p");
     bio.textContent = u.bio || "";
     const stats = document.createElement("div");
     stats.className = "stats";
     stats.textContent = u.posts + " posts · " + u.followers + " followers · " +
       u.following_count + " following · ⭐ " + u.points + " points";
-    box.append(name, bio, stats);
+    box.append(headWrap, bio, stats);
 
     if (me && userId !== me.telegram_id) {
       const fBtn = document.createElement("button");
@@ -323,7 +354,97 @@ async function myExtras() {
       wrap.append(rh, a, copy);
     }
   } catch (e) { setStatus("Could not load points/referrals."); }
+  try {
+    const mon = await api("/me/monetization");
+    const card = document.createElement("div");
+    card.className = "mon-card";
+    const mh = document.createElement("div");
+    mh.className = "mon-head";
+    const mt = document.createElement("b");
+    mt.textContent = "💰 Monetization";
+    const badge = document.createElement("span");
+    badge.className = "mon-badge" + (mon.unlocked ? " open" : "");
+    badge.textContent = mon.unlocked ? "Unlocked ✓" : "Locked";
+    mh.append(mt, badge);
+    card.appendChild(mh);
+    mon.checks.forEach(c => {
+      const row = document.createElement("div");
+      row.className = "mon-row";
+      const left = document.createElement("span");
+      left.textContent = (c.done ? "✅ " : "⬜ ") + c.label;
+      const right = document.createElement("span");
+      right.className = c.done ? "done" : "";
+      right.textContent = c.current + " / " + c.required;
+      row.append(left, right);
+      card.appendChild(row);
+    });
+    const note = document.createElement("p");
+    note.className = "hint";
+    note.textContent = mon.unlocked
+      ? "You meet every target — monetization is unlocked for your account."
+      : "Meet every target to unlock monetization for your account.";
+    card.appendChild(note);
+    wrap.appendChild(card);
+  } catch (e) { /* monetization card is optional decoration */ }
   return wrap;
+}
+
+// ---------------------------------------------------------------- tasks ---
+async function loadTasks() {
+  const box = $("task-list");
+  box.innerHTML = "Loading…";
+  try {
+    const data = await api("/me/tasks");
+    box.innerHTML = "";
+    data.tasks.forEach(t => {
+      const card = document.createElement("div");
+      card.className = "task-card";
+      const top = document.createElement("div");
+      top.className = "task-top";
+      const icon = document.createElement("span");
+      icon.className = "task-icon";
+      icon.textContent = t.icon;
+      const title = document.createElement("span");
+      title.className = "task-title";
+      title.textContent = t.title;
+      const pts = document.createElement("span");
+      pts.className = "task-points";
+      pts.textContent = "+" + t.points + " pts";
+      top.append(icon, title, pts);
+      const bar = document.createElement("div");
+      bar.className = "bar";
+      const fill = document.createElement("div");
+      fill.style.width = Math.round(100 * t.progress / t.target) + "%";
+      bar.appendChild(fill);
+      const meta = document.createElement("div");
+      meta.className = "task-meta";
+      const prog = document.createElement("span");
+      prog.textContent = t.progress + " / " + t.target;
+      const btn = document.createElement("button");
+      if (t.claimed) {
+        btn.textContent = "✓ Claimed";
+        btn.className = "task-claim claimed";
+        btn.disabled = true;
+      } else if (t.claimable) {
+        btn.textContent = "Claim";
+        btn.className = "task-claim";
+        btn.onclick = async () => {
+          try {
+            const r = await api("/me/tasks/" + t.key + "/claim", { method: "POST" });
+            setStatus("+" + r.points_awarded + " points! Balance: " + r.balance);
+            loadMe().catch(() => {});
+            loadTasks();
+          } catch (e) { setStatus("Could not claim this task."); }
+        };
+      } else {
+        btn.textContent = "In progress";
+        btn.disabled = true;
+      }
+      meta.append(prog, btn);
+      card.append(top, bar, meta);
+      box.appendChild(card);
+    });
+  } catch (e) { box.textContent = "Could not load tasks."; }
 }
 
 // ----------------------------------------------------------------- init ---
@@ -332,7 +453,8 @@ async function loadMe() {
   $("profile-line").textContent =
     me.first_name + (me.username ? " @" + me.username : "");
   $("stats").textContent = me.posts + " posts · " + me.followers +
-    " followers · " + me.following + " following · ⭐ " + me.points + " points";
+    " followers · " + me.following + " following";
+  $("points-chip").textContent = "⭐ " + me.points;
 }
 
 $("composer-post").onclick = async () => {
@@ -353,6 +475,7 @@ $("profile-more").onclick = () => loadProfilePosts(false);
 $("search-go").onclick = () => runSearch($("search-input").value.trim());
 $("nav-feed").onclick = () => showView("feed");
 $("nav-search").onclick = () => showView("search");
+$("nav-tasks").onclick = () => showView("tasks");
 $("nav-me").onclick = () => { if (me) openProfile(me.telegram_id); };
 
 loadMe().then(() => loadFeed(true)).catch(() => {

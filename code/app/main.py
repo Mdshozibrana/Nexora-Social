@@ -11,11 +11,13 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from datetime import datetime
+
 from . import models, notify
-from .config import settings
+from .config import DAILY_TASKS, MONETIZATION, settings
 from .db import Base, engine, get_db
 from .security import validate_init_data
-from .services import register_post
+from .services import award_points, register_post
 from .users import get_or_create_user
 
 Base.metadata.create_all(bind=engine)
@@ -390,6 +392,107 @@ def user_posts(telegram_id: int, cursor: int = 0,
     liked = liked_ids(db, user.telegram_id, rows)
     return {"posts": [post_dict(db, p, liked=p.id in liked) for p in rows],
             "next_cursor": rows[-1].id if len(rows) == 20 else None}
+
+
+# ---------------------------------------------------------------------------
+# Daily tasks (owner request, Oct 31): small daily goals that pay points,
+# each claimable ONCE per day. Progress is counted from today's real
+# activity; the claim is guarded by the daily_claims unique row.
+# ---------------------------------------------------------------------------
+
+def _today():
+    now = datetime.utcnow()
+    return now.date().isoformat(), now.replace(hour=0, minute=0, second=0,
+                                               microsecond=0)
+
+
+def _task_progress(db, user_id, task, day_start, claimed):
+    metric = task["metric"]
+    if metric == "checkin":
+        return 1 if claimed else 0
+    if metric == "follows":
+        return db.query(models.Follow).filter(
+            models.Follow.follower_id == user_id,
+            models.Follow.created_at >= day_start).count()
+    if metric == "comments":
+        return db.query(models.Comment).filter(
+            models.Comment.user_id == user_id,
+            models.Comment.created_at >= day_start).count()
+    return 0
+
+
+def _task_state(db, user, task):
+    day, day_start = _today()
+    claimed = db.query(models.DailyClaim).filter_by(
+        user_id=user.telegram_id, task_key=task["key"], day=day).first()
+    progress = _task_progress(db, user.telegram_id, task, day_start,
+                              bool(claimed))
+    return {
+        "key": task["key"], "title": task["title"], "icon": task["icon"],
+        "target": task["target"], "points": task["points"],
+        "progress": min(progress, task["target"]),
+        "claimed": bool(claimed),
+        "claimable": (not claimed) and (
+            task["metric"] == "checkin" or progress >= task["target"]),
+    }
+
+
+@app.get("/me/tasks")
+def my_tasks(user: models.User = Depends(current_user),
+             db: Session = Depends(get_db)):
+    return {"tasks": [_task_state(db, user, t) for t in DAILY_TASKS]}
+
+
+@app.post("/me/tasks/{key}/claim")
+def claim_task(key: str, user: models.User = Depends(current_user),
+               db: Session = Depends(get_db)):
+    task = next((t for t in DAILY_TASKS if t["key"] == key), None)
+    if task is None:
+        raise HTTPException(404, "Unknown task")
+    state = _task_state(db, user, task)
+    if state["claimed"]:
+        raise HTTPException(400, "Already claimed today")
+    if not state["claimable"]:
+        raise HTTPException(400, "Task not completed yet")
+    day, _ = _today()
+    db.add(models.DailyClaim(user_id=user.telegram_id, task_key=key, day=day))
+    award_points(db, user.telegram_id, task["points"], f"task:{key}")
+    db.commit()
+    db.refresh(user)
+    return {"ok": True, "points_awarded": task["points"],
+            "balance": user.points_balance}
+
+
+# ---------------------------------------------------------------------------
+# Monetization gate (owner request, Oct 31): a creator unlocks monetization
+# only after meeting every target in config.MONETIZATION. This endpoint is
+# the status/checklist; payouts themselves are a later phase.
+# ---------------------------------------------------------------------------
+
+@app.get("/me/monetization")
+def my_monetization(user: models.User = Depends(current_user),
+                    db: Session = Depends(get_db)):
+    followers = db.query(models.Follow).filter_by(
+        following_id=user.telegram_id).count()
+    posts = db.query(models.Post).filter_by(
+        user_id=user.telegram_id, is_deleted=False).count()
+    age_days = (datetime.utcnow() - user.created_at).days \
+        if user.created_at else 0
+    earned = sum(e.amount for e in db.query(models.PointsLedger).filter_by(
+        user_id=user.telegram_id).all() if e.amount > 0)
+    checks = [
+        {"key": "followers", "label": "Followers",
+         "current": followers, "required": MONETIZATION["followers"]},
+        {"key": "posts", "label": "Posts published",
+         "current": posts, "required": MONETIZATION["posts"]},
+        {"key": "account_days", "label": "Account age (days)",
+         "current": age_days, "required": MONETIZATION["account_days"]},
+        {"key": "lifetime_points", "label": "Total points earned",
+         "current": earned, "required": MONETIZATION["lifetime_points"]},
+    ]
+    for c in checks:
+        c["done"] = c["current"] >= c["required"]
+    return {"unlocked": all(c["done"] for c in checks), "checks": checks}
 
 
 # ---------------------------------------------------------------------------

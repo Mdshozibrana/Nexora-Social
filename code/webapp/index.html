@@ -8,14 +8,19 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header>
+<header class="hero">
   <div id="app-name">Nexora</div>
-  <div id="profile-line">Loading…</div>
-  <div id="stats"></div>
+  <div class="hero-row">
+    <div>
+      <div id="profile-line">Loading…</div>
+      <div id="stats"></div>
+    </div>
+    <div id="points-chip"></div>
+  </div>
 </header>
 
 <section id="view-feed">
-  <div class="composer">
+  <div class="composer card">
     <textarea id="composer-text" rows="2" maxlength="2000"
       placeholder="Share something… use #tags"></textarea>
     <button id="composer-post">Post</button>
@@ -40,6 +45,13 @@
   <div id="search-posts"></div>
 </section>
 
+<section id="view-tasks" hidden>
+  <h2 class="view-title">⭐ Daily Tasks</h2>
+  <p class="hint">Complete tasks to earn points. Each task can be claimed
+  once per day — progress resets tomorrow.</p>
+  <div id="task-list"></div>
+</section>
+
 <section id="view-profile" hidden>
   <div id="profile-box"></div>
   <div id="profile-posts"></div>
@@ -49,9 +61,10 @@
 <p id="status"></p>
 
 <nav class="bottom-nav">
-  <button id="nav-feed" class="active">🏠 Feed</button>
-  <button id="nav-search">🔍 Search</button>
-  <button id="nav-me">👤 Me</button>
+  <button id="nav-feed" class="active">🏠<span>Feed</span></button>
+  <button id="nav-search">🔍<span>Search</span></button>
+  <button id="nav-tasks">⭐<span>Tasks</span></button>
+  <button id="nav-me">👤<span>Me</span></button>
 </nav>
 
 <script src="app.js"></script>
