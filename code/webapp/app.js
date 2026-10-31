@@ -27,13 +27,15 @@ async function api(path, options = {}) {
 function setStatus(msg) { $("status").textContent = msg || ""; }
 
 function showView(name) {
-  const navFor = { feed: "nav-feed", videos: "nav-videos", tasks: "nav-tasks",
+  const navFor = { feed: "nav-feed", videos: "nav-videos", games: "nav-games",
+                   game: "nav-games", tasks: "nav-tasks",
                    leaderboard: "nav-ranks", profile: "nav-me" };
-  ["feed", "videos", "search", "tasks", "leaderboard", "profile", "saved", "shared"].forEach(v => {
+  ["feed", "videos", "search", "tasks", "leaderboard", "profile", "saved", "shared", "games", "game"].forEach(v => {
     $("view-" + v).hidden = v !== name;
     const btn = navFor[v];
     if (btn) $(btn).classList.toggle("active", v === name);
   });
+  if (name !== "game" && typeof stopGame === "function") stopGame();
   if (name === "tasks") loadTasks();
   if (name === "saved") loadSaved();
   if (name === "shared") loadShared();
@@ -50,7 +52,16 @@ function verifiedBadge() {
   return b;
 }
 
-function avatarEl(name, id, big) {
+function avatarEl(name, id, big, photoId) {
+  if (photoId) {
+    const img = document.createElement("img");
+    img.className = "avatar" + (big ? " big" : "");
+    img.src = "/media/" + encodeURIComponent(photoId);
+    img.alt = name || "";
+    img.loading = "lazy";
+    img.onerror = () => img.replaceWith(avatarEl(name, id, big));
+    return img;
+  }
   const el = document.createElement("div");
   el.className = "avatar" + (big ? " big" : "");
   const parts = (name || "?").trim().split(/\s+/);
@@ -78,7 +89,7 @@ function postCard(p) {
   sub.className = "post-sub";
   sub.textContent = p.author_username ? "@" + p.author_username : "";
   who.append(nm, sub);
-  head.append(avatarEl(p.author_name, p.author_id, false), who);
+  head.append(avatarEl(p.author_name, p.author_id, false, p.author_photo), who);
   head.onclick = () => openProfile(p.author_id);
   el.appendChild(head);
 
@@ -212,10 +223,12 @@ function postCard(p) {
 function commentRow(cm) {
   const row = document.createElement("div");
   row.className = "comment";
+  row.appendChild(avatarEl(cm.author_name, cm.user_id, false, cm.author_photo));
   const who = document.createElement("b");
-  who.textContent = cm.author_name + ": ";
+  who.textContent = cm.author_name;
   row.appendChild(who);
-  row.appendChild(document.createTextNode(cm.text));
+  if (cm.author_verified) row.appendChild(verifiedBadge());
+  row.appendChild(document.createTextNode(": " + cm.text));
   return row;
 }
 
@@ -284,7 +297,7 @@ function reelCard(p) {
   sub.className = "post-sub";
   sub.textContent = p.author_username ? "@" + p.author_username : "";
   who.append(nm, sub);
-  author.append(avatarEl(p.author_name, p.author_id, false), who);
+  author.append(avatarEl(p.author_name, p.author_id, false, p.author_photo), who);
   author.onclick = () => openProfile(p.author_id);
   shade.appendChild(author);
   if (p.caption) {
@@ -525,7 +538,7 @@ async function openSharePicker(p) {
           setStatus("Could not share.");
         }
       };
-      r.append(avatarEl(u.first_name, u.telegram_id, false), nm, send);
+      r.append(avatarEl(u.first_name, u.telegram_id, false, u.photo_file_id), nm, send);
       list.appendChild(r);
     });
     const tgRow = document.createElement("button");
@@ -647,7 +660,7 @@ async function loadRanks() {
       pts.className = "rank-points";
       pts.textContent = "⭐ " + r.points;
       const btn = document.createElement("button");
-      btn.append(avatarEl(r.first_name, r.telegram_id, false));
+      btn.append(avatarEl(r.first_name, r.telegram_id, false, r.photo_file_id));
       btn.className = "post-top";
       btn.style.width = "auto";
       btn.onclick = () => openProfile(r.telegram_id);
@@ -680,7 +693,9 @@ async function runSearch(q) {
     data.users.forEach(u => {
       const row = document.createElement("button");
       row.className = "user-row";
-      row.textContent = u.first_name + (u.username ? " @" + u.username : "");
+      row.appendChild(avatarEl(u.first_name, u.telegram_id, false, u.photo_file_id));
+      row.appendChild(document.createTextNode(
+        u.first_name + (u.username ? " @" + u.username : "")));
       if (u.is_verified) row.appendChild(verifiedBadge());
       row.onclick = () => openProfile(u.telegram_id);
       usersBox.appendChild(row);
@@ -719,7 +734,7 @@ async function openProfile(userId) {
     sub.className = "profile-sub";
     sub.textContent = u.username ? "@" + u.username : "";
     col.append(name, sub);
-    headWrap.append(avatarEl(u.first_name, u.telegram_id, true), col);
+    headWrap.append(avatarEl(u.first_name, u.telegram_id, true, u.photo_file_id), col);
     const bio = document.createElement("p");
     bio.textContent = u.bio || "";
     const stats = document.createElement("div");
@@ -915,9 +930,15 @@ async function loadMe() {
   me = await api("/auth", { method: "POST", body: JSON.stringify({ initData }) });
   $("profile-line").textContent =
     me.first_name + (me.username ? " @" + me.username : "");
+  if (me.is_verified) $("profile-line").appendChild(verifiedBadge());
   $("stats").textContent = me.posts + " posts · " + me.followers +
     " followers · " + me.following + " following";
   $("points-chip").textContent = "⭐ " + me.points;
+  if (!me.photo_file_id) {
+    api("/me/photo/sync", { method: "POST" }).then(r => {
+      if (r && r.photo_file_id) me.photo_file_id = r.photo_file_id;
+    }).catch(() => {});
+  }
 }
 
 $("composer-post").onclick = async () => {
@@ -938,6 +959,7 @@ $("profile-more").onclick = () => loadProfilePosts(false);
 $("search-go").onclick = () => runSearch($("search-input").value.trim());
 $("nav-feed").onclick = () => showView("feed");
 $("nav-videos").onclick = () => showView("videos");
+$("nav-games").onclick = () => showView("games");
 $("nav-tasks").onclick = () => showView("tasks");
 $("nav-ranks").onclick = () => showView("leaderboard");
 $("nav-me").onclick = () => { if (me) openProfile(me.telegram_id); };

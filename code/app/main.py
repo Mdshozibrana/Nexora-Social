@@ -84,6 +84,7 @@ def auth(body: AuthIn, db: Session = Depends(get_db)):
         "bio": user.bio,
         "points": user.points_balance,
         "is_verified": bool(user.is_verified),
+        "photo_file_id": user.photo_file_id,
         "followers": followers,
         "following": following,
         "posts": posts,
@@ -127,6 +128,7 @@ def post_dict(db, p, liked=False, saved=False):
         "author_name": author.first_name if author else "",
         "author_username": author.username if author else None,
         "author_verified": bool(author and author.is_verified),
+        "author_photo": author.photo_file_id if author else None,
         "created_at": p.created_at.isoformat() if p.created_at else None,
     }
 
@@ -251,6 +253,7 @@ def my_following(user: models.User = Depends(current_user),
     return {"users": [{
         "telegram_id": u.telegram_id, "first_name": u.first_name,
         "username": u.username, "is_verified": bool(u.is_verified),
+        "photo_file_id": u.photo_file_id,
     } for u in rows]}
 
 
@@ -315,6 +318,8 @@ def comment_dict(db, cm):
         "id": cm.id, "post_id": cm.post_id, "user_id": cm.user_id,
         "author_name": author.first_name if author else "",
         "author_username": author.username if author else None,
+        "author_verified": bool(author and author.is_verified),
+        "author_photo": author.photo_file_id if author else None,
         "text": cm.text,
         "created_at": cm.created_at.isoformat() if cm.created_at else None,
     }
@@ -418,6 +423,21 @@ async def toggle_follow(telegram_id: int, user: models.User = Depends(current_us
 # Referrals, points, search, reports (PRD sections 4-5, MVP items 8-10)
 # ---------------------------------------------------------------------------
 
+@app.post("/me/photo/sync")
+async def sync_photo(user: models.User = Depends(current_user),
+                     db: Session = Depends(get_db)):
+    """Pull the member's Telegram profile picture (file_id) so profiles
+    show the real photo. Runs when the app opens and no photo is stored
+    yet; the actual Bot API fetch needs the live token."""
+    from . import photosync
+    if not user.photo_file_id:
+        fid = await photosync.fetch_telegram_photo_file_id(user.telegram_id)
+        if fid:
+            user.photo_file_id = fid
+            db.commit()
+    return {"photo_file_id": user.photo_file_id}
+
+
 @app.get("/me/referrals")
 def my_referrals(user: models.User = Depends(current_user),
                  db: Session = Depends(get_db)):
@@ -479,6 +499,7 @@ def search(q: str = "", user: models.User = Depends(current_user),
             "telegram_id": u.telegram_id, "first_name": u.first_name,
             "username": u.username, "bio": u.bio,
             "is_verified": bool(u.is_verified),
+            "photo_file_id": u.photo_file_id,
         } for u in users],
         "posts": [],
     }
@@ -532,7 +553,8 @@ def leaderboard(user: models.User = Depends(current_user),
     out = [{"rank": i + 1, "telegram_id": u.telegram_id,
             "first_name": u.first_name, "username": u.username,
             "points": u.points_balance,
-            "is_verified": bool(u.is_verified)} for i, u in enumerate(rows)]
+            "is_verified": bool(u.is_verified),
+            "photo_file_id": u.photo_file_id} for i, u in enumerate(rows)]
     mine = next((r for r in out if r["telegram_id"] == user.telegram_id), None)
     if mine is None:
         higher = db.query(models.User).filter(
@@ -540,7 +562,8 @@ def leaderboard(user: models.User = Depends(current_user),
         mine = {"rank": higher + 1, "telegram_id": user.telegram_id,
                 "first_name": user.first_name, "username": user.username,
                 "points": user.points_balance,
-                "is_verified": bool(user.is_verified)}
+                "is_verified": bool(user.is_verified),
+                "photo_file_id": user.photo_file_id}
     return {"leaders": out, "me": mine}
 
 

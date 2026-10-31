@@ -29,6 +29,12 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             referrer_id=referrer_id,
         )
         banned = user.is_banned
+        if not banned and not user.photo_file_id:
+            from . import photosync
+            fid = await photosync.fetch_telegram_photo_file_id(tg_user.id)
+            if fid:
+                user.photo_file_id = fid
+                db.commit()
     finally:
         db.close()
     if banned:
@@ -38,7 +44,8 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Welcome to {settings.APP_NAME}! \U0001F44B\n"
         "Post photos and videos, follow people, earn points.\n"
         "Tip: send me a photo or video with a caption and I will post it "
-        "for you. Or tap below to open the app."
+        "for you. Send a photo with the caption #profile to set it as "
+        "your profile picture. Or tap below to open the app."
     )
     buttons = []
     if settings.WEBAPP_URL:
@@ -77,6 +84,22 @@ async def _save_media_post(update: Update, ptype: str, file_id: str):
 
 
 async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    caption = (update.message.caption or "").lower()
+    if "#profile" in caption:
+        tg_user = update.effective_user
+        db = SessionLocal()
+        try:
+            user, _ = get_or_create_user(
+                db,
+                {"id": tg_user.id, "username": tg_user.username,
+                 "first_name": tg_user.first_name})
+            user.photo_file_id = update.message.photo[-1].file_id
+            db.commit()
+        finally:
+            db.close()
+        await update.message.reply_text(
+            "\u2705 Profile picture updated!")
+        return
     await _save_media_post(update, "photo", update.message.photo[-1].file_id)
 
 

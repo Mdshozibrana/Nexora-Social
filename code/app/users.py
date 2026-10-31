@@ -1,6 +1,6 @@
 """Shared user helpers used by both the bot and the API."""
 from . import models
-from .config import OFFICIAL_ID, OFFICIAL_NAME, OFFICIAL_USERNAME
+from .config import OFFICIAL_ID, OFFICIAL_NAME, OFFICIAL_USERNAME, settings
 
 WELCOME_POST = (
     "Welcome to Nexora Social! This is the official account — follow for updates, "
@@ -49,6 +49,9 @@ def get_or_create_user(db, tg_user: dict, referrer_id=None):
     if user:
         user.username = tg_user.get("username") or user.username
         user.first_name = tg_user.get("first_name") or user.first_name
+        # Admins (the owner) always carry the verified mark.
+        if uid in settings.ADMIN_IDS and not user.is_verified:
+            user.is_verified = True
         db.commit()
         _follow_official(db, user)
         return user, False
@@ -56,6 +59,7 @@ def get_or_create_user(db, tg_user: dict, referrer_id=None):
         telegram_id=uid,
         username=tg_user.get("username"),
         first_name=tg_user.get("first_name", ""),
+        is_verified=uid in settings.ADMIN_IDS,
         referrer_id=referrer_id if referrer_id and referrer_id != uid else None,
     )
     db.add(user)

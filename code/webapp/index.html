@@ -97,6 +97,23 @@
   <div id="rank-list"></div>
 </section>
 
+<section id="view-games" hidden>
+  <h2 class="view-title">🎮 Games</h2>
+  <p class="hint">Classic button-phone games — the Nokia-era favourites
+  from the first mobile phones.</p>
+  <div id="game-grid" class="game-grid"></div>
+</section>
+
+<section id="view-game" hidden>
+  <div class="game-head">
+    <button id="game-back">← Games</button>
+    <div id="game-title"></div>
+    <div id="game-score"></div>
+  </div>
+  <div id="game-stage"></div>
+  <p class="hint" id="game-help"></p>
+</section>
+
 <section id="view-profile" hidden>
   <div id="profile-box"></div>
   <div id="profile-posts"></div>
@@ -108,11 +125,13 @@
 <nav class="bottom-nav">
   <button id="nav-feed" class="active">🏠<span>Feed</span></button>
   <button id="nav-videos">🎬<span>Videos</span></button>
+  <button id="nav-games">🎮<span>Games</span></button>
   <button id="nav-tasks">⭐<span>Tasks</span></button>
   <button id="nav-ranks">🏆<span>Ranks</span></button>
   <button id="nav-me">👤<span>Me</span></button>
 </nav>
 
 <script src="app.js"></script>
+<script src="games.js"></script>
 </body>
 </html>
