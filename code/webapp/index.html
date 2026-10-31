@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nexora</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <div id="app-name">Nexora</div>
+  <div id="profile-line">Loading…</div>
+  <div id="stats"></div>
+</header>
+
+<section id="view-feed">
+  <div class="composer">
+    <textarea id="composer-text" rows="2" maxlength="2000"
+      placeholder="Share something… use #tags"></textarea>
+    <button id="composer-post">Post</button>
+  </div>
+  <p class="hint">Tip: you can also send a photo or video to the bot with a
+  caption, and it will be posted for you.</p>
+  <nav class="tabs">
+    <button id="tab-explore" class="active">Explore</button>
+    <button id="tab-following">Following</button>
+  </nav>
+  <main id="feed-list"></main>
+  <p id="feed-empty" class="empty" hidden>No posts yet. Be the first to post!</p>
+  <button id="feed-more" class="wide" hidden>Load more</button>
+</section>
+
+<section id="view-search" hidden>
+  <div class="searchbar">
+    <input id="search-input" type="search" placeholder="Search people or #tags">
+    <button id="search-go">Search</button>
+  </div>
+  <div id="search-users"></div>
+  <div id="search-posts"></div>
+</section>
+
+<section id="view-profile" hidden>
+  <div id="profile-box"></div>
+  <div id="profile-posts"></div>
+  <button id="profile-more" class="wide" hidden>Load more</button>
+</section>
+
+<p id="status"></p>
+
+<nav class="bottom-nav">
+  <button id="nav-feed" class="active">🏠 Feed</button>
+  <button id="nav-search">🔍 Search</button>
+  <button id="nav-me">👤 Me</button>
+</nav>
+
+<script src="app.js"></script>
+</body>
+</html>
