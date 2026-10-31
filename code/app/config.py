@@ -12,6 +12,10 @@ class Settings:
     ADMIN_IDS: list = [
         int(x) for x in os.environ.get("ADMIN_IDS", "").split(",") if x.strip()
     ]
+    # AdsGram (Telegram Mini App ad network) publisher block id. Empty =
+    # ads off. The owner gets the id from adsgram.ai after registering
+    # the bot; it is a public placement id, not a secret.
+    ADSGRAM_BLOCK_ID: str = os.environ.get("ADSGRAM_BLOCK_ID", "")
 
 
 settings = Settings()

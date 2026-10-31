@@ -10,6 +10,7 @@ from fastapi import (Depends, FastAPI, File, Form, Header, HTTPException,
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from datetime import datetime, timedelta
@@ -91,6 +92,8 @@ def auth(body: AuthIn, db: Session = Depends(get_db)):
         "following": following,
         "posts": posts,
         "bot_username": settings.BOT_USERNAME,
+        "is_admin": user.telegram_id in settings.ADMIN_IDS,
+        "adsgram_block_id": settings.ADSGRAM_BLOCK_ID,
     }
 
 
@@ -762,12 +765,69 @@ class BanIn(BaseModel):
 @app.post("/admin/ban")
 def admin_ban(body: BanIn, admin: models.User = Depends(admin_user),
               db: Session = Depends(get_db)):
+    if body.banned and (body.telegram_id == OFFICIAL_ID
+                        or body.telegram_id in settings.ADMIN_IDS):
+        raise HTTPException(400, "The official account and admins cannot be banned")
     target = db.get(models.User, body.telegram_id)
     if target is None:
         raise HTTPException(404, "User not found")
     target.is_banned = body.banned
     db.commit()
     return {"telegram_id": target.telegram_id, "is_banned": target.is_banned}
+
+
+@app.get("/admin/stats")
+def admin_stats(admin: models.User = Depends(admin_user),
+                db: Session = Depends(get_db)):
+    return {
+        "users": db.query(models.User).count(),
+        "posts": db.query(models.Post).filter_by(is_deleted=False).count(),
+        "comments": db.query(models.Comment).count(),
+        "open_reports": db.query(models.Report).filter_by(status="open").count(),
+        "banned_users": db.query(models.User).filter_by(is_banned=True).count(),
+        "total_points": db.query(models.User).with_entities(
+            func.coalesce(func.sum(models.User.points_balance), 0)).scalar(),
+    }
+
+
+@app.get("/admin/users")
+def admin_users(q: str = "", limit: int = 50,
+                admin: models.User = Depends(admin_user),
+                db: Session = Depends(get_db)):
+    query = db.query(models.User)
+    if q:
+        like = f"%{q}%"
+        query = query.filter(or_(
+            models.User.first_name.ilike(like),
+            models.User.username.ilike(like),
+            models.User.telegram_id == (int(q) if q.isdigit() else -1)))
+    rows = query.order_by(models.User.telegram_id.desc()) \
+        .limit(max(1, min(limit, 100))).all()
+    return {"users": [{
+        "telegram_id": u.telegram_id, "first_name": u.first_name,
+        "username": u.username, "is_banned": bool(u.is_banned),
+        "is_verified": bool(u.is_verified), "points": u.points_balance,
+        "created_at": u.created_at.isoformat() if u.created_at else None,
+    } for u in rows]}
+
+
+@app.get("/admin/posts")
+def admin_posts(limit: int = 30, admin: models.User = Depends(admin_user),
+                db: Session = Depends(get_db)):
+    rows = db.query(models.Post).order_by(models.Post.id.desc()) \
+        .limit(max(1, min(limit, 100))).all()
+    out = []
+    for p in rows:
+        author = db.get(models.User, p.user_id)
+        out.append({
+            "id": p.id, "type": p.type,
+            "caption": (p.caption or "")[:120],
+            "is_deleted": bool(p.is_deleted),
+            "author_id": p.user_id,
+            "author_name": author.first_name if author else "",
+            "created_at": p.created_at.isoformat() if p.created_at else None,
+        })
+    return {"posts": out}
 
 
 @app.post("/admin/posts/{post_id}/remove")

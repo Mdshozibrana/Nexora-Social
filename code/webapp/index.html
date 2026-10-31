@@ -156,6 +156,33 @@
   <button id="profile-more" class="wide" hidden>Load more</button>
 </section>
 
+<section id="view-admin" hidden>
+  <h2 class="view-title">🛡️ Admin Panel</h2>
+  <p class="hint">Only you, the owner, can see this panel. Manage members,
+  reports and posts, and send announcements to everyone.</p>
+  <div id="admin-stats" class="admin-stats"></div>
+
+  <h3 class="admin-sec">🚩 Open reports</h3>
+  <div id="admin-reports"></div>
+
+  <h3 class="admin-sec">👥 Members</h3>
+  <div class="searchbar">
+    <input id="admin-user-q" type="search" placeholder="Search name, @username or ID">
+    <button id="admin-user-go">Search</button>
+  </div>
+  <div id="admin-users"></div>
+
+  <h3 class="admin-sec">📝 Recent posts</h3>
+  <div id="admin-posts"></div>
+
+  <h3 class="admin-sec">📣 Broadcast</h3>
+  <div class="card bc-card">
+    <textarea id="admin-bc-text" rows="3" placeholder="Announcement for all members (the bot sends it as a message)"></textarea>
+    <button id="admin-bc-send" class="wide">Send broadcast</button>
+    <p id="admin-bc-result" class="hint"></p>
+  </div>
+</section>
+
 <div id="drawer-wrap" hidden>
   <div id="drawer-backdrop"></div>
   <aside id="drawer">
@@ -183,6 +210,7 @@
     <div class="drawer-sec">Account</div>
     <button class="drawer-item" data-go="profile"><span class="di-ic">👤</span>My Profile</button>
     <button class="drawer-item" data-go="search"><span class="di-ic">🔍</span>Search</button>
+    <button class="drawer-item" id="drawer-admin" data-go="admin" hidden><span class="di-ic">🛡️</span>Admin Panel</button>
     <button class="drawer-item" id="drawer-logout"><span class="di-ic">🚪</span>Log out</button>
   </aside>
 </div>

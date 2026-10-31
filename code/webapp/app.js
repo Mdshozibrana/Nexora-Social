@@ -42,7 +42,7 @@ function showView(name) {
   const navFor = { feed: "nav-feed", videos: "nav-videos", games: "nav-games",
                    game: "nav-games", tasks: "nav-tasks",
                    leaderboard: "nav-ranks", profile: "nav-me" };
-  ["feed", "videos", "search", "tasks", "leaderboard", "profile", "saved", "shared", "games", "game"].forEach(v => {
+  ["feed", "videos", "search", "tasks", "leaderboard", "profile", "saved", "shared", "games", "game", "admin"].forEach(v => {
     $("view-" + v).hidden = v !== name;
     const btn = navFor[v];
     if (btn) $(btn).classList.toggle("active", v === name);
@@ -51,7 +51,8 @@ function showView(name) {
   if (name === "tasks") loadTasks();
   if (name === "saved") loadSaved();
   if (name === "shared") loadShared();
-  if (name === "videos") loadVideos(true);
+  if (name === "admin") loadAdmin();
+  if (name === "videos") { loadVideos(true); maybeShowAd(); }
   else document.querySelectorAll("#video-list video").forEach(v => v.pause());
   if (name === "leaderboard") loadRanks();
   moveNavPill();
@@ -988,6 +989,8 @@ async function loadMe() {
   $("entry-user").textContent = me.username ? "@" + me.username : "Username";
   entryMode = me.is_new ? "signup" : "login";
   paintEntry();
+  applyAdminVisibility();
+  initAds();
   if (!me.photo_file_id) {
     api("/me/photo/sync", { method: "POST" }).then(r => {
       if (r && r.photo_file_id) me.photo_file_id = r.photo_file_id;
@@ -1188,3 +1191,214 @@ $("drawer-logout").onclick = () => {
   $("entry-screen").hidden = false;
 };
 moveNavPill();
+
+// ---------------------------------------------------------------- admin --
+// Owner-only panel (Phase 18). The drawer item stays hidden unless /auth
+// says this account is in ADMIN_IDS; every /admin/* endpoint re-checks
+// that server-side, so the panel is a convenience, not the security.
+function applyAdminVisibility() {
+  const it = $("drawer-admin");
+  if (it) it.hidden = !(me && me.is_admin);
+}
+
+function statCard(label, val) {
+  const d = document.createElement("div");
+  d.className = "stat-card";
+  const n = document.createElement("div");
+  n.className = "stat-num"; n.textContent = val;
+  const l = document.createElement("div");
+  l.className = "stat-label"; l.textContent = label;
+  d.append(n, l);
+  return d;
+}
+
+async function loadAdminStats() {
+  const box = $("admin-stats");
+  box.innerHTML = "";
+  try {
+    const s = await api("/admin/stats");
+    [["👥 Members", s.users], ["📝 Posts", s.posts],
+     ["💬 Comments", s.comments], ["🚩 Reports", s.open_reports],
+     ["🚫 Banned", s.banned_users], ["⭐ Points", s.total_points]
+    ].forEach(([l, v]) => box.appendChild(statCard(l, v)));
+  } catch (e) { box.textContent = "Could not load stats."; }
+}
+
+function loadAdmin() {
+  if (!me || !me.is_admin) return;
+  loadAdminStats();
+  loadAdminReports();
+  loadAdminUsers($("admin-user-q").value.trim());
+  loadAdminPosts();
+}
+
+async function loadAdminReports() {
+  const box = $("admin-reports");
+  box.innerHTML = "";
+  try {
+    const r = await api("/admin/reports?status=open");
+    if (!r.reports.length) {
+      box.innerHTML = '<p class="hint">No open reports. 🎉</p>';
+      return;
+    }
+    r.reports.forEach(rep => {
+      const card = document.createElement("div");
+      card.className = "card admin-row";
+      const info = document.createElement("div");
+      info.className = "admin-info";
+      const t = document.createElement("div");
+      t.className = "admin-title";
+      t.textContent = "Post #" + rep.post_id + " — " + (rep.reason || "reported");
+      const s = document.createElement("div");
+      s.className = "admin-sub";
+      s.textContent = "by " + (rep.reporter_name || rep.reporter_id) +
+        (rep.post_caption ? " · “" + rep.post_caption + "”" : "") +
+        (rep.post_deleted ? " · post already removed" : "");
+      info.append(t, s);
+      const rm = document.createElement("button");
+      rm.className = "danger-btn"; rm.textContent = "Remove post";
+      rm.onclick = async () => {
+        await api("/admin/reports/" + rep.id + "/resolve",
+          { method: "POST", body: JSON.stringify({ action: "remove_post" }) });
+        loadAdminReports(); loadAdminPosts();
+      };
+      const dis = document.createElement("button");
+      dis.textContent = "Dismiss";
+      dis.onclick = async () => {
+        await api("/admin/reports/" + rep.id + "/resolve",
+          { method: "POST", body: JSON.stringify({ action: "dismiss" }) });
+        loadAdminReports();
+      };
+      card.append(info, rm, dis);
+      box.appendChild(card);
+    });
+  } catch (e) { box.textContent = "Could not load reports."; }
+}
+
+async function loadAdminUsers(q) {
+  const box = $("admin-users");
+  box.innerHTML = "";
+  try {
+    const r = await api("/admin/users?q=" + encodeURIComponent(q || ""));
+    if (!r.users.length) {
+      box.innerHTML = '<p class="hint">No members found.</p>';
+      return;
+    }
+    r.users.forEach(u => {
+      const row = document.createElement("div");
+      row.className = "card admin-row";
+      const info = document.createElement("div");
+      info.className = "admin-info";
+      const t = document.createElement("div");
+      t.className = "admin-title";
+      t.textContent = u.first_name + (u.is_verified ? " ✓" : "") +
+        (u.is_banned ? " 🚫" : "");
+      const s = document.createElement("div");
+      s.className = "admin-sub";
+      s.textContent = (u.username ? "@" + u.username + " · " : "") +
+        "ID " + u.telegram_id + " · ⭐ " + u.points;
+      info.append(t, s);
+      const btn = document.createElement("button");
+      btn.textContent = u.is_banned ? "Unban" : "Ban";
+      if (!u.is_banned) btn.className = "danger-btn";
+      btn.onclick = async () => {
+        if (!u.is_banned &&
+            !confirm("Ban " + u.first_name + "? They will lose access.")) return;
+        try {
+          await api("/admin/ban", { method: "POST", body: JSON.stringify(
+            { telegram_id: u.telegram_id, banned: !u.is_banned }) });
+          loadAdminUsers($("admin-user-q").value.trim());
+          loadAdminStats();
+        } catch (e) { alert(e.message || "Action failed"); }
+      };
+      row.append(info, btn);
+      box.appendChild(row);
+    });
+  } catch (e) { box.textContent = "Could not load members."; }
+}
+
+async function loadAdminPosts() {
+  const box = $("admin-posts");
+  box.innerHTML = "";
+  try {
+    const r = await api("/admin/posts?limit=30");
+    if (!r.posts.length) {
+      box.innerHTML = '<p class="hint">No posts yet.</p>';
+      return;
+    }
+    r.posts.forEach(p => {
+      const row = document.createElement("div");
+      row.className = "card admin-row";
+      const info = document.createElement("div");
+      info.className = "admin-info";
+      const t = document.createElement("div");
+      t.className = "admin-title";
+      t.textContent = (p.type === "video" ? "🎬 " :
+                       p.type === "photo" ? "🖼️ " : "📝 ") +
+        "#" + p.id + " · " + p.author_name;
+      const s = document.createElement("div");
+      s.className = "admin-sub";
+      s.textContent = (p.caption || "(no caption)") +
+        (p.is_deleted ? " · REMOVED" : "");
+      info.append(t, s);
+      row.appendChild(info);
+      if (!p.is_deleted) {
+        const btn = document.createElement("button");
+        btn.className = "danger-btn"; btn.textContent = "Remove";
+        btn.onclick = async () => {
+          if (!confirm("Remove post #" + p.id + "?")) return;
+          await api("/admin/posts/" + p.id + "/remove", { method: "POST" });
+          loadAdminPosts(); loadAdminStats();
+        };
+        row.appendChild(btn);
+      }
+      box.appendChild(row);
+    });
+  } catch (e) { box.textContent = "Could not load posts."; }
+}
+
+$("admin-user-go").onclick = () =>
+  loadAdminUsers($("admin-user-q").value.trim());
+$("admin-user-q").addEventListener("keydown", e => {
+  if (e.key === "Enter") loadAdminUsers(e.target.value.trim());
+});
+$("admin-bc-send").onclick = async () => {
+  const text = $("admin-bc-text").value.trim();
+  if (!text) return;
+  if (!confirm("Send this announcement to ALL members via the bot?")) return;
+  $("admin-bc-send").disabled = true;
+  try {
+    const r = await api("/admin/broadcast",
+      { method: "POST", body: JSON.stringify({ text }) });
+    $("admin-bc-result").textContent =
+      "Sent to " + r.sent + " of " + r.recipients + " members.";
+    $("admin-bc-text").value = "";
+  } catch (e) { $("admin-bc-result").textContent = "Broadcast failed."; }
+  $("admin-bc-send").disabled = false;
+};
+
+// ------------------------------------------------------------------ ads --
+// AdsGram (Telegram Mini App ad network). Active only when the owner has
+// registered the bot at adsgram.ai and set ADSGRAM_BLOCK_ID — /auth
+// carries it as me.adsgram_block_id; empty means ads stay off. One
+// interstitial per session, shown when the Videos tab is opened.
+let adController = null;
+let adShownThisSession = false;
+
+function initAds() {
+  const blockId = me && me.adsgram_block_id;
+  if (!blockId || adController) return;
+  const s = document.createElement("script");
+  s.src = "https://sad.adsgram.ai/js/sad.min.js";
+  s.onload = () => {
+    try { adController = window.Adsgram.init({ blockId: String(blockId) }); }
+    catch (e) { /* ads stay off if the SDK fails to load */ }
+  };
+  document.head.appendChild(s);
+}
+
+function maybeShowAd() {
+  if (!adController || adShownThisSession) return;
+  adShownThisSession = true;
+  try { adController.show().catch(() => {}); } catch (e) {}
+}
