@@ -61,7 +61,7 @@
       <span id="composer-attach" class="attach-chip" hidden></span>
       <button id="composer-post">Post</button>
     </div>
-    <input type="file" id="composer-file" accept="image/*,video/mp4" hidden>
+    <input type="file" id="composer-file" accept="image/*,video/*" hidden>
   </div>
   <p class="hint">Tip: pick a photo or video with 📷 to post it directly,
   or send media to the bot with a caption and it will be posted for you.</p>
@@ -160,12 +160,39 @@
   <h2 class="view-title">🛡️ Admin Panel</h2>
   <p class="hint">Only you, the owner, can see this panel. Manage members,
   reports and posts, and send announcements to everyone.</p>
+
+  <h3 class="admin-sec">📊 Dashboard</h3>
+  <div id="dash-tiles" class="admin-stats"></div>
+  <div class="card dash-card">
+    <div class="dash-title">🆕 New members — last 14 days</div>
+    <div id="dash-signups"></div>
+  </div>
+  <div class="card dash-card">
+    <div class="dash-title">🟢 Active members — last 14 days</div>
+    <div id="dash-active"></div>
+  </div>
+  <div class="card dash-card">
+    <div class="dash-title">🌍 Members by country <span class="dash-note">(approximate, from sign-in IP)</span></div>
+    <div id="dash-countries"></div>
+  </div>
+  <div class="card dash-card">
+    <div class="dash-title">🗣️ Members by language</div>
+    <div id="dash-languages"></div>
+  </div>
+  <div class="card dash-card">
+    <div class="dash-title">⏱️ Most time in app today</div>
+    <div id="dash-top-time"></div>
+  </div>
+  <p class="hint">Time-in-app and ad counts are recorded from the
+  dashboard launch onward.</p>
+
   <div id="admin-stats" class="admin-stats"></div>
 
   <h3 class="admin-sec">🚩 Open reports</h3>
   <div id="admin-reports"></div>
 
   <h3 class="admin-sec">👥 Members</h3>
+  <div id="admin-user-detail" hidden></div>
   <div class="searchbar">
     <input id="admin-user-q" type="search" placeholder="Search name, @username or ID">
     <button id="admin-user-go">Search</button>

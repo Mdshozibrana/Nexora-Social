@@ -15,11 +15,16 @@ import httpx
 
 from .config import settings
 
-# getFile (used by the /media proxy) serves files up to 20 MB, so uploads
-# are capped there too — a bigger file would post but never play.
+# getFile (used by the /media proxy) serves files up to 20 MB, so the
+# FINAL file handed to Telegram is capped there. Photos are capped at
+# the same size directly. Videos may arrive larger (phone clips are
+# routinely 30-80 MB): they are accepted up to RAW_VIDEO_MAX_BYTES and
+# transcoded down to size by app.videoutil before they reach Telegram.
 MAX_MEDIA_BYTES = 20 * 1024 * 1024
+RAW_VIDEO_MAX_BYTES = 60 * 1024 * 1024
 IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
-VIDEO_TYPES = {"video/mp4"}
+VIDEO_TYPES = {"video/mp4", "video/quicktime", "video/webm",
+               "video/x-matroska", "video/3gpp", "video/x-msvideo"}
 
 
 class TelegramUploadError(Exception):

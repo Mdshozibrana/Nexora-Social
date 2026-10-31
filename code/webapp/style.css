@@ -909,3 +909,28 @@ button.wide { background: #FFFBFC; -webkit-backdrop-filter: none;
   box-shadow: var(--clay-shadow-sm); }
 .bc-card { padding: 12px; }
 .bc-card textarea { margin-bottom: 4px; }
+
+/* Phase 19: admin dashboard — tiles reuse .admin-stats/.stat-card; the
+   bar charts and member detail grid are clay cards like the rest. */
+.dash-card { padding: 12px 14px; margin-bottom: 10px; }
+.dash-title { font-weight: 800; color: var(--ink); margin-bottom: 8px; }
+.dash-note { font-weight: 600; color: var(--ink-dim); font-size: 12px; }
+.bar-row { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
+.bar-label { flex: 0 0 92px; font-size: 12px; color: var(--ink-dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bar-track { flex: 1; height: 12px; border-radius: 999px;
+  background: var(--clay-bg, #F8EAF1);
+  box-shadow: inset 2px 2px 5px rgba(214, 164, 186, .45),
+              inset -2px -2px 5px rgba(255, 255, 255, .9); }
+.bar-fill { height: 100%; border-radius: 999px;
+  background: linear-gradient(90deg, #FF8FBE, #E84393); }
+.bar-val { flex: none; font-size: 12px; font-weight: 700; color: var(--ink); }
+.detail-card { padding: 12px 14px; margin-bottom: 12px; }
+.detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+  margin-top: 10px; }
+.detail-cell { background: var(--clay-bg, #F8EAF1); border-radius: 14px;
+  padding: 8px 10px;
+  box-shadow: inset 2px 2px 5px rgba(214, 164, 186, .35),
+              inset -2px -2px 5px rgba(255, 255, 255, .85); }
+.detail-k { font-size: 11px; color: var(--ink-dim); }
+.detail-v { font-size: 14px; font-weight: 800; color: var(--ink); }

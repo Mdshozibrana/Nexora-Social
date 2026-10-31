@@ -6,3 +6,4 @@ python-telegram-bot
 pydantic
 httpx
 python-multipart
+imageio-ffmpeg

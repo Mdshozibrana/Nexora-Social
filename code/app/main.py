@@ -1,6 +1,9 @@
 """FastAPI backend: auth, feed, posts, likes, comments, profiles, follow,
 referrals, points, search, reports, media proxy, and the Mini App host.
 Only the PRD section-8 admin endpoints remain for a later phase."""
+import asyncio
+import os
+import tempfile
 from pathlib import Path
 from typing import Optional
 
@@ -10,12 +13,12 @@ from fastapi import (Depends, FastAPI, File, Form, Header, HTTPException,
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from sqlalchemy import func, or_
+from sqlalchemy import func, inspect, or_, text
 from sqlalchemy.orm import Session
 
 from datetime import datetime, timedelta
 
-from . import models, notify, tgupload
+from . import geoip, models, notify, tgupload, videoutil
 from .config import (DAILY_TASKS, MONETIZATION, OFFICIAL_FOLLOWER_BASE,
                      OFFICIAL_ID, settings)
 from .db import Base, engine, get_db
@@ -24,6 +27,22 @@ from .services import award_points, register_post
 from .users import get_or_create_user
 
 Base.metadata.create_all(bind=engine)
+
+
+def _migrate():
+    """create_all never alters existing tables, so columns added after
+    the first deploy (Phase 19: country / language_code / last_seen_at
+    on users) are added here, once, on whichever dialect is live."""
+    existing = {c["name"] for c in inspect(engine).get_columns("users")}
+    wanted = {"country": "VARCHAR(64)", "language_code": "VARCHAR(16)",
+              "last_seen_at": "TIMESTAMP"}
+    with engine.begin() as conn:
+        for name, ddl in wanted.items():
+            if name not in existing:
+                conn.execute(text(f"ALTER TABLE users ADD COLUMN {name} {ddl}"))
+
+
+_migrate()
 
 app = FastAPI(title=settings.APP_NAME)
 WEBAPP_DIR = Path(__file__).resolve().parent.parent / "webapp"
@@ -62,6 +81,13 @@ def current_user(x_init_data: str = Header(default=""), db: Session = Depends(ge
     user, _ = get_or_create_user(db, tg_user)
     if user.is_banned:
         raise HTTPException(403, "Account suspended")
+    # Phase 19: "last seen" powers the admin dashboard's activity
+    # figures. Written at most once a minute per member, so the extra
+    # UPDATE stays negligible.
+    now = datetime.utcnow()
+    if user.last_seen_at is None or (now - user.last_seen_at).total_seconds() >= 60:
+        user.last_seen_at = now
+        db.commit()
     return user
 
 
@@ -71,11 +97,22 @@ def health():
 
 
 @app.post("/auth")
-def auth(body: AuthIn, db: Session = Depends(get_db)):
+async def auth(body: AuthIn, request: Request, db: Session = Depends(get_db)):
     tg_user = validate_init_data(body.initData, settings.BOT_TOKEN)
     if not tg_user:
         raise HTTPException(401, "Invalid Telegram login")
     user, is_new = get_or_create_user(db, tg_user)
+    user.last_seen_at = datetime.utcnow()
+    db.commit()
+    # Phase 19: Telegram never reveals a member's country, so it is
+    # approximated ONCE from the sign-in IP (only the name is stored).
+    if not user.country:
+        raw_ip = request.headers.get("x-forwarded-for") or (
+            request.client.host if request.client else "")
+        country = await geoip.lookup_country(raw_ip)
+        if country:
+            user.country = country
+            db.commit()
     followers = db.query(models.Follow).filter_by(following_id=user.telegram_id).count()
     following = db.query(models.Follow).filter_by(follower_id=user.telegram_id).count()
     posts = db.query(models.Post).filter_by(user_id=user.telegram_id, is_deleted=False).count()
@@ -183,27 +220,69 @@ def create_post(body: PostIn, user: models.User = Depends(current_user),
     return post_dict(db, post)
 
 
-async def _telegram_upload_or_400(user, file: UploadFile):
-    """Validate an uploaded file and push it to Telegram; returns
-    (kind, file_id). Errors are user-facing HTTPExceptions."""
-    if tgupload.classify(file.content_type or "") is None:
-        raise HTTPException(
-            400, "Only photos (JPG, PNG, WebP) and MP4 videos are supported")
-    data = await file.read()
-    if not data:
-        raise HTTPException(400, "Empty file")
-    if len(data) > tgupload.MAX_MEDIA_BYTES:
-        raise HTTPException(400, "File is too large — maximum 20 MB")
+async def _send_to_telegram(user, filename, data, content_type):
     try:
         return await tgupload.upload_media(
-            user.telegram_id, file.filename or "upload", data,
-            file.content_type)
+            user.telegram_id, filename, data, content_type)
     except tgupload.TelegramUploadError as e:
         if e.kind == "not_started":
             raise HTTPException(
                 400, "Open @NexoraSocial_bot once and press Start, "
                      "then try uploading again")
         raise HTTPException(502, "Upload failed — please try again")
+
+
+async def _telegram_upload_or_400(user, file: UploadFile):
+    """Validate an uploaded file and push it to Telegram; returns
+    (kind, file_id). Errors are user-facing HTTPExceptions.
+
+    Phase 19: videos no longer die on the old "MP4 only, max 20 MB"
+    rule — real phone clips are bigger and often .mov/.webm. A small
+    MP4 still goes straight through; anything else is transcoded to a
+    compact MP4 (max 720p, sized to fit Telegram) before the send."""
+    kind = tgupload.classify(file.content_type or "")
+    if kind is None:
+        raise HTTPException(
+            400, "Only photos (JPG, PNG, WebP) and videos "
+                 "(MP4, MOV, WebM) are supported")
+    data = await file.read()
+    if not data:
+        raise HTTPException(400, "Empty file")
+    if kind == "photo":
+        if len(data) > tgupload.MAX_MEDIA_BYTES:
+            raise HTTPException(400, "File is too large — maximum 20 MB")
+        return await _send_to_telegram(
+            user, file.filename or "upload", data, file.content_type)
+    # --- video ---
+    if len(data) > tgupload.RAW_VIDEO_MAX_BYTES:
+        raise HTTPException(
+            400, "Video is too large — the maximum upload is 60 MB. "
+                 "Please trim it or record at a lower resolution")
+    ct = (file.content_type or "").split(";")[0].strip().lower()
+    if ct == "video/mp4" and len(data) <= tgupload.MAX_MEDIA_BYTES:
+        return await _send_to_telegram(
+            user, file.filename or "upload", data, file.content_type)
+    src = dst = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False,
+                                         suffix=".src") as f:
+            f.write(data)
+            src = f.name
+        dst = src + ".mp4"
+        await asyncio.to_thread(videoutil.transcode_to_mp4, src, dst)
+        with open(dst, "rb") as f:
+            mp4 = f.read()
+    except videoutil.VideoError as e:
+        raise HTTPException(400, str(e))
+    finally:
+        for p in (src, dst):
+            if p:
+                try:
+                    os.unlink(p)
+                except OSError:
+                    pass
+    return await _send_to_telegram(
+        user, "video.mp4", mp4, "video/mp4")
 
 
 @app.post("/posts/upload")
@@ -747,6 +826,57 @@ def my_monetization(user: models.User = Depends(current_user),
 
 
 # ---------------------------------------------------------------------------
+# Phase 19: usage analytics — heartbeat time tracking + ad impressions.
+# The dashboard reads user_activity / ad_events; see /admin/dashboard.
+# ---------------------------------------------------------------------------
+
+@app.post("/me/heartbeat")
+def heartbeat(user: models.User = Depends(current_user),
+              db: Session = Depends(get_db)):
+    """The Mini App beats every ~30s while open. Each beat credits the
+    seconds since the previous beat (capped at 120s, so a forgotten
+    background tab cannot inflate the numbers); a beat after a longer
+    gap starts a new session instead of crediting the gap."""
+    now = datetime.utcnow()
+    user.last_seen_at = now
+    day = now.date().isoformat()
+    row = db.query(models.UserActivity).filter_by(
+        user_id=user.telegram_id, day=day).first()
+    if row is None:
+        row = models.UserActivity(user_id=user.telegram_id, day=day,
+                                  seconds=0, sessions=1, last_beat_at=now)
+        db.add(row)
+    else:
+        if row.last_beat_at is not None:
+            delta = (now - row.last_beat_at).total_seconds()
+            if 0 <= delta <= 120:
+                row.seconds += int(delta)
+            elif delta > 120:
+                row.sessions += 1
+        row.last_beat_at = now
+    db.commit()
+    return {"ok": True, "seconds_today": row.seconds,
+            "sessions_today": row.sessions}
+
+
+@app.post("/ads/shown")
+def ad_shown(user: models.User = Depends(current_user),
+             db: Session = Depends(get_db)):
+    """The Mini App reports each interstitial that actually finished
+    showing. Reports closer than 5s together count once (SDK retries
+    and double-fires must not inflate the owner's ad figures)."""
+    now = datetime.utcnow()
+    last = db.query(models.AdEvent).filter_by(
+        user_id=user.telegram_id) \
+        .order_by(models.AdEvent.id.desc()).first()
+    if last is not None and (now - last.created_at).total_seconds() < 5:
+        return {"ok": True, "counted": False}
+    db.add(models.AdEvent(user_id=user.telegram_id))
+    db.commit()
+    return {"ok": True, "counted": True}
+
+
+# ---------------------------------------------------------------------------
 # Admin and moderation (PRD section 4, MVP item 10). Admins are the
 # telegram ids listed in the ADMIN_IDS env var.
 # ---------------------------------------------------------------------------
@@ -774,6 +904,86 @@ def admin_ban(body: BanIn, admin: models.User = Depends(admin_user),
     target.is_banned = body.banned
     db.commit()
     return {"telegram_id": target.telegram_id, "is_banned": target.is_banned}
+
+
+@app.get("/admin/dashboard")
+def admin_dashboard(admin: models.User = Depends(admin_user),
+                    db: Session = Depends(get_db)):
+    """Phase 19 owner dashboard: member totals, signups, who is active
+    and when, time-in-app, countries/languages and ad impressions.
+    The official account is excluded from member figures. Country is
+    IP-approximated at sign-in (Telegram shares only the language);
+    time and ads are counted from Phase 19 onward — no backfill."""
+    now = datetime.utcnow()
+    today = now.date()
+    today_start = datetime(today.year, today.month, today.day)
+    members = db.query(models.User).filter(
+        models.User.telegram_id != OFFICIAL_ID)
+
+    def day_series(model_col, rows_by_day, days=14):
+        out = []
+        for i in range(days - 1, -1, -1):
+            d = (today - timedelta(days=i)).isoformat()
+            out.append({"day": d, "count": rows_by_day.get(d, 0)})
+        return out
+
+    signup_rows = db.query(models.User).filter(
+        models.User.telegram_id != OFFICIAL_ID,
+        models.User.created_at >= today_start - timedelta(days=14)).all()
+    signups_by_day = {}
+    for u in signup_rows:
+        if u.created_at:
+            k = u.created_at.date().isoformat()
+            signups_by_day[k] = signups_by_day.get(k, 0) + 1
+    act_rows = db.query(models.UserActivity).filter(
+        models.UserActivity.day >= (today - timedelta(days=14)).isoformat(),
+        models.UserActivity.user_id != OFFICIAL_ID).all()
+    active_by_day = {}
+    for r in act_rows:
+        active_by_day[r.day] = active_by_day.get(r.day, 0) + 1
+
+    def grouped(col):
+        rows = db.query(col, func.count()).filter(
+            models.User.telegram_id != OFFICIAL_ID) \
+            .group_by(col).order_by(func.count().desc()).limit(12).all()
+        return [{"name": (name or "Unknown"), "count": n}
+                for name, n in rows]
+
+    today_key = today.isoformat()
+    act_today = [r for r in act_rows if r.day == today_key]
+    time_today = sum(r.seconds for r in act_today)
+    top_time = []
+    for r in sorted(act_today, key=lambda r: -r.seconds)[:5]:
+        u = db.get(models.User, r.user_id)
+        if u:
+            top_time.append({"telegram_id": u.telegram_id,
+                             "first_name": u.first_name,
+                             "username": u.username,
+                             "seconds": r.seconds,
+                             "sessions": r.sessions})
+    return {
+        "total_members": members.count(),
+        "new_today": members.filter(
+            models.User.created_at >= today_start).count(),
+        "active_now": members.filter(
+            models.User.last_seen_at >= now - timedelta(minutes=10)).count(),
+        "active_last_hour": members.filter(
+            models.User.last_seen_at >= now - timedelta(minutes=60)).count(),
+        "active_today": members.filter(
+            models.User.last_seen_at >= today_start).count(),
+        "posts": db.query(models.Post).filter_by(is_deleted=False).count(),
+        "ads_today": db.query(models.AdEvent).filter(
+            models.AdEvent.created_at >= today_start).count(),
+        "ads_total": db.query(models.AdEvent).count(),
+        "time_today_seconds": time_today,
+        "avg_time_today_seconds":
+            time_today // len(act_today) if act_today else 0,
+        "countries": grouped(models.User.country),
+        "languages": grouped(models.User.language_code),
+        "signups_14d": day_series(None, signups_by_day),
+        "active_14d": day_series(None, active_by_day),
+        "top_time_today": top_time,
+    }
 
 
 @app.get("/admin/stats")
@@ -807,8 +1017,55 @@ def admin_users(q: str = "", limit: int = 50,
         "telegram_id": u.telegram_id, "first_name": u.first_name,
         "username": u.username, "is_banned": bool(u.is_banned),
         "is_verified": bool(u.is_verified), "points": u.points_balance,
+        "country": u.country, "language_code": u.language_code,
+        "last_seen_at": u.last_seen_at.isoformat() if u.last_seen_at else None,
         "created_at": u.created_at.isoformat() if u.created_at else None,
     } for u in rows]}
+
+
+@app.get("/admin/users/{telegram_id}")
+def admin_user_detail(telegram_id: int,
+                      admin: models.User = Depends(admin_user),
+                      db: Session = Depends(get_db)):
+    """Phase 19: everything the owner asked to see about one member —
+    joined/last seen, country, language, posts, points, ads watched
+    and total time spent in the app."""
+    u = db.get(models.User, telegram_id)
+    if u is None:
+        raise HTTPException(404, "User not found")
+    today = datetime.utcnow().date().isoformat()
+    act = db.query(models.UserActivity).filter_by(
+        user_id=telegram_id).all()
+    act_today = next((r for r in act if r.day == today), None)
+    earned = db.query(models.PointsLedger).with_entities(
+        func.coalesce(func.sum(models.PointsLedger.amount), 0)).filter(
+        models.PointsLedger.user_id == telegram_id,
+        models.PointsLedger.amount > 0).scalar()
+    return {
+        "telegram_id": u.telegram_id, "first_name": u.first_name,
+        "username": u.username, "bio": u.bio,
+        "photo_file_id": u.photo_file_id,
+        "is_banned": bool(u.is_banned), "is_verified": bool(u.is_verified),
+        "country": u.country, "language_code": u.language_code,
+        "created_at": u.created_at.isoformat() if u.created_at else None,
+        "last_seen_at": u.last_seen_at.isoformat() if u.last_seen_at else None,
+        "referrer_id": u.referrer_id,
+        "points": u.points_balance, "points_earned_total": int(earned),
+        "posts": db.query(models.Post).filter_by(
+            user_id=telegram_id, is_deleted=False).count(),
+        "comments": db.query(models.Comment).filter_by(
+            user_id=telegram_id).count(),
+        "followers": db.query(models.Follow).filter_by(
+            following_id=telegram_id).count(),
+        "following": db.query(models.Follow).filter_by(
+            follower_id=telegram_id).count(),
+        "ads_watched": db.query(models.AdEvent).filter_by(
+            user_id=telegram_id).count(),
+        "seconds_total": sum(r.seconds for r in act),
+        "seconds_today": act_today.seconds if act_today else 0,
+        "sessions_today": act_today.sessions if act_today else 0,
+        "active_days": len(act),
+    }
 
 
 @app.get("/admin/posts")

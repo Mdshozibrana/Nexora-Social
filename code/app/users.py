@@ -49,6 +49,8 @@ def get_or_create_user(db, tg_user: dict, referrer_id=None):
     if user:
         user.username = tg_user.get("username") or user.username
         user.first_name = tg_user.get("first_name") or user.first_name
+        if tg_user.get("language_code"):
+            user.language_code = tg_user["language_code"]
         # Admins (the owner) always carry the verified mark.
         if uid in settings.ADMIN_IDS and not user.is_verified:
             user.is_verified = True
@@ -59,6 +61,7 @@ def get_or_create_user(db, tg_user: dict, referrer_id=None):
         telegram_id=uid,
         username=tg_user.get("username"),
         first_name=tg_user.get("first_name", ""),
+        language_code=tg_user.get("language_code"),
         is_verified=uid in settings.ADMIN_IDS,
         referrer_id=referrer_id if referrer_id and referrer_id != uid else None,
     )

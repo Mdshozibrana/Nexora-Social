@@ -21,6 +21,11 @@ class User(Base):
     referrer_id = Column(BigInteger, ForeignKey("users.telegram_id"), nullable=True)
     is_banned = Column(Boolean, default=False)
     is_verified = Column(Boolean, default=False)
+    # Phase 19 (admin dashboard): Telegram gives the member's language;
+    # the country is approximated once from their IP at sign-in (geoip).
+    country = Column(String(64), nullable=True)
+    language_code = Column(String(16), nullable=True)
+    last_seen_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -135,3 +140,29 @@ class DailyClaim(Base):
     day = Column(String(10))  # ISO date, UTC — the day the reward was claimed
     claimed_at = Column(DateTime, default=datetime.utcnow)
     __table_args__ = (UniqueConstraint("user_id", "task_key", "day"),)
+
+
+class UserActivity(Base):
+    """Per-member, per-day app usage (Phase 19, admin dashboard). The
+    Mini App sends a heartbeat every ~30s while it is open; each beat
+    adds the elapsed seconds since the previous beat (capped), so
+    `seconds` is real time-in-app and `sessions` counts separate
+    visits (a beat after a >2-minute gap starts a new session)."""
+    __tablename__ = "user_activity"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("users.telegram_id"), index=True)
+    day = Column(String(10))  # ISO date, UTC
+    seconds = Column(Integer, default=0)
+    sessions = Column(Integer, default=0)
+    last_beat_at = Column(DateTime, nullable=True)
+    __table_args__ = (UniqueConstraint("user_id", "day"),)
+
+
+class AdEvent(Base):
+    """One row per ad actually shown to a member (Phase 19). The Mini
+    App reports back when the AdsGram interstitial finishes showing,
+    so the dashboard can count real impressions."""
+    __tablename__ = "ad_events"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("users.telegram_id"), index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)

@@ -36,6 +36,30 @@ async function apiForm(path, form) {
   return res.json();
 }
 
+// Phase 19: uploads of real phone videos can take a while on mobile
+// data, and a frozen "Uploading…" made members give up. XHR reports
+// real progress; onProgress(percent|null) — null once the file is with
+// the server and it is converting/processing.
+function apiFormProgress(path, form, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", path);
+    xhr.setRequestHeader("X-Init-Data", initData);
+    xhr.upload.onprogress = e => {
+      if (e.lengthComputable) onProgress(Math.round(e.loaded / e.total * 100));
+    };
+    xhr.upload.onload = () => onProgress(null);
+    xhr.onload = () => {
+      let j = null;
+      try { j = JSON.parse(xhr.responseText); } catch (e) {}
+      if (xhr.status >= 200 && xhr.status < 300) resolve(j || {});
+      else reject(new Error((j && j.detail) || ("API " + xhr.status)));
+    };
+    xhr.onerror = () => reject(new Error("Upload failed — check your connection and try again"));
+    xhr.send(form);
+  });
+}
+
 function setStatus(msg) { $("status").textContent = msg || ""; }
 
 function showView(name) {
@@ -977,8 +1001,26 @@ async function loadTasks() {
 }
 
 // ----------------------------------------------------------------- init ---
+// ---------------------------------------------------------------------------
+// Phase 19: heartbeat — while the app is open, a beat every 30s lets the
+// server measure real time-in-app and "active now" for the dashboard.
+// ---------------------------------------------------------------------------
+let heartbeatTimer = null;
+function sendHeartbeat() {
+  api("/me/heartbeat", { method: "POST" }).catch(() => {});
+}
+function startHeartbeat() {
+  if (heartbeatTimer) return;
+  sendHeartbeat();
+  heartbeatTimer = setInterval(sendHeartbeat, 30000);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) sendHeartbeat();
+  });
+}
+
 async function loadMe() {
   me = await api("/auth", { method: "POST", body: JSON.stringify({ initData }) });
+  startHeartbeat();
   $("profile-line").textContent =
     me.first_name + (me.username ? " @" + me.username : "");
   if (me.is_verified) $("profile-line").appendChild(verifiedBadge());
@@ -1017,10 +1059,18 @@ function paintAttach() {
 $("composer-media").onclick = () => $("composer-file").click();
 $("composer-file").onchange = () => {
   composerFile = $("composer-file").files[0] || null;
-  if (composerFile && composerFile.size > 20 * 1024 * 1024) {
-    setStatus("That file is over 20 MB — please pick a smaller one.");
-    composerFile = null;
-    $("composer-file").value = "";
+  if (composerFile) {
+    // Phase 19: photos cap at 20 MB; videos may be up to 60 MB — the
+    // server shrinks them to fit Telegram before posting.
+    const isVideo = composerFile.type.startsWith("video");
+    const cap = (isVideo ? 60 : 20) * 1024 * 1024;
+    if (composerFile.size > cap) {
+      setStatus(isVideo
+        ? "That video is over 60 MB — please trim it or record at a lower resolution."
+        : "That file is over 20 MB — please pick a smaller one.");
+      composerFile = null;
+      $("composer-file").value = "";
+    }
   }
   paintAttach();
 };
@@ -1036,7 +1086,11 @@ $("composer-post").onclick = async () => {
       const form = new FormData();
       form.append("file", composerFile);
       form.append("caption", text);
-      await apiForm("/posts/upload", form);
+      await apiFormProgress("/posts/upload", form, pct => {
+        btn.textContent = pct === null
+          ? "Processing… keep the app open"
+          : "Uploading… " + pct + "%";
+      });
       composerFile = null;
       $("composer-file").value = "";
       paintAttach();
@@ -1212,6 +1266,155 @@ function statCard(label, val) {
   return d;
 }
 
+// ------------------------------------------------------- Phase 19: dashboard
+function fmtDur(sec) {
+  sec = Math.max(0, Math.round(sec || 0));
+  if (sec < 60) return sec + "s";
+  if (sec < 3600) return Math.floor(sec / 60) + "m";
+  return Math.floor(sec / 3600) + "h " + Math.floor((sec % 3600) / 60) + "m";
+}
+function relTime(iso) {
+  if (!iso) return "never";
+  const then = new Date(iso + (iso.endsWith("Z") ? "" : "Z")).getTime();
+  const diff = Math.max(0, Date.now() - then);
+  if (diff < 60000) return "just now";
+  if (diff < 3600000) return Math.floor(diff / 60000) + "m ago";
+  if (diff < 86400000) return Math.floor(diff / 3600000) + "h ago";
+  return Math.floor(diff / 86400000) + "d ago";
+}
+function barRows(box, rows, fmt) {
+  box.innerHTML = "";
+  if (!rows.length) {
+    box.innerHTML = '<p class="hint">No data yet.</p>';
+    return;
+  }
+  const max = Math.max(...rows.map(r => r.count), 1);
+  rows.forEach(r => {
+    const row = document.createElement("div");
+    row.className = "bar-row";
+    const lab = document.createElement("span");
+    lab.className = "bar-label"; lab.textContent = r.label;
+    const track = document.createElement("div");
+    track.className = "bar-track";
+    const fill = document.createElement("div");
+    fill.className = "bar-fill";
+    fill.style.width = Math.max(3, r.count / max * 100) + "%";
+    track.appendChild(fill);
+    const val = document.createElement("span");
+    val.className = "bar-val";
+    val.textContent = fmt ? fmt(r.count) : r.count;
+    row.append(lab, track, val);
+    box.appendChild(row);
+  });
+}
+
+async function loadDashboard() {
+  const tiles = $("dash-tiles");
+  try {
+    const d = await api("/admin/dashboard");
+    tiles.innerHTML = "";
+    [["👥 Total members", d.total_members], ["🆕 New today", d.new_today],
+     ["🟢 Active now", d.active_now], ["⏰ Active (1h)", d.active_last_hour],
+     ["📅 Active today", d.active_today], ["📝 Posts", d.posts],
+     ["📺 Ads today", d.ads_today], ["📺 Ads total", d.ads_total],
+     ["⏱️ Time today", fmtDur(d.time_today_seconds)],
+     ["⏱️ Avg / member", fmtDur(d.avg_time_today_seconds)]
+    ].forEach(([l, v]) => tiles.appendChild(statCard(l, v)));
+    const dayLabel = iso => {
+      const dt = new Date(iso + "T00:00:00");
+      return dt.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+    };
+    barRows($("dash-signups"),
+      d.signups_14d.map(r => ({ label: dayLabel(r.day), count: r.count })));
+    barRows($("dash-active"),
+      d.active_14d.map(r => ({ label: dayLabel(r.day), count: r.count })));
+    barRows($("dash-countries"),
+      d.countries.map(r => ({ label: r.name, count: r.count })));
+    barRows($("dash-languages"),
+      d.languages.map(r => ({ label: r.name, count: r.count })));
+    const tt = $("dash-top-time");
+    tt.innerHTML = "";
+    if (!d.top_time_today.length) {
+      tt.innerHTML = '<p class="hint">Nobody has spent time yet today.</p>';
+    }
+    d.top_time_today.forEach(u => {
+      const row = document.createElement("div");
+      row.className = "bar-row";
+      const lab = document.createElement("span");
+      lab.className = "bar-label";
+      lab.textContent = u.first_name + (u.username ? " @" + u.username : "");
+      const val = document.createElement("span");
+      val.className = "bar-val";
+      val.textContent = fmtDur(u.seconds) + " · " + u.sessions + " visits";
+      row.append(lab, val);
+      tt.appendChild(row);
+    });
+  } catch (e) { tiles.textContent = "Could not load the dashboard."; }
+}
+
+async function openUserDetail(telegramId) {
+  const box = $("admin-user-detail");
+  box.hidden = false;
+  box.innerHTML = '<p class="hint">Loading member details…</p>';
+  box.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  try {
+    const u = await api("/admin/users/" + telegramId);
+    box.innerHTML = "";
+    const card = document.createElement("div");
+    card.className = "card detail-card";
+    const head = document.createElement("div");
+    head.className = "admin-row";
+    const info = document.createElement("div");
+    info.className = "admin-info";
+    const t = document.createElement("div");
+    t.className = "admin-title";
+    t.textContent = "👤 " + u.first_name + (u.is_verified ? " ✓" : "") +
+      (u.is_banned ? " 🚫" : "");
+    const s = document.createElement("div");
+    s.className = "admin-sub";
+    s.textContent = (u.username ? "@" + u.username + " · " : "") +
+      "ID " + u.telegram_id;
+    info.append(t, s);
+    const close = document.createElement("button");
+    close.textContent = "✕ Close";
+    close.onclick = () => { box.hidden = true; box.innerHTML = ""; };
+    head.append(info, close);
+    const grid = document.createElement("div");
+    grid.className = "detail-grid";
+    const joined = u.created_at ? u.created_at.slice(0, 10) : "—";
+    [["🌍 Country", u.country || "Unknown"],
+     ["🗣️ Language", u.language_code || "—"],
+     ["📅 Joined", joined],
+     ["👀 Last seen", relTime(u.last_seen_at)],
+     ["📝 Posts", u.posts], ["💬 Comments", u.comments],
+     ["👥 Followers", u.followers], ["➡️ Following", u.following],
+     ["⭐ Points", u.points], ["🏆 Earned total", u.points_earned_total],
+     ["📺 Ads watched", u.ads_watched],
+     ["⏱️ Time in app (total)", fmtDur(u.seconds_total)],
+     ["⏱️ Time today", fmtDur(u.seconds_today)],
+     ["🔁 Visits today", u.sessions_today],
+     ["📆 Active days", u.active_days],
+     ["🔗 Invited by", u.referrer_id || "—"],
+    ].forEach(([k, v]) => {
+      const cell = document.createElement("div");
+      cell.className = "detail-cell";
+      const kk = document.createElement("div");
+      kk.className = "detail-k"; kk.textContent = k;
+      const vv = document.createElement("div");
+      vv.className = "detail-v"; vv.textContent = v;
+      cell.append(kk, vv);
+      grid.appendChild(cell);
+    });
+    card.append(head, grid);
+    if (u.bio) {
+      const bio = document.createElement("p");
+      bio.className = "hint"; bio.textContent = "“" + u.bio + "”";
+      card.appendChild(bio);
+    }
+    box.appendChild(card);
+  } catch (e) { box.innerHTML = '<p class="hint">Could not load details.</p>'; }
+}
+
 async function loadAdminStats() {
   const box = $("admin-stats");
   box.innerHTML = "";
@@ -1226,6 +1429,7 @@ async function loadAdminStats() {
 
 function loadAdmin() {
   if (!me || !me.is_admin) return;
+  loadDashboard();
   loadAdminStats();
   loadAdminReports();
   loadAdminUsers($("admin-user-q").value.trim());
@@ -1296,8 +1500,13 @@ async function loadAdminUsers(q) {
       const s = document.createElement("div");
       s.className = "admin-sub";
       s.textContent = (u.username ? "@" + u.username + " · " : "") +
-        "ID " + u.telegram_id + " · ⭐ " + u.points;
+        "ID " + u.telegram_id + " · ⭐ " + u.points +
+        (u.country ? " · 🌍 " + u.country : "") +
+        " · seen " + relTime(u.last_seen_at);
       info.append(t, s);
+      const details = document.createElement("button");
+      details.textContent = "Details";
+      details.onclick = () => openUserDetail(u.telegram_id);
       const btn = document.createElement("button");
       btn.textContent = u.is_banned ? "Unban" : "Ban";
       if (!u.is_banned) btn.className = "danger-btn";
@@ -1311,7 +1520,7 @@ async function loadAdminUsers(q) {
           loadAdminStats();
         } catch (e) { alert(e.message || "Action failed"); }
       };
-      row.append(info, btn);
+      row.append(info, details, btn);
       box.appendChild(row);
     });
   } catch (e) { box.textContent = "Could not load members."; }
@@ -1400,5 +1609,11 @@ function initAds() {
 function maybeShowAd() {
   if (!adController || adShownThisSession) return;
   adShownThisSession = true;
-  try { adController.show().catch(() => {}); } catch (e) {}
+  try {
+    const p = adController.show();
+    if (p && p.then) p.then(() => {
+      // Phase 19: count real impressions on the owner's dashboard.
+      api("/ads/shown", { method: "POST" }).catch(() => {});
+    }).catch(() => {});
+  } catch (e) {}
 }
