@@ -454,3 +454,80 @@ button.wide {
               inset 0 1px 0 #ffffff;
 }
 body { padding-bottom: 96px; }
+
+/* ==========================================================================
+   GlassMorphism design system + social-size post media (owner request,
+   Oct 31): one glass recipe for every surface, and post photos/videos in
+   the 4:5 social feed frame (1080x1350 standard).
+   ========================================================================== */
+:root {
+  --glass-bg: rgba(255,255,255,.48);
+  --glass-brd: rgba(255,255,255,.65);
+  --glass-blur: blur(18px) saturate(1.5);
+  --glass-shadow: 0 8px 32px rgba(31,38,135,.14),
+                  inset 0 1px 0 rgba(255,255,255,.75);
+}
+.post, .card, .task-card, .mon-card, .rank-row, .game-card, .user-row {
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-brd);
+  box-shadow: var(--glass-shadow);
+}
+.hero .icon-btn {
+  background: rgba(255,255,255,.20);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255,255,255,.35);
+  border-radius: 50%;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.4);
+}
+.tabs {
+  background: rgba(255,255,255,.38);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid rgba(255,255,255,.5);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.6);
+}
+.chip {
+  background: rgba(124,58,237,.10);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  border: 1px solid rgba(124,58,237,.18);
+}
+.searchbar input, .composer textarea {
+  background: rgba(255,255,255,.45);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255,255,255,.6);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.7);
+}
+.post-media {
+  position: relative; margin-top: 10px;
+  aspect-ratio: 4 / 5; border-radius: 16px; overflow: hidden;
+  background: rgba(24,18,46,.08);
+  border: 1px solid rgba(255,255,255,.55);
+  box-shadow: 0 6px 22px rgba(31,38,135,.14),
+              inset 0 1px 0 rgba(255,255,255,.6);
+}
+.post-media img, .post-media video {
+  width: 100%; height: 100%; object-fit: cover; display: block;
+  margin: 0; border-radius: 0;
+}
+.post-media .play-badge {
+  position: absolute; top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 62px; height: 62px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px; color: #fff; padding-left: 4px; cursor: pointer;
+  background: rgba(20,16,40,.38);
+  -webkit-backdrop-filter: blur(8px) saturate(1.4);
+  backdrop-filter: blur(8px) saturate(1.4);
+  border: 1px solid rgba(255,255,255,.55);
+  box-shadow: 0 8px 24px rgba(10,8,30,.35),
+              inset 0 1px 0 rgba(255,255,255,.5);
+}
+.game-card .g-play, .task-card .claim, button.wide {
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}

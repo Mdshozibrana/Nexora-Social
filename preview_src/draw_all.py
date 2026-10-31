@@ -175,7 +175,8 @@ def wrap(d, s, f, maxw):
 def post_card(img, y, author, hue, when, caption, photo_scene=None,
               likes="12", comments="3", liked=False, verified=False, photo_av=False):
     d = ImageDraw.Draw(img)
-    h = 118 if not photo_scene else 268
+    lines = wrap(d, caption, F("Regular", 13), 360)[:2]
+    h = 52 + (404 if photo_scene else 0) + 19 * len(lines) + 42
     card(d, 12, y, 408, y + h)
     avatar(d, 38, y + 26, 15, author, hue, photo=photo_av)
     text(d, 62, y + 12, author, F("SemiBold", 14))
@@ -185,16 +186,16 @@ def post_card(img, y, author, hue, when, caption, photo_scene=None,
     text(d, 62, y + 32, when, F("Regular", 11), FAINT)
     text(d, 392 - tw(d, "⋮", D(15)), y + 12, "⋮", D(15), GREY)
     cy = y + 52
-    for ln in wrap(d, caption, F("Regular", 13), 360)[:2]:
+    if photo_scene:
+        sy = cy + 2
+        d.rounded_rectangle([54 * S, sy * S, 366 * S, (sy + 390) * S], radius=12 * S, fill=photo_scene[0])
+        d.ellipse([282 * S, (sy + 34) * S, 330 * S, (sy + 82) * S], fill=(255, 224, 130))
+        d.polygon([54 * S, (sy + 390) * S, 160 * S, (sy + 240) * S, 250 * S, (sy + 390) * S], fill=photo_scene[1])
+        d.polygon([170 * S, (sy + 390) * S, 300 * S, (sy + 200) * S, 366 * S, (sy + 300) * S, 366 * S, (sy + 390) * S], fill=photo_scene[2])
+        cy = sy + 404
+    for ln in lines:
         text(d, 24, cy, ln, F("Regular", 13))
         cy += 19
-    if photo_scene:
-        sy = cy + 4
-        d.rounded_rectangle([24 * S, sy * S, 396 * S, (sy + 128) * S], radius=10 * S, fill=photo_scene[0])
-        d.ellipse([300 * S, (sy + 16) * S, 336 * S, (sy + 52) * S], fill=(255, 224, 130))
-        d.polygon([(24) * S, (sy + 128) * S, (130) * S, (sy + 58) * S, (230) * S, (sy + 128) * S], fill=photo_scene[1])
-        d.polygon([(150) * S, (sy + 128) * S, (270) * S, (sy + 44) * S, (396) * S, (sy + 128) * S], fill=photo_scene[2])
-        cy = sy + 138
     ay = y + h - 30
     text(d, 24, ay, ("♥ " if liked else "♡ ") + likes, D(13.5), PINK if liked else GREY)
     text(d, 92, ay, "💬", D(12), GREY)
@@ -264,7 +265,7 @@ def entry_signup():
 
 # --------------------------------------------------------------------- FEED --
 def feed():
-    H = 860
+    H = 1090
     img = page_bg(H)
     y = hero(img)
     d = ImageDraw.Draw(img)
@@ -452,7 +453,7 @@ def me_page():
 
 # ------------------------------------------------------------- OTHER PROFILE --
 def profile_page():
-    H = 760
+    H = 1010
     img = page_bg(H)
     y = hero(img)
     d = ImageDraw.Draw(img)
@@ -575,7 +576,7 @@ def share_picker():
 
 # ------------------------------------------------------------- SAVED/SHARED --
 def saved():
-    H = 700
+    H = 930
     img = page_bg(H)
     y = hero(img)
     d = ImageDraw.Draw(img)
@@ -596,7 +597,7 @@ def saved():
 
 
 def shared():
-    H = 700
+    H = 930
     img = page_bg(H)
     y = hero(img)
     d = ImageDraw.Draw(img)

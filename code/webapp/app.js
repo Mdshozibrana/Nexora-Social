@@ -94,17 +94,34 @@ function postCard(p) {
   el.appendChild(head);
 
   if (p.media_file_id && p.type === "photo") {
+    // Social-media frame: 4:5 portrait (the Instagram/Facebook feed
+    // standard, 1080x1350). Display crop only — the original file in
+    // Telegram is never touched.
+    const frame = document.createElement("div");
+    frame.className = "post-media";
     const img = document.createElement("img");
     img.src = "/media/" + encodeURIComponent(p.media_file_id);
     img.loading = "lazy";
     img.alt = "photo";
-    el.appendChild(img);
+    frame.appendChild(img);
+    el.appendChild(frame);
   } else if (p.media_file_id && p.type === "video") {
+    const frame = document.createElement("div");
+    frame.className = "post-media";
     const vid = document.createElement("video");
     vid.src = "/media/" + encodeURIComponent(p.media_file_id);
     vid.controls = true;
     vid.preload = "metadata";
-    el.appendChild(vid);
+    vid.playsInline = true;
+    frame.appendChild(vid);
+    const playBadge = document.createElement("div");
+    playBadge.className = "play-badge";
+    playBadge.textContent = "▶";
+    playBadge.onclick = () => { vid.play(); };
+    vid.onplay = () => { playBadge.style.display = "none"; };
+    vid.onpause = () => { playBadge.style.display = ""; };
+    frame.appendChild(playBadge);
+    el.appendChild(frame);
   }
 
   if (p.caption) {
