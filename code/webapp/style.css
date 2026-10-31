@@ -83,6 +83,18 @@ body { font-family: system-ui, sans-serif; margin: 0; padding: 0 12px 84px;
 .sheet-row:last-child { border-bottom: none; }
 .sheet-row .ic { font-size: 19px; width: 26px; text-align: center; }
 .sheet-row.danger { color: #d81b60; }
+.sheet-title { font-weight: 700; font-size: 16px; padding: 8px 6px 2px; }
+.sheet-search { padding: 8px 0 4px; }
+.sheet-search input { width: 100%; }
+.pick-row { display: flex; align-items: center; gap: 10px; padding: 9px 6px;
+  border-bottom: 1px solid rgba(127,127,127,.12); }
+.pick-name { flex: 1; font-weight: 600; }
+.pick-name small { display: block; font-weight: 400; opacity: .6; font-size: 12px; }
+.pick-send { flex: none; border-radius: 999px; padding: 7px 16px;
+  font-weight: 700; color: #fff;
+  background: linear-gradient(120deg, #4f46e5, #db2777); }
+.pick-send.sent { background: #e5e7eb; color: #374151; }
+.shared-by { font-size: 13px; opacity: .75; margin: 14px 2px 6px; }
 
 .card, .post, .task-card, .mon-card, .user-row {
   background: var(--tg-theme-secondary-bg-color, #fff);

@@ -113,6 +113,18 @@ class SavedPost(Base):
     __table_args__ = (UniqueConstraint("post_id", "user_id"),)
 
 
+class PostShare(Base):
+    """In-app share: one member sends a post/video to another member
+    (owner request, Oct 31). The receiver finds it under 'Shared with me'
+    and also gets a bot notification."""
+    __tablename__ = "post_shares"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    post_id = Column(Integer, ForeignKey("posts.id"), index=True)
+    from_user_id = Column(BigInteger, ForeignKey("users.telegram_id"))
+    to_user_id = Column(BigInteger, ForeignKey("users.telegram_id"), index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class DailyClaim(Base):
     """One row per user per daily task per day — the once-a-day guard for
     the daily-tasks points (owner request, Oct 31)."""

@@ -239,6 +239,72 @@ def my_saved(user: models.User = Depends(current_user),
                       for p in rows]}
 
 
+@app.get("/me/following")
+def my_following(user: models.User = Depends(current_user),
+                 db: Session = Depends(get_db)):
+    """People the viewer follows — the share picker's default list."""
+    rows = db.query(models.User).join(
+        models.Follow, models.Follow.following_id == models.User.telegram_id) \
+        .filter(models.Follow.follower_id == user.telegram_id,
+                models.User.telegram_id != OFFICIAL_ID) \
+        .order_by(models.User.first_name).limit(100).all()
+    return {"users": [{
+        "telegram_id": u.telegram_id, "first_name": u.first_name,
+        "username": u.username, "is_verified": bool(u.is_verified),
+    } for u in rows]}
+
+
+class ShareIn(BaseModel):
+    to_user_id: int
+
+
+@app.post("/posts/{post_id}/share")
+async def share_post(post_id: int, body: ShareIn,
+                     user: models.User = Depends(current_user),
+                     db: Session = Depends(get_db)):
+    """Send a post to another member inside the app (owner request,
+    Oct 31): it lands in their 'Shared with me' inbox and they get a
+    bot notification."""
+    p = get_live_post(db, post_id)
+    if body.to_user_id == user.telegram_id:
+        raise HTTPException(400, "You cannot share to yourself")
+    target = db.get(models.User, body.to_user_id)
+    if target is None:
+        raise HTTPException(404, "User not found")
+    db.add(models.PostShare(post_id=p.id, from_user_id=user.telegram_id,
+                            to_user_id=body.to_user_id))
+    db.commit()
+    snippet = (p.caption or "")[:80]
+    await notify.notify_user(
+        db, body.to_user_id, "share",
+        f"\U0001F4E4 {user.first_name} shared a "
+        f"{'video' if p.type == 'video' else 'post'} with you in "
+        f"Nexora Social{f': {snippet}' if snippet else ''}")
+    return {"ok": True, "post_id": p.id, "to_user_id": body.to_user_id}
+
+
+@app.get("/me/shared")
+def my_shared(user: models.User = Depends(current_user),
+              db: Session = Depends(get_db)):
+    shares = db.query(models.PostShare).filter_by(
+        to_user_id=user.telegram_id) \
+        .order_by(models.PostShare.id.desc()).limit(50).all()
+    out = []
+    for s in shares:
+        p = db.get(models.Post, s.post_id)
+        if p is None or p.is_deleted:
+            continue
+        sender = db.get(models.User, s.from_user_id)
+        d = post_dict(db, p,
+                      liked=s.post_id in liked_ids(db, user.telegram_id, [p]),
+                      saved=s.post_id in saved_ids(db, user.telegram_id, [p]))
+        d["shared_by_id"] = s.from_user_id
+        d["shared_by_name"] = sender.first_name if sender else ""
+        d["shared_at"] = s.created_at.isoformat() if s.created_at else None
+        out.append(d)
+    return {"posts": out}
+
+
 class CommentIn(BaseModel):
     text: str
 

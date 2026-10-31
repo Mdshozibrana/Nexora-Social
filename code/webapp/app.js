@@ -29,13 +29,14 @@ function setStatus(msg) { $("status").textContent = msg || ""; }
 function showView(name) {
   const navFor = { feed: "nav-feed", videos: "nav-videos", tasks: "nav-tasks",
                    leaderboard: "nav-ranks", profile: "nav-me" };
-  ["feed", "videos", "search", "tasks", "leaderboard", "profile", "saved"].forEach(v => {
+  ["feed", "videos", "search", "tasks", "leaderboard", "profile", "saved", "shared"].forEach(v => {
     $("view-" + v).hidden = v !== name;
     const btn = navFor[v];
     if (btn) $(btn).classList.toggle("active", v === name);
   });
   if (name === "tasks") loadTasks();
   if (name === "saved") loadSaved();
+  if (name === "shared") loadShared();
   if (name === "videos") loadVideos(true);
   else document.querySelectorAll("#video-list video").forEach(v => v.pause());
   if (name === "leaderboard") loadRanks();
@@ -400,13 +401,7 @@ async function openReelMenu(p, reelEl) {
       setStatus(r.saved ? "Saved to your collection." : "Removed from Saved.");
     } catch (e) { setStatus("Could not save."); }
   });
-  row("📤", "Share", () => {
-    const text = (p.caption || "Check this out on Nexora Social").slice(0, 200);
-    const url = "https://t.me/share/url?url=" + encodeURIComponent(appLink) +
-      "&text=" + encodeURIComponent(text);
-    if (tg.openTelegramLink) tg.openTelegramLink(url);
-    else window.open(url, "_blank");
-  });
+  row("📤", "Share", () => openSharePicker(p));
   row("🔗", "Copy link", async () => {
     const link = appLink + "?start=post_" + p.id;
     try {
@@ -465,6 +460,124 @@ async function openReelMenu(p, reelEl) {
   }, true);
   row("✕", "Cancel", () => {});
   $("reel-sheet-wrap").hidden = false;
+}
+
+// ------------------------------------------------------------- sharing ---
+function shareViaTelegram(p) {
+  const appLink = "https://t.me/" +
+    (me && me.bot_username ? me.bot_username : "NexoraSocial_bot");
+  const text = (p.caption || "Check this out on Nexora Social").slice(0, 200);
+  const url = "https://t.me/share/url?url=" + encodeURIComponent(appLink) +
+    "&text=" + encodeURIComponent(text);
+  if (tg.openTelegramLink) tg.openTelegramLink(url);
+  else window.open(url, "_blank");
+}
+
+async function openSharePicker(p) {
+  const sheet = $("reel-sheet");
+  sheet.innerHTML = "";
+  const title = document.createElement("div");
+  title.className = "sheet-title";
+  title.textContent = "Send to…";
+  const searchRow = document.createElement("div");
+  searchRow.className = "sheet-search";
+  const input = document.createElement("input");
+  input.type = "text";
+  input.placeholder = "Search people…";
+  searchRow.appendChild(input);
+  const list = document.createElement("div");
+  sheet.append(title, searchRow, list);
+
+  const render = users => {
+    list.innerHTML = "";
+    const visible = users.filter(u => !me || u.telegram_id !== me.telegram_id);
+    if (!visible.length) {
+      const e = document.createElement("p");
+      e.className = "hint";
+      e.textContent = "No people here yet. Follow someone, or search by name.";
+      list.appendChild(e);
+    }
+    visible.forEach(u => {
+      const r = document.createElement("div");
+      r.className = "pick-row";
+      const nm = document.createElement("span");
+      nm.className = "pick-name";
+      nm.textContent = u.first_name;
+      if (u.is_verified) nm.appendChild(verifiedBadge());
+      if (u.username) {
+        const sm = document.createElement("small");
+        sm.textContent = "@" + u.username;
+        nm.appendChild(sm);
+      }
+      const send = document.createElement("button");
+      send.className = "pick-send";
+      send.textContent = "Send";
+      send.onclick = async () => {
+        send.disabled = true;
+        try {
+          await api("/posts/" + p.id + "/share", { method: "POST",
+            body: JSON.stringify({ to_user_id: u.telegram_id }) });
+          send.textContent = "Sent ✓";
+          send.classList.add("sent");
+          setStatus("Shared with " + u.first_name + ".");
+        } catch (e) {
+          send.disabled = false;
+          setStatus("Could not share.");
+        }
+      };
+      r.append(avatarEl(u.first_name, u.telegram_id, false), nm, send);
+      list.appendChild(r);
+    });
+    const tgRow = document.createElement("button");
+    tgRow.className = "sheet-row";
+    const ic = document.createElement("span");
+    ic.className = "ic";
+    ic.textContent = "↗";
+    tgRow.append(ic, document.createTextNode("Share via Telegram"));
+    tgRow.onclick = () => { closeReelMenu(); shareViaTelegram(p); };
+    const cancel = document.createElement("button");
+    cancel.className = "sheet-row";
+    const ic2 = document.createElement("span");
+    ic2.className = "ic";
+    ic2.textContent = "✕";
+    cancel.append(ic2, document.createTextNode("Cancel"));
+    cancel.onclick = () => closeReelMenu();
+    list.append(tgRow, cancel);
+  };
+
+  try {
+    const data = await api("/me/following");
+    render(data.users);
+  } catch (e) { render([]); }
+  let timer = null;
+  input.oninput = () => {
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
+      const q = input.value.trim();
+      try {
+        const d = q ? await api("/search?q=" + encodeURIComponent(q))
+                    : await api("/me/following");
+        render(d.users);
+      } catch (e) { /* keep the current list */ }
+    }, 250);
+  };
+  $("reel-sheet-wrap").hidden = false;
+}
+
+async function loadShared() {
+  const box = $("shared-list");
+  box.innerHTML = "Loading…";
+  try {
+    const data = await api("/me/shared");
+    box.innerHTML = "";
+    data.posts.forEach(p => {
+      const head = document.createElement("div");
+      head.className = "shared-by";
+      head.textContent = "📤 Shared by " + p.shared_by_name;
+      box.append(head, postCard(p));
+    });
+    $("shared-empty").hidden = data.posts.length > 0;
+  } catch (e) { box.textContent = "Could not load shared posts."; }
 }
 
 // ---------------------------------------------------------------- saved ---
@@ -698,6 +811,11 @@ async function myExtras() {
   savedBtn.textContent = "🔖 Saved posts & videos";
   savedBtn.onclick = () => showView("saved");
   wrap.appendChild(savedBtn);
+  const sharedBtn = document.createElement("button");
+  sharedBtn.className = "wide";
+  sharedBtn.textContent = "📥 Shared with me";
+  sharedBtn.onclick = () => showView("shared");
+  wrap.appendChild(sharedBtn);
   try {
     const mon = await api("/me/monetization");
     const card = document.createElement("div");
@@ -830,6 +948,7 @@ $("video-more").onclick = () => loadVideos(false);
 $("reel-close").onclick = () => showView("feed");
 $("reel-sheet-backdrop").onclick = () => closeReelMenu();
 $("saved-back").onclick = () => { if (me) openProfile(me.telegram_id); };
+$("shared-back").onclick = () => { if (me) openProfile(me.telegram_id); };
 $("reel-sound").onclick = () => {
   reelMuted = !reelMuted;
   document.querySelectorAll("#video-list video").forEach(v => { v.muted = reelMuted; });
