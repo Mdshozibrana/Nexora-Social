@@ -195,3 +195,13 @@
 ভিডিও আপলোড: আগের নিয়ম ছিল শুধু MP4, সর্বোচ্চ 20 MB — আসল ফোনের ভিডিও (30–80 MB, iPhone-এর .mov) তাই ব্যর্থ হতো। এখন: MP4/MOV/WebM সর্বোচ্চ 60 MB পর্যন্ত গ্রহণ করা হয়; ছোট MP4 সরাসরি যায়, বাকিগুলো সার্ভারে 720p H.264 MP4-এ রূপান্তরিত (bundled ffmpeg) হয়ে Telegram-এর 20 MB সীমার মধ্যে থাকে। রূপান্তর অনুরোধের মধ্যে না করে background job-এ হয় (19.1) — আপলোড 202 দিয়ে শেষ, পোস্ট তৈরি হলে বট মেসেজ জানিয়ে দেয়; একসঙ্গে একটির বেশি রূপান্তর চলে না। আপলোডে এখন progress %-ও দেখা যায়। লাইভ প্রমাণ: 25.9 MB 1080p ক্লিপ → 10 সেকেন্ডে গৃহীত → background-এ রূপান্তরিত 18.3 MB 720p → /media দিয়ে প্লে হয়েছে।
 
 Admin Dashboard (☰ → Admin Panel → 📊 Dashboard): মোট মেম্বার, আজকের নতুন, এখন/১ ঘণ্টায়/আজ active, ১৪ দিনের signup ও active চার্ট, দেশ (sign-in IP থেকে আনুমানিক — Telegram দেশ দেয় না) ও ভাষা তালিকা, আজকের মোট ও গড় time-in-app, সবচেয়ে বেশি সময় কাটানো মেম্বার। Heartbeat (30s) দিয়ে সময় মাপা হয়; AdsGram বিজ্ঞাপন শেষ হলে /ads/shown-এ impression গোনা হয়। Members তালিকায় দেশ + শেষ দেখা; Details বোতামে এক মেম্বারের পূর্ণ বিবরণ (যোগদান, শেষ দেখা, পোস্ট/কমেন্ট, পয়েন্ট, দেখা বিজ্ঞাপন, মোট সময়)। সব 17টি টেস্ট স্যুট পাস; HEAD 647c7d4।
+
+---
+
+## Addendum — Nov 1, 2026 (Phase 20: Admin visibility fix + Notifications + Managed Users)
+
+ADMIN VISIBILITY BUG (owner report — he was right): ড্রয়ারে Admin Panel আইটেমটা সব মেম্বারের কাছেই দেখা যাচ্ছিল। কারণ: `.drawer-item { display:flex }` CSS নিয়ম HTML `hidden` অ্যাট্রিবিউটকে হারিয়ে দিচ্ছিল। ডেটা কখনোই ফাঁস হয়নি — প্রতিটি /admin endpoint লাইভ যাচাইয়ে non-admin-এর জন্য 403 দিয়েছে (দুবার পরীক্ষিত)। Fix: global `[hidden] { display:none !important; }` নিয়ম + showView-তে admin guard।
+
+NOTIFICATIONS: নতুন `notifications` টেবিল; like/comment/follow/share হুকে in-app রেকর্ড (DM-এর পাশাপাশি); video-live ও broadcast announcement-ও রেকর্ড হয়। GET /me/notifications (cursor + unread_count), POST /me/notifications/read। UI: hero-তে 🔔 bell + লাল badge, view-notifications তালিকা (actor-এর ছবি/নাম, সময়), খুললেই read।
+
+MANAGED USERS: `users.is_managed` কলাম। POST /admin/fake-users (admin-only; নাম/ইউজারনেম/count ≤20; ID সংরক্ষিত 9,000,000,001+ রেঞ্জে; অফিসিয়ালকে অটো-ফলো) ও DELETE /admin/fake-users/{id} (পোস্ট থাকলে মুছা যায় না — ban করতে হয়)। ACT-AS: `X-Act-As` হেডার — শুধু admin পাঠাতে পারে, টার্গেট অবশ্যই managed হতে হবে (আসল মেম্বারকে impersonate করা ডিজাইনগতভাবে অসম্ভব), act-as চলাকালে admin endpoint বন্ধ। UI: Admin Panel-এ 🤖 Managed users সেকশন (তৈরি + Act as + Delete), ওপরে act-as ব্যানার (Stop & back to admin)। Dashboard-এ managed_members আলাদা গণনা। সব 18টি স্যুট পাস; HEAD c1741b8।
