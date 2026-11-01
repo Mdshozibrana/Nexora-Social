@@ -384,6 +384,9 @@ def post_dict(db, p, liked=False, saved=False):
         "id": p.id, "type": p.type, "media_file_id": p.media_file_id,
         "caption": p.caption, "hashtags": p.hashtags,
         "like_count": p.like_count, "comment_count": p.comment_count,
+        # Phase 31: unique-view count (post_views), shown on reels.
+        "views": db.query(models.PostView).filter_by(
+            post_id=p.id).count(),
         "liked": liked,
         "saved": saved,
         "author_id": p.user_id,
@@ -715,6 +718,39 @@ async def toggle_like(post_id: int, user: models.User = Depends(current_user),
         notify.record(db, p.user_id, "like",
                       actor_id=user.telegram_id, post_id=p.id)
     return {"liked": liked, "like_count": p.like_count}
+
+
+@app.post("/posts/{post_id}/view")
+def view_post(post_id: int, user: models.User = Depends(current_user),
+              db: Session = Depends(get_db)):
+    """Phase 31 (owner request): record a UNIQUE view of a post —
+    the client fires this when a video actually starts playing.
+    One row per (post, viewer): rewatches never inflate the count."""
+    _enforce_rate("view", f"u{user.telegram_id}")
+    p = get_live_post(db, post_id)
+    counted = _record_view(db, models.PostView, p.id, user.telegram_id)
+    return {"views": db.query(models.PostView).filter_by(
+        post_id=p.id).count(), "counted": counted}
+
+
+def _record_view(db, model, fk_value, user_id):
+    """Insert a unique-view row unless this viewer already has one.
+    The model names its FK column after the content kind
+    (post_id / design_id — the only non-user column besides id
+    and created_at), which keeps this helper two lines long.
+    Returns True when this call added the view."""
+    fk_name = "post_id" if model is models.PostView else "design_id"
+    existing = db.query(model).filter_by(
+        **{fk_name: fk_value, "user_id": user_id}).first()
+    if existing:
+        return False
+    db.add(model(**{fk_name: fk_value, "user_id": user_id}))
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        return False
+    return True
 
 
 @app.post("/posts/{post_id}/save")
@@ -1966,7 +2002,7 @@ def _wipe_member(db, target):
     if post_ids:
         for model in (models.Like, models.Comment, models.SavedPost,
                       models.PostShare, models.Report,
-                      models.Notification):
+                      models.Notification, models.PostView):
             db.query(model).filter(model.post_id.in_(post_ids)) \
                 .delete(synchronize_session=False)
         db.query(models.Post).filter(models.Post.id.in_(post_ids)) \
@@ -2010,7 +2046,8 @@ def _wipe_member(db, target):
     for model in (models.PointsLedger, models.NotificationLog,
                   models.SavedPost, models.DailyClaim,
                   models.UserActivity, models.AdEvent,
-                  models.VerificationRequest, models.DesignLike):
+                  models.VerificationRequest, models.DesignLike,
+                  models.PostView, models.DesignView):
         db.query(model).filter_by(user_id=tid) \
             .delete(synchronize_session=False)
     db.delete(target)
@@ -2160,6 +2197,9 @@ def _design_dict(db, design, user):
     return {"id": design.id, "image_file_id": design.image_file_id,
             "prompt": design.prompt,
             "like_count": design.like_count, "liked": liked,
+            # Phase 31: unique-view count (design_views).
+            "views": db.query(models.DesignView).filter_by(
+                design_id=design.id).count(),
             "author_id": OFFICIAL_ID, "author_name": OFFICIAL_NAME,
             "created_at": design.created_at.isoformat()
             if design.created_at else None}
@@ -2167,6 +2207,8 @@ def _design_dict(db, design, user):
 
 def _remove_design(db, design):
     db.query(models.DesignLike).filter_by(
+        design_id=design.id).delete(synchronize_session=False)
+    db.query(models.DesignView).filter_by(
         design_id=design.id).delete(synchronize_session=False)
     db.delete(design)
 
@@ -2233,6 +2275,22 @@ def like_design(design_id: int,
         liked = True
     db.commit()
     return {"liked": liked, "like_count": design.like_count}
+
+
+@app.post("/designs/{design_id}/view")
+def view_design(design_id: int,
+                user: models.User = Depends(current_user),
+                db: Session = Depends(get_db)):
+    """Phase 31: record a UNIQUE design view — fired when a member
+    opens the detail sheet. One row per (design, viewer)."""
+    _enforce_rate("view", f"u{user.telegram_id}")
+    design = db.get(models.Design, design_id)
+    if design is None:
+        raise HTTPException(404, "Design not found")
+    counted = _record_view(db, models.DesignView, design.id,
+                           user.telegram_id)
+    return {"views": db.query(models.DesignView).filter_by(
+        design_id=design.id).count(), "counted": counted}
 
 
 @app.delete("/designs/{design_id}")

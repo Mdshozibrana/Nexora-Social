@@ -1141,3 +1141,28 @@ button.liked { animation: heartPop .32s cubic-bezier(.22,.9,.3,1); }
   .post, .design-card, .rank-row, .notif-row, button.liked {
     animation: none !important; }
 }
+
+/* ================================================================
+   Phase 31 — Design gallery goes true-Pinterest (owner reference
+   screenshots) + unique view counts:
+   tighter masonry, a compact like/views stats row under each
+   prompt, and the detail sheet's caption opening partly with a
+   fading edge and a See more / See less toggle.
+   ================================================================ */
+#design-grid { column-gap: 12px; }
+.design-card { margin: 0 0 12px; border-radius: 20px; }
+.design-card-body { padding: 9px 11px 11px; }
+.design-prompt { -webkit-line-clamp: 2; margin: 0 0 7px; }
+.design-stats { display: flex; align-items: center;
+  justify-content: space-between; gap: 8px; }
+.design-views { font-size: 13px; font-weight: 700; color: #96617E; }
+
+#ds-prompt.clamped { max-height: 68px; overflow: hidden;
+  position: relative; }
+#ds-prompt.clamped::after { content: ""; position: absolute;
+  left: 0; right: 0; bottom: 0; height: 26px;
+  background: linear-gradient(transparent, #FFFBFC); }
+#ds-more { background: none; box-shadow: none; color: #E84393;
+  font-weight: 800; font-size: 13.5px; padding: 5px 2px 0; }
+.ds-stats { margin-top: 9px; font-size: 13px; font-weight: 700;
+  color: #96617E; }

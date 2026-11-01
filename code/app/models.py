@@ -261,3 +261,26 @@ class UserBlock(Base):
     blocked_id = Column(BigInteger, ForeignKey("users.telegram_id"))
     created_at = Column(DateTime, default=datetime.utcnow)
     __table_args__ = (UniqueConstraint("blocker_id", "blocked_id"),)
+
+
+class PostView(Base):
+    """Phase 31 (owner request): UNIQUE views of a post — one row
+    per (post, viewer), so a member rewatching a video never
+    inflates the count. Shown on reels as the 👁 count."""
+    __tablename__ = "post_views"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    post_id = Column(Integer, ForeignKey("posts.id"), index=True)
+    user_id = Column(BigInteger, ForeignKey("users.telegram_id"))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    __table_args__ = (UniqueConstraint("post_id", "user_id"),)
+
+
+class DesignView(Base):
+    """Phase 31: UNIQUE views of a design — one row per
+    (design, viewer), recorded when the detail sheet opens."""
+    __tablename__ = "design_views"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    design_id = Column(Integer, ForeignKey("designs.id"), index=True)
+    user_id = Column(BigInteger, ForeignKey("users.telegram_id"))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    __table_args__ = (UniqueConstraint("design_id", "user_id"),)

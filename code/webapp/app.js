@@ -142,6 +142,20 @@ const feedVidObserver = new IntersectionObserver(entries => {
   entries.forEach(en => { if (!en.isIntersecting) en.target.pause(); });
 }, { root: document.getElementById("app-scroll"), threshold: 0.2 });
 
+// Phase 31 (owner request): UNIQUE view counting. The client fires
+// one view event per item per session (Set-guarded); the server
+// dedupes per member forever, so the 👁 counts are real people,
+// not replays. onViews receives the server's fresh total.
+const viewedItems = new Set();
+function markViewed(kind, id, onViews) {
+  const key = kind + ":" + id;
+  if (viewedItems.has(key)) return;
+  viewedItems.add(key);
+  api("/" + kind + "/" + id + "/view", { method: "POST" })
+    .then(r => { if (onViews) onViews(r.views); })
+    .catch(() => {});
+}
+
 function showView(name) {
   // Phase 20: defense in depth — the admin view refuses to open for
   // non-admins even if triggered programmatically (the API is guarded
@@ -268,7 +282,11 @@ function postCard(p) {
     playBadge.className = "play-badge";
     playBadge.textContent = "▶";
     playBadge.onclick = () => { vid.play(); };
-    vid.onplay = () => { playBadge.style.display = "none"; };
+    vid.onplay = () => {
+      playBadge.style.display = "none";
+      // Phase 31: a feed video that actually plays earns its view.
+      markViewed("posts", p.id, views => { p.views = views; });
+    };
     vid.onpause = () => { playBadge.style.display = ""; };
     frame.appendChild(playBadge);
     el.appendChild(frame);
@@ -432,7 +450,15 @@ const reelObserver = new IntersectionObserver(entries => {
   entries.forEach(en => {
     const v = en.target.querySelector("video");
     if (!v) return;
-    if (en.isIntersecting) v.play().catch(() => {});
+    if (en.isIntersecting) {
+      v.play().catch(() => {});
+      // Phase 31: a reel on screen is a view (unique per member).
+      if (en.target.dataset.pid) {
+        markViewed("posts", en.target.dataset.pid, views => {
+          if (en.target._viewCount) en.target._viewCount.textContent = views;
+        });
+      }
+    }
     else v.pause();
   });
 }, { root: document.getElementById("view-videos"), threshold: 0.6 });
@@ -440,6 +466,7 @@ const reelObserver = new IntersectionObserver(entries => {
 function reelCard(p) {
   const el = document.createElement("section");
   el.className = "reel";
+  el.dataset.pid = p.id;
 
   const vid = document.createElement("video");
   vid.src = mediaUrl(p.media_file_id);
@@ -501,6 +528,16 @@ function reelCard(p) {
   const cCount = document.createElement("span");
   cCount.textContent = p.comment_count;
   cWrap.append(cBtn, cCount);
+  // Phase 31: the 👁 unique-view count, under comments.
+  const vWrap = document.createElement("div");
+  vWrap.className = "reel-act";
+  const vBtn = document.createElement("button");
+  vBtn.textContent = "👁";
+  vBtn.title = "Views";
+  const vCount = document.createElement("span");
+  vCount.textContent = p.views || 0;
+  vWrap.append(vBtn, vCount);
+  el._viewCount = vCount;
   const mWrap = document.createElement("div");
   mWrap.className = "reel-act";
   const mBtn = document.createElement("button");
@@ -508,7 +545,7 @@ function reelCard(p) {
   mBtn.title = "Options";
   mBtn.onclick = () => openReelMenu(p, el);
   mWrap.appendChild(mBtn);
-  side.append(likeWrap, cWrap, mWrap);
+  side.append(likeWrap, cWrap, vWrap, mWrap);
   el.appendChild(side);
 
   const cBox = document.createElement("div");
@@ -1653,7 +1690,16 @@ function designCard(d) {
   like.dataset.did = d.id;
   like.textContent = (d.liked ? "❤️ " : "🤍 ") + d.like_count;
   like.onclick = e => { e.stopPropagation(); toggleDesignLike(d); };
-  body.append(p, like);
+  // Phase 31: like + unique views share one compact stats row,
+  // Pinterest-style, under the prompt snippet.
+  const stats = document.createElement("div");
+  stats.className = "design-stats";
+  const views = document.createElement("span");
+  views.className = "design-views";
+  views.dataset.dviews = d.id;
+  views.textContent = "👁 " + (d.views || 0);
+  stats.append(like, views);
+  body.append(p, stats);
   el.append(img, body);
   el.onclick = () => openDesignSheet(d);
   return el;
@@ -1680,12 +1726,31 @@ $("design-more").onclick = () => loadDesigns(false);
 function openDesignSheet(d) {
   currentDesign = d;
   $("ds-img").src = mediaUrl(d.image_file_id);
-  $("ds-prompt").textContent = d.prompt || "(no prompt saved)";
+  // Phase 31 (owner request): the caption opens PARTLY — a few
+  // lines — and "See more" unfolds the rest, Pinterest-style.
+  const promptEl = $("ds-prompt");
+  promptEl.textContent = d.prompt || "(no prompt saved)";
+  promptEl.classList.add("clamped");
+  $("ds-more").textContent = "See more";
+  $("ds-views").textContent = "👁 " + (d.views || 0) + " views";
   $("ds-like").textContent =
     (d.liked ? "❤️ " : "🤍 ") + d.like_count;
   $("ds-remove").hidden = !(me && (me.telegram_id === 1 || me.is_admin));
   $("ds-copy").textContent = "📋 Copy Prompt";
   $("design-sheet-wrap").hidden = false;
+  // "See more" only earns its place when the prompt truly overflows.
+  requestAnimationFrame(() => {
+    $("ds-more").hidden =
+      promptEl.scrollHeight <= promptEl.clientHeight + 2;
+  });
+  // Opening the sheet is the design's view (unique per member).
+  markViewed("designs", d.id, views => {
+    d.views = views;
+    $("ds-views").textContent = "👁 " + views + " views";
+    const card = document.querySelector(
+      '[data-dviews="' + d.id + '"]');
+    if (card) card.textContent = "👁 " + views;
+  });
 }
 function closeDesignSheet() {
   $("design-sheet-wrap").hidden = true;
@@ -1693,6 +1758,11 @@ function closeDesignSheet() {
 }
 $("design-sheet-backdrop").onclick = closeDesignSheet;
 $("ds-close").onclick = closeDesignSheet;
+$("ds-more").onclick = () => {
+  const el = $("ds-prompt");
+  const clamped = el.classList.toggle("clamped");
+  $("ds-more").textContent = clamped ? "See more" : "See less";
+};
 $("ds-like").onclick = () => {
   if (currentDesign) toggleDesignLike(currentDesign);
 };

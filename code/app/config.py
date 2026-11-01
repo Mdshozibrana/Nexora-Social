@@ -55,6 +55,7 @@ RATE_LIMITS = {
     # the real client beats ~every 30s and sees a handful of ads.
     "heartbeat": (240, 3600),
     "ad_shown": (60, 3600),
+    "view": (300, 3600),
 }
 
 # Points economy (PRD section 5). PLACEHOLDER defaults — these are product

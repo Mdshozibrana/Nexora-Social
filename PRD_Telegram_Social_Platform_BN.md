@@ -322,3 +322,15 @@ LOGOUT (owner: লগআউটের পর পুরোপুরি নিজ�
 - **ফিক্স (একটাই কেন্দ্রীয় লাইফসাইকেল, app.js):** `pauseAllVideos()` — (১) capture-phase "play" listener: একসাথে মাত্র একটা ভিডিও চলবে, নতুনটা শুরু হলে বাকি সব থামে; (২) `feedVidObserver` (root = #app-scroll, threshold 0.2): postCard-এর প্রতিটি ভিডিও স্ক্রলের বাইরে গেলেই pause; (৩) showView-এর শুরুতেই pauseAllVideos() — পেজ বদলালে কিছুই চলবে না (reels ব্যতিক্রম নয়); (৪) visibilitychange: অ্যাপ hide হলে সব pause। Reels autoplay আগের মতোই (এই লেয়ার শুধু pause করে, তাই সংঘর্ষ নেই)।
 - **পলিশ (clay থিমের ওপরে purely decorative layer, style.css শেষে Phase 30 অংশ):** পেছনে ধীরে ভাসমান pastel aurora blobs (blur 70px), কার্ডের soft rise-in animation (.post/.design-card/.rank-row/.notif-row), nav pill-এ pink glow pulse, Post বাটনে sheen sweep, like-এ heart pop, #app-name-এ gradient text (@supports গার্ডসহ), গোলাপি thin scrollbar; prefers-reduced-motion-এ সব animation বন্ধ। লেআউট/রং অপরিবর্তিত।
 - টেস্ট: test_phase30 নতুন (লাইফসাইকেল কন্ট্রাক্ট + পলিশ মার্কার + API smoke); মোট ২৮/২৮ স্যুট সবুজ।
+
+---
+
+## সংযোজন — Phase 31 (১ নভেম্বর ২০২৬): Pinterest-স্টাইল ডিজাইন গ্যালারি + ইউনিক ভিউ কাউন্ট
+
+মালিক Pinterest-এর "Food poster design" সার্চের দুটি স্ক্রিনশট পাঠিয়ে বললেন: ডিজাইন পেজের ছবি এমনভাবে সাজানো থাকবে; ছবিতে ক্লিক করে ভিউ করলে ক্যাপশনের কিছুটা দেখা যাবে, বাকিটা "See" ক্লিকে; ভিডিও ভিউ শো করবে; প্রতিটা ইউনিক ভিউ কাউন্ট হবে।
+
+- **গ্যালারি (Pinterest-true):** masonry আগের মতোই natural aspect ratio; এবার grid আরও টাইট (gap 12px, কার্ড radius 20px), কার্ডে prompt এখন ২ লাইনে ক্ল্যাম্প, তার নিচে এক লাইনে ❤️ like + 👁 views stats row।
+- **ডিটেইল শিটে আংশিক ক্যাপশন:** prompt ডিফল্টে ~৩ লাইনে clamped (নিচে fade edge), লম্বা হলেই "See more" বাটন আসে → পুরোটা; "See less"-এ আবার ভাঁজ। ছোট prompt-এ বাটন আসে না (overflow মেপে)।
+- **ইউনিক ভিউ (নতুন টেবিল post_views / design_views, UniqueConstraint):** POST /posts/{id}/view ও POST /designs/{id}/view; এক মেম্বার এক আইটেমে একবারই গণনা হয় — রিপ্লে/রি-ওপেনে সংখ্যা বাড়ে না। রেট বাজেট "view" 300/ঘণ্টা। post_dict ও _design_dict-তে "views" ফিল্ড; _remove_design ও _wipe_member ভিউ-রো পরিষ্কার করে।
+- **ক্লায়েন্ট কখন ভিউ ফায়ার করে:** Reel স্ক্রিনে এলেই (observer, dataset.pid), ফিড ভিডিও play হলেই (onplay), ডিজাইন শিট খুললেই — সেশন-প্রতি একবার (viewedItems Set), সার্ভার চিরদিনের জন্য dedupe করে। Reels-এর ডান রেলে 💬-এর নিচে 👁 কাউন্ট; ভিউ রেজিস্টার হলে সংখ্যা লাইভ আপডেট হয়।
+- টেস্ট: test_phase31 নতুন (ইউনিক ভিউ dedupe, feed/designs-এ views ফিল্ড, wipe পরিচ্ছন্নতা, ক্লায়েন্ট wiring); মোট ২৯/২৯ স্যুট সবুজ।
