@@ -205,3 +205,13 @@ ADMIN VISIBILITY BUG (owner report — he was right): ড্রয়ারে A
 NOTIFICATIONS: নতুন `notifications` টেবিল; like/comment/follow/share হুকে in-app রেকর্ড (DM-এর পাশাপাশি); video-live ও broadcast announcement-ও রেকর্ড হয়। GET /me/notifications (cursor + unread_count), POST /me/notifications/read। UI: hero-তে 🔔 bell + লাল badge, view-notifications তালিকা (actor-এর ছবি/নাম, সময়), খুললেই read।
 
 MANAGED USERS: `users.is_managed` কলাম। POST /admin/fake-users (admin-only; নাম/ইউজারনেম/count ≤20; ID সংরক্ষিত 9,000,000,001+ রেঞ্জে; অফিসিয়ালকে অটো-ফলো) ও DELETE /admin/fake-users/{id} (পোস্ট থাকলে মুছা যায় না — ban করতে হয়)। ACT-AS: `X-Act-As` হেডার — শুধু admin পাঠাতে পারে, টার্গেট অবশ্যই managed হতে হবে (আসল মেম্বারকে impersonate করা ডিজাইনগতভাবে অসম্ভব), act-as চলাকালে admin endpoint বন্ধ। UI: Admin Panel-এ 🤖 Managed users সেকশন (তৈরি + Act as + Delete), ওপরে act-as ব্যানার (Stop & back to admin)। Dashboard-এ managed_members আলাদা গণনা। সব 18টি স্যুট পাস; HEAD c1741b8।
+
+---
+
+## Addendum — Nov 1, 2026 (Phase 21: Always-on Nav + Act-as Official)
+
+NAV BAR (owner: "Navigation Bar হারিয়ে যায় কেনো। সবসময় একরকম থাকবে।"): দুটি কারণ — (১) `.bottom-nav`-এর কোনো z-index ছিল না, তাই full-screen Videos ভিউ (z-60) তার ওপরে উঠে বারটাকে ঢেকে দিত; (২) tab-হীন ভিউতে (search/saved/shared/admin/notifications) showView সব ট্যাবের active ক্লাস মুছে দিত, ফলে গোলাপি pill-টা নিভে গিয়ে বারটা বদলে যেত। Fix: nav z-index 65 (sheet 70/drawer 75/entry 90 modal-গুলো ওপরে থাকে), reel shade ও comments panel-এ bottom padding 96px, আর showView এখন শুধু tab-ভিউতেই highlight বদলায় — বাকি ভিউতে আগের ট্যাবই জ্বলে থাকে।
+
+ACT-AS OFFICIAL: `_resolve_act_as` এখন OFFICIAL_ID (1)-কেও বৈধ target মানে (managed ছাড়াও) — শুধু admin-এর জন্য; আসল মেম্বারকে impersonate করা আগের মতোই অসম্ভব। Admin Panel-এ "📣 Official account" সেকশন + 🎭 Act as Official বোতাম। অফিসিয়াল হিসেবে পোস্ট/লাইক/কমেন্ট/ছবি বদল সম্ভব; সবার কাছে নোটিশ = Broadcast (bot DM + 🔔 announcement, Phase 20 থেকে)। সব 19টি স্যুট পাস; HEAD f830b9d।
+
+ADSGRAM STATUS (Nov 1, 08:45 লাইভ যাচাই): প্ল্যাটফর্ম ও unit (int-57207) দুটোই এখনো "In moderation"; balance 0.00, impression শূন্য। আমাদের দিকে কিছু বাকি নেই — moderation পাস হলেই Videos ট্যাবে বিজ্ঞাপন নিজে নিজে চলবে।
