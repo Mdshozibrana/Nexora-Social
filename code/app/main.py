@@ -20,7 +20,8 @@ from datetime import datetime, timedelta
 
 from . import geoip, models, notify, tgupload, videoutil
 from .config import (DAILY_TASKS, MONETIZATION, OFFICIAL_FOLLOWER_BASE,
-                     OFFICIAL_ID, VERIFICATION_MIN_FOLLOWERS, settings)
+                     OFFICIAL_ID, OFFICIAL_NAME,
+                     VERIFICATION_MIN_FOLLOWERS, settings)
 from .db import Base, SessionLocal, engine, get_db
 from .security import validate_init_data
 from .services import award_points, register_post
@@ -1594,7 +1595,7 @@ def _wipe_member(db, target):
     for model in (models.PointsLedger, models.NotificationLog,
                   models.SavedPost, models.DailyClaim,
                   models.UserActivity, models.AdEvent,
-                  models.VerificationRequest):
+                  models.VerificationRequest, models.DesignLike):
         db.query(model).filter_by(user_id=tid) \
             .delete(synchronize_session=False)
     db.delete(target)
@@ -1719,6 +1720,115 @@ def admin_comment_remove(comment_id: int,
     db.delete(cm)
     db.commit()
     return {"ok": True, "removed": comment_id}
+
+
+# ---------------------------------------------------------------------------
+# Phase 25: the Design gallery (owner: a Design tab in the nav,
+# Pinterest-style premium). Designs are posted ONLY as the official
+# account — the admin switches to Official (composer switch, drawer
+# or Admin Panel) and uploads image + prompt here. Members browse
+# and like.
+# ---------------------------------------------------------------------------
+
+def _design_dict(db, design, user):
+    liked = db.query(models.DesignLike).filter_by(
+        design_id=design.id, user_id=user.telegram_id).first() \
+        is not None
+    return {"id": design.id, "image_file_id": design.image_file_id,
+            "prompt": design.prompt,
+            "like_count": design.like_count, "liked": liked,
+            "author_id": OFFICIAL_ID, "author_name": OFFICIAL_NAME,
+            "created_at": design.created_at.isoformat()
+            if design.created_at else None}
+
+
+def _remove_design(db, design):
+    db.query(models.DesignLike).filter_by(
+        design_id=design.id).delete(synchronize_session=False)
+    db.delete(design)
+
+
+@app.get("/designs")
+def list_designs(cursor: int = 0, limit: int = 20,
+                 user: models.User = Depends(current_user),
+                 db: Session = Depends(get_db)):
+    q = db.query(models.Design)
+    if cursor:
+        q = q.filter(models.Design.id < cursor)
+    rows = q.order_by(models.Design.id.desc()) \
+        .limit(max(1, min(limit, 40))).all()
+    return {"designs": [_design_dict(db, d, user) for d in rows],
+            "next_cursor": rows[-1].id if len(rows) == limit else None}
+
+
+@app.post("/designs/upload")
+async def upload_design(prompt: str = Form(""),
+                        file: UploadFile = File(...),
+                        user: models.User = Depends(current_user),
+                        db: Session = Depends(get_db)):
+    if user.telegram_id != OFFICIAL_ID:
+        raise HTTPException(
+            403, "Designs are posted as the Official account — "
+                 "switch to Official first")
+    kind, file_id = await _telegram_upload_or_400(
+        user, file, prompt.strip())
+    if kind != "photo":
+        raise HTTPException(400, "Designs must be images only")
+    design = models.Design(image_file_id=file_id,
+                           prompt=prompt.strip()[:2000])
+    db.add(design)
+    db.commit()
+    db.refresh(design)
+    return _design_dict(db, design, user)
+
+
+@app.post("/designs/{design_id}/like")
+def like_design(design_id: int,
+                user: models.User = Depends(current_user),
+                db: Session = Depends(get_db)):
+    design = db.get(models.Design, design_id)
+    if design is None:
+        raise HTTPException(404, "Design not found")
+    existing = db.query(models.DesignLike).filter_by(
+        design_id=design_id, user_id=user.telegram_id).first()
+    if existing:
+        db.delete(existing)
+        design.like_count = max(0, design.like_count - 1)
+        liked = False
+    else:
+        db.add(models.DesignLike(design_id=design_id,
+                                 user_id=user.telegram_id))
+        design.like_count += 1
+        liked = True
+    db.commit()
+    return {"liked": liked, "like_count": design.like_count}
+
+
+@app.delete("/designs/{design_id}")
+def delete_design(design_id: int,
+                  user: models.User = Depends(current_user),
+                  db: Session = Depends(get_db)):
+    if user.telegram_id != OFFICIAL_ID:
+        raise HTTPException(
+            403, "Only the Official account can remove designs")
+    design = db.get(models.Design, design_id)
+    if design is None:
+        raise HTTPException(404, "Design not found")
+    _remove_design(db, design)
+    db.commit()
+    return {"ok": True, "removed": design_id}
+
+
+@app.delete("/admin/designs/{design_id}")
+def admin_delete_design(design_id: int,
+                        admin: models.User = Depends(admin_user),
+                        db: Session = Depends(get_db)):
+    design = db.get(models.Design, design_id)
+    if design is None:
+        raise HTTPException(404, "Design not found")
+    _remove_design(db, design)
+    db.commit()
+    return {"ok": True, "removed": design_id}
 
 
 @app.get("/media/{file_id}")

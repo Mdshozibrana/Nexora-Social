@@ -82,10 +82,12 @@ function showView(name) {
   // Phase 23: each view starts at the top of the app shell.
   const sc = $("app-scroll");
   if (sc) sc.scrollTop = 0;
-  const navFor = { feed: "nav-feed", videos: "nav-videos", games: "nav-games",
+  const navFor = { feed: "nav-feed", videos: "nav-videos",
+                   designs: "nav-design",
+                   games: "nav-games",
                    game: "nav-games", tasks: "nav-tasks",
                    leaderboard: "nav-ranks", profile: "nav-me" };
-  ["feed", "videos", "search", "tasks", "leaderboard", "profile", "saved", "shared", "games", "game", "admin", "notifications"].forEach(v => {
+  ["feed", "videos", "designs", "search", "tasks", "leaderboard", "profile", "saved", "shared", "games", "game", "admin", "notifications"].forEach(v => {
     $("view-" + v).hidden = v !== name;
   });
   // Phase 21: only tab views move the highlight. Views without a tab
@@ -105,10 +107,11 @@ function showView(name) {
   if (name === "videos") { loadVideos(true); maybeShowAd(); }
   else document.querySelectorAll("#video-list video").forEach(v => v.pause());
   if (name === "leaderboard") loadRanks();
+  if (name === "designs") loadDesigns(true);
   moveNavPill();
 }
 
-const NAV_IDS = ["nav-feed", "nav-videos", "nav-games", "nav-tasks",
+const NAV_IDS = ["nav-feed", "nav-videos", "nav-design", "nav-games", "nav-tasks",
                  "nav-ranks", "nav-me"];
 
 function moveNavPill() {
@@ -1227,6 +1230,7 @@ $("profile-more").onclick = () => loadProfilePosts(false);
 $("search-go").onclick = () => runSearch($("search-input").value.trim());
 $("nav-feed").onclick = () => showView("feed");
 $("nav-videos").onclick = () => showView("videos");
+$("nav-design").onclick = () => showView("designs");
 $("nav-games").onclick = () => showView("games");
 $("nav-tasks").onclick = () => showView("tasks");
 $("nav-ranks").onclick = () => showView("leaderboard");
@@ -1468,6 +1472,172 @@ function paintActAs() {
 }
 $("actas-stop").onclick = () => stopActAs();
 paintActAs();
+
+// ---------------------------------------------------- Phase 25: designs --
+// Pinterest-style gallery. Posting is official-only (the server
+// enforces it); admins on their own ID get a one-tap switch card,
+// the official identity gets the upload card.
+let designCursor = null;
+let designFile = null;
+let currentDesign = null;
+
+function paintDesignAccess() {
+  const isOfficial = !!(me && me.telegram_id === 1);
+  $("design-upload").hidden = !isOfficial;
+  $("design-switch").hidden = isOfficial || !(me && me.is_admin);
+}
+$("design-switch-btn").onclick = () =>
+  startActAs(1, "Nexora Social (Official)");
+
+function paintDesignLike(d) {
+  document.querySelectorAll('[data-did="' + d.id + '"]')
+    .forEach(b => {
+      b.textContent = (d.liked ? "❤️ " : "🤍 ") + d.like_count;
+      b.classList.toggle("liked", !!d.liked);
+    });
+  if (currentDesign && currentDesign.id === d.id) {
+    $("ds-like").textContent =
+      (d.liked ? "❤️ " : "🤍 ") + d.like_count;
+  }
+}
+
+async function toggleDesignLike(d) {
+  try {
+    const r = await api("/designs/" + d.id + "/like",
+                        { method: "POST" });
+    d.liked = r.liked; d.like_count = r.like_count;
+    paintDesignLike(d);
+  } catch (e) { setStatus("Could not update the like."); }
+}
+
+function designCard(d) {
+  const el = document.createElement("div");
+  el.className = "design-card";
+  const img = document.createElement("img");
+  img.src = "/media/" + encodeURIComponent(d.image_file_id);
+  img.loading = "lazy";
+  img.alt = "Design";
+  const body = document.createElement("div");
+  body.className = "design-card-body";
+  const p = document.createElement("p");
+  p.className = "design-prompt";
+  p.textContent = d.prompt || "";
+  const like = document.createElement("button");
+  like.className = "design-like" + (d.liked ? " liked" : "");
+  like.dataset.did = d.id;
+  like.textContent = (d.liked ? "❤️ " : "🤍 ") + d.like_count;
+  like.onclick = e => { e.stopPropagation(); toggleDesignLike(d); };
+  body.append(p, like);
+  el.append(img, body);
+  el.onclick = () => openDesignSheet(d);
+  return el;
+}
+
+async function loadDesigns(reset) {
+  paintDesignAccess();
+  const grid = $("design-grid");
+  if (reset) { designCursor = null; grid.innerHTML = ""; }
+  try {
+    const url = "/designs?limit=20" +
+      (designCursor ? "&cursor=" + designCursor : "");
+    const r = await api(url);
+    r.designs.forEach(d => grid.appendChild(designCard(d)));
+    designCursor = r.next_cursor;
+    $("design-more").hidden = !designCursor;
+    $("design-empty").hidden = grid.children.length > 0;
+  } catch (e) {
+    if (reset) $("design-empty").hidden = false;
+  }
+}
+$("design-more").onclick = () => loadDesigns(false);
+
+function openDesignSheet(d) {
+  currentDesign = d;
+  $("ds-img").src = "/media/" + encodeURIComponent(d.image_file_id);
+  $("ds-prompt").textContent = d.prompt || "(no prompt saved)";
+  $("ds-like").textContent =
+    (d.liked ? "❤️ " : "🤍 ") + d.like_count;
+  $("ds-remove").hidden = !(me && (me.telegram_id === 1 || me.is_admin));
+  $("ds-copy").textContent = "📋 Copy Prompt";
+  $("design-sheet-wrap").hidden = false;
+}
+function closeDesignSheet() {
+  $("design-sheet-wrap").hidden = true;
+  currentDesign = null;
+}
+$("design-sheet-backdrop").onclick = closeDesignSheet;
+$("ds-close").onclick = closeDesignSheet;
+$("ds-like").onclick = () => {
+  if (currentDesign) toggleDesignLike(currentDesign);
+};
+async function copyText(t) {
+  try { await navigator.clipboard.writeText(t); return true; }
+  catch (e) {
+    const ta = document.createElement("textarea");
+    ta.value = t;
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand("copy"); } catch (e2) {}
+    ta.remove();
+    return ok;
+  }
+}
+$("ds-copy").onclick = async () => {
+  if (!currentDesign) return;
+  const ok = await copyText(currentDesign.prompt || "");
+  $("ds-copy").textContent = ok ? "✅ Copied!" : "📋 Copy Prompt";
+  if (ok) setStatus("Prompt copied 📋 — paste it anywhere.");
+};
+$("ds-remove").onclick = async () => {
+  if (!currentDesign) return;
+  if (!confirm("Remove this design from the gallery?")) return;
+  const id = currentDesign.id;
+  try {
+    if (me.telegram_id === 1) {
+      await api("/designs/" + id, { method: "DELETE" });
+    } else {
+      await api("/admin/designs/" + id, { method: "DELETE" });
+    }
+    closeDesignSheet();
+    loadDesigns(true);
+  } catch (e) { setStatus("Could not remove the design."); }
+};
+
+$("design-pick").onclick = () => $("design-file").click();
+$("design-file").onchange = () => {
+  designFile = $("design-file").files[0] || null;
+  const chip = $("design-attach");
+  chip.hidden = !designFile;
+  chip.textContent = designFile ? "🖼️ " + designFile.name : "";
+  $("design-status").textContent = "";
+};
+$("design-post").onclick = async () => {
+  if (!designFile) {
+    $("design-status").textContent = "Pick a design image first 🖼️";
+    return;
+  }
+  const btn = $("design-post");
+  btn.disabled = true;
+  const fd = new FormData();
+  fd.append("file", designFile);
+  fd.append("prompt", $("design-prompt").value.trim());
+  try {
+    await apiFormProgress("/designs/upload", fd,
+      pct => { $("design-status").textContent =
+        "Uploading… " + pct + "%"; });
+    designFile = null;
+    $("design-file").value = "";
+    $("design-attach").hidden = true;
+    $("design-prompt").value = "";
+    $("design-status").textContent = "Design posted ✨";
+    loadDesigns(true);
+  } catch (e) {
+    $("design-status").textContent =
+      "Upload failed — designs are images only, up to 20 MB.";
+  }
+  btn.disabled = false;
+};
 
 // ------------------------------------------------------- Phase 19: dashboard
 function fmtDur(sec) {

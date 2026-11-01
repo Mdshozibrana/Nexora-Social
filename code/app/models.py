@@ -204,3 +204,25 @@ class VerificationRequest(Base):
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     decided_at = Column(DateTime, nullable=True)
     decided_by = Column(BigInteger, nullable=True)
+
+
+class Design(Base):
+    """Design gallery entry (Phase 25). Posted ONLY as the official
+    account (the admin acting as @nexora); the design's prompt is
+    its caption. Members browse the Pinterest-style gallery and
+    like designs; posting is official-only by design."""
+    __tablename__ = "designs"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    image_file_id = Column(String(256), nullable=False)
+    prompt = Column(Text, default="")
+    like_count = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
+class DesignLike(Base):
+    __tablename__ = "design_likes"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    design_id = Column(Integer, ForeignKey("designs.id"), index=True)
+    user_id = Column(BigInteger, ForeignKey("users.telegram_id"))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    __table_args__ = (UniqueConstraint("design_id", "user_id"),)

@@ -68,7 +68,8 @@ with TestClient(app) as c:
     # --- (B) six tabs, one screen -------------------------------------------
     assert "flex-direction: column" in css
     assert "min-width: 0" in css
-    assert "width: calc((100% - 10px) / 6)" in css
+    # Phase 25 supersedes the divisor: the Design tab made it 7.
+    assert "width: calc((100% - 10px) / 7)" in css
     assert "white-space: nowrap" in css
     print("nav fit locks OK")
 

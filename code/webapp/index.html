@@ -88,6 +88,36 @@
   <button id="feed-more" class="wide" hidden>Load more</button>
 </section>
 
+<section id="view-designs" hidden>
+  <div class="design-head">
+    <h2 class="view-title">🎨 Design Gallery</h2>
+    <p class="hint">Premium designs by Nexora Social — every design
+      carries the prompt that made it. Tap a design to see the full
+      prompt.</p>
+  </div>
+  <div id="design-switch" class="card bc-card" hidden>
+    <p class="hint">Designs are posted as the <b>Official
+      account</b>.</p>
+    <button id="design-switch-btn" type="button">Switch to Official 📣</button>
+  </div>
+  <div id="design-upload" class="card" hidden>
+    <div class="design-up-title">➕ Add a design <span class="hint">(posting as Official 📣)</span></div>
+    <textarea id="design-prompt" rows="3" maxlength="2000"
+      placeholder="Paste the prompt for this design…"></textarea>
+    <div class="composer-row">
+      <button id="design-pick" class="tool-btn" title="Pick the design image">🖼️</button>
+      <span id="design-attach" class="attach-chip" hidden></span>
+      <span id="design-status" class="hint"></span>
+      <button id="design-post" type="button">Post Design</button>
+    </div>
+    <input type="file" id="design-file" accept="image/*" hidden>
+  </div>
+  <div id="design-grid"></div>
+  <p id="design-empty" class="hint" hidden>No designs yet — the first
+    one is on its way ✨</p>
+  <button id="design-more" class="wide" hidden>Load more</button>
+</section>
+
 <section id="view-search" hidden>
   <div class="searchbar">
     <input id="search-input" type="search" placeholder="Search people or #tags">
@@ -265,6 +295,23 @@
 </section>
 </div><!-- /#app-scroll -->
 
+<div id="design-sheet-wrap" hidden>
+  <div id="design-sheet-backdrop"></div>
+  <div id="design-sheet">
+    <img id="ds-img" alt="Design">
+    <div class="ds-body">
+      <div class="ds-label">✨ PROMPT</div>
+      <p id="ds-prompt"></p>
+      <div class="ds-actions">
+        <button id="ds-copy" type="button">📋 Copy Prompt</button>
+        <button id="ds-like" type="button">🤍 Like</button>
+        <button id="ds-remove" class="danger-btn" type="button" hidden>Remove</button>
+      </div>
+      <button id="ds-close" class="wide" type="button">Close</button>
+    </div>
+  </div>
+</div>
+
 <div id="drawer-wrap" hidden>
   <div id="drawer-backdrop"></div>
   <aside id="drawer">
@@ -302,6 +349,7 @@
   <span id="nav-pill"></span>
   <button id="nav-feed" class="active">🏠<span>Feed</span></button>
   <button id="nav-videos">🎬<span>Videos</span></button>
+  <button id="nav-design">🎨<span>Design</span></button>
   <button id="nav-games">🎮<span>Games</span></button>
   <button id="nav-tasks">⭐<span>Tasks</span></button>
   <button id="nav-ranks">🏆<span>Ranks</span></button>

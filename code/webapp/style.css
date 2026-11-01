@@ -857,7 +857,7 @@ button.wide { background: #FFFBFC; -webkit-backdrop-filter: none;
 }
 #nav-pill {
   position: absolute; top: 6px; bottom: 6px; left: 6px;
-  width: calc((100% - 12px) / 6); border-radius: 999px;
+  width: calc((100% - 12px) / 7); border-radius: 999px;
   background: linear-gradient(160deg, #FF9CC6, #E84393);
   box-shadow: 5px 9px 18px rgba(232,67,147,.45),
               inset 2px 2px 4px rgba(255,255,255,.65),
@@ -1000,7 +1000,7 @@ body { padding: 0; overflow: hidden; }
    pill geometry follows the tighter capsule padding. */
 .bottom-nav { left: 8px; right: 8px; bottom: 8px; padding: 5px; }
 #nav-pill { top: 5px; bottom: 5px; left: 5px;
-  width: calc((100% - 10px) / 6); }
+  width: calc((100% - 10px) / 7); }
 .bottom-nav button { display: flex; flex-direction: column;
   align-items: center; justify-content: center; gap: 1px;
   min-width: 0; padding: 5px 0; font-size: 16px; line-height: 1.1; }
@@ -1025,3 +1025,41 @@ body { padding: 0; overflow: hidden; }
 .ctl-row input { flex: 1; }
 .ctl-row button { flex: none; }
 #view-admin .bc-card textarea { width: 100%; margin-bottom: 8px; }
+
+/* Phase 25: Design gallery — Pinterest-style premium masonry in the
+   clay theme. Two-column waterfall of image cards (natural aspect
+   ratios do the masonry), generous radii and soft clay shadows,
+   with a bottom sheet for the full design + its prompt. */
+.design-head { margin: 4px 2px 10px; }
+#design-grid { columns: 2; column-gap: 10px; }
+.design-card { break-inside: avoid; margin: 0 0 10px;
+  background: #FFFBFC; border-radius: 18px; overflow: hidden;
+  box-shadow: var(--clay-shadow-sm); cursor: pointer; }
+.design-card img { width: 100%; display: block; }
+.design-card-body { padding: 10px 12px 12px; }
+.design-prompt { font-size: 13px; line-height: 1.45; margin: 0 0 8px;
+  display: -webkit-box; -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical; overflow: hidden; }
+.design-like { border-radius: 999px; padding: 5px 12px;
+  font-size: 13px; font-weight: 700; }
+.design-like.liked { color: #E84393; }
+.design-up-title { font-weight: 800; margin-bottom: 8px; }
+#design-upload textarea, #design-switch { margin-bottom: 10px; }
+#design-upload textarea { width: 100%; }
+#design-sheet-wrap { position: fixed; inset: 0; z-index: 80; }
+#design-sheet-backdrop { position: absolute; inset: 0;
+  background: rgba(46, 12, 30, .55); }
+#design-sheet { position: absolute; left: 10px; right: 10px;
+  bottom: 10px; max-height: 88%; overflow-y: auto;
+  background: #FFFBFC; border-radius: 22px;
+  box-shadow: var(--clay-shadow); padding-bottom: 14px; }
+#ds-img { width: 100%; display: block;
+  border-radius: 22px 22px 0 0; }
+.ds-body { padding: 12px 14px 0; }
+.ds-label { font-size: 11px; font-weight: 800;
+  letter-spacing: 1.6px; color: var(--ink-faint, #BC90A6);
+  margin-bottom: 6px; }
+#ds-prompt { white-space: pre-wrap; font-size: 14px;
+  line-height: 1.55; margin: 0; }
+.ds-actions { display: flex; gap: 8px; margin: 12px 0; flex-wrap: wrap; }
+.ds-actions button { flex: 1; white-space: nowrap; }
