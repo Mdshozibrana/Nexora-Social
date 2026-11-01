@@ -215,3 +215,9 @@ NAV BAR (owner: "Navigation Bar হারিয়ে যায় কেনো�
 ACT-AS OFFICIAL: `_resolve_act_as` এখন OFFICIAL_ID (1)-কেও বৈধ target মানে (managed ছাড়াও) — শুধু admin-এর জন্য; আসল মেম্বারকে impersonate করা আগের মতোই অসম্ভব। Admin Panel-এ "📣 Official account" সেকশন + 🎭 Act as Official বোতাম। অফিসিয়াল হিসেবে পোস্ট/লাইক/কমেন্ট/ছবি বদল সম্ভব; সবার কাছে নোটিশ = Broadcast (bot DM + 🔔 announcement, Phase 20 থেকে)। সব 19টি স্যুট পাস; HEAD f830b9d।
 
 ADSGRAM STATUS (Nov 1, 08:45 লাইভ যাচাই): প্ল্যাটফর্ম ও unit (int-57207) দুটোই এখনো "In moderation"; balance 0.00, impression শূন্য। আমাদের দিকে কিছু বাকি নেই — moderation পাস হলেই Videos ট্যাবে বিজ্ঞাপন নিজে নিজে চলবে।
+
+---
+
+## Addendum — Nov 1, 2026 (Phase 22: Blue-tick Verification Applications)
+
+OWNER RULE: "ফলোয়ার ১০০০ হলে ব্লু টিক এর জন্য আবেদন করতে পারবে।" নতুন `verification_requests` টেবিল (pending/approved/rejected, decided_at/by)। Member side: GET /me/verification (followers, required=1000 `VERIFICATION_MIN_FOLLOWERS` কনফিগে, is_verified, pending, last_status, can_apply) + POST /me/verification/apply — সার্ভারেই গেট যাচাই (verified হলে 400, 1000-এর কম হলে 400, pending থাকলে 400)। Admin side: GET /admin/verifications (আবেদনকারীর followers/posts/joined-সহ তালিকা) + POST /admin/verifications/{id}/decide — approve হলে `users.is_verified=True` (বিদ্যমান নীল ব্যাজ সব জায়গায় জ্বলে ওঠে), আবেদনকারী 🔔 + bot DM-এ সিদ্ধান্ত জানতে পারে; reject হলেও জানানো হয় এবং আবার আবেদন করা যায়। UI: Me পেজে Monetization কার্ডের পাশে 🛡️ Verification কার্ড (progress X/1000 + Apply বোতাম) ও Admin Panel-এ "🛡️ Verification requests" সেকশন (Approve/Reject)। সব 20টি স্যুট পাস; HEAD 7be5005। লাইভ যাচাই: owner/member দুজনের /me/verification 200, member-এর admin list 403।
