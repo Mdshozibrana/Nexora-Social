@@ -113,6 +113,52 @@ function newUploadId() {
     Math.random().toString(36).slice(2, 10);
 }
 
+// Phase 33: shrink photos IN THE BROWSER before upload. The
+// owner's remaining upload failures are network-level deaths of
+// the phone → server request (both XHR and the fetch retry die
+// without any response): a 3–8 MB camera JPG is exactly the kind
+// of payload that fragile path drops. The same photo at max
+// 1600px is typically 300–700 KB — five to ten times less data in
+// flight — while staying far sharper than any size the app ever
+// displays (feed and gallery render below 800px wide). Videos are
+// untouched (they take the background path), HEIC is untouched
+// (the server converts it), PNG keeps its format (transparency),
+// and ANY failure falls back to the original file untouched.
+async function shrinkForUpload(file) {
+  try {
+    if (!file || !/^image\//.test(file.type || "")) return file;
+    if (/heic|heif/i.test(file.type)
+        || /\.(heic|heif)$/i.test(file.name || "")) return file;
+    if (file.size <= 700 * 1024) return file;
+    const url = URL.createObjectURL(file);
+    try {
+      const img = await new Promise((res, rej) => {
+        const i = new Image();
+        i.onload = () => res(i);
+        i.onerror = rej;
+        i.src = url;
+      });
+      const MAX = 1600;
+      const scale = Math.min(
+        1, MAX / Math.max(img.naturalWidth, img.naturalHeight));
+      if (scale >= 1) return file;
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(img.naturalWidth * scale);
+      canvas.height = Math.round(img.naturalHeight * scale);
+      canvas.getContext("2d").drawImage(
+        img, 0, 0, canvas.width, canvas.height);
+      const isPng = /png/i.test(file.type);
+      const blob = await new Promise(
+        res => canvas.toBlob(res, isPng ? "image/png" : "image/jpeg",
+                             0.85));
+      if (!blob || blob.size >= file.size) return file;
+      const base = (file.name || "photo").replace(/\.\w+$/, "");
+      return new File([blob], base + (isPng ? ".png" : ".jpg"),
+                      { type: blob.type });
+    } finally { URL.revokeObjectURL(url); }
+  } catch (e) { return file; }
+}
+
 function setStatus(msg) { $("status").textContent = msg || ""; }
 
 // ---------------------------------------------------------------
@@ -1340,7 +1386,7 @@ $("composer-post").onclick = async () => {
     if (composerFile) {
       btn.textContent = "Uploading…";
       const form = new FormData();
-      form.append("file", composerFile);
+      form.append("file", await shrinkForUpload(composerFile));
       form.append("caption", text);
       const res = await apiFormProgress("/posts/upload", form, pct => {
         btn.textContent = pct === null
@@ -1377,7 +1423,7 @@ $("profile-file").onchange = async () => {
   $("profile-file").value = "";
   if (!f) return;
   const form = new FormData();
-  form.append("file", f);
+  form.append("file", await shrinkForUpload(f));
   try {
     const r = await apiForm("/me/photo/upload", form);
     if (me) me.photo_file_id = r.photo_file_id;
@@ -1817,7 +1863,7 @@ $("design-post").onclick = async () => {
   const btn = $("design-post");
   btn.disabled = true;
   const fd = new FormData();
-  fd.append("file", designFile);
+  fd.append("file", await shrinkForUpload(designFile));
   fd.append("prompt", $("design-prompt").value.trim());
   try {
     await apiFormProgress("/designs/upload", fd,
