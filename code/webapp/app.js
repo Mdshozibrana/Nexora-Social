@@ -1597,11 +1597,13 @@ paintEntry();
 
 // ------------------------------------------------- glassy sidebar (P39) --
 // Owner reference: a "Glassy SideBar" video — a slim frosted-glass
-// icon rail floats at the left edge; tapping its chevron (or the
-// hero ☰) expands it with a spring animation into a wide glass
+// icon rail floats at the left edge; tapping its chevron expands
+// it with a spring animation into a wide glass
 // panel with labels, sections and the member's profile at the
 // bottom. This REPLACES the old slide-in drawer entirely; every
 // destination the drawer had lives here.
+// Phase 45 (owner): the hero ☰ button duplicated this control —
+// removed; the pill is the ONE way to open the sidebar.
 function openSidebar() {
   $("glassbar").classList.add("open");
   $("gb-backdrop").hidden = false;
@@ -1642,7 +1644,6 @@ function paintGlassFoot() {
                           me.photo_file_id));
   $("gb-foot-name").textContent = me.first_name || "Member";
 }
-$("hero-menu").onclick = toggleSidebar;
 $("gb-toggle").onclick = toggleSidebar;
 $("gb-backdrop").onclick = closeSidebar;
 document.querySelectorAll(".gb-item[data-go]").forEach(b => {

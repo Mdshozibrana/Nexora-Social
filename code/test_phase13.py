@@ -22,7 +22,7 @@ from app.main import app
 
 with TestClient(app) as c:
     html = c.get("/webapp/").text
-    for marker in ("hero-menu", "glassbar", "gb-toggle", "gb-logo",
+    for marker in ("glassbar", "gb-toggle", "gb-logo",
                    'data-go="feed"', 'data-go="videos"',
                    'data-go="designs"', 'data-go="games"',
                    'data-go="tasks"', 'data-go="leaderboard"',

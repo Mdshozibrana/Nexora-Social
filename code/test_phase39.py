@@ -15,7 +15,7 @@ for marker in ('id="glassbar"', 'id="gb-backdrop"', 'id="gb-toggle"',
                'id="gb-bell-badge"', 'id="gb-admin"',
                'id="gb-official"', 'id="gb-logout"',
                'id="gb-foot"', 'id="gb-foot-name"',
-               'class="gb-online"', "?v=44"):
+               'class="gb-online"', "?v=45"):
     assert marker in HTML, marker
 assert 'id="drawer-wrap"' not in HTML
 assert 'class="drawer-item"' not in HTML
@@ -24,7 +24,6 @@ print("sidebar markup OK")
 for marker in ("openSidebar", "closeSidebar", "toggleSidebar",
                "syncSidebarActive", "paintGlassFoot",
                '$("gb-toggle").onclick', '$("gb-backdrop").onclick',
-               '$("hero-menu").onclick = toggleSidebar',
                '$("gb-admin")', '$("gb-official")',
                '$("gb-bell-badge")', '$("gb-msg-badge")'):
     assert marker in JS, marker
