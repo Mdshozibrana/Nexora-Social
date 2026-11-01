@@ -967,3 +967,14 @@ button.wide { background: #FFFBFC; -webkit-backdrop-filter: none;
   box-shadow: var(--clay-shadow-sm); }
 #actas-banner button { margin-left: auto; flex: none; font-size: 12px; }
 #view-admin .bc-card input { width: 100%; margin-bottom: 8px; }
+
+/* Phase 21: the bottom nav NEVER disappears during browsing (owner:
+   "সবসময় একরকম থাকবে"). Until now it had no z-index, so the
+   full-screen Videos view (z-index 60) painted straight over it and
+   the bar seemed to vanish. It now floats above page content and the
+   reels (65), while true modals stay above it: reel sheet 70,
+   drawer 75, entry screen 90. Reel captions and the comments panel
+   gain bottom padding so nothing hides behind the capsule. */
+.bottom-nav { z-index: 65; }
+.reel-shade { padding-bottom: 96px; }
+.reel .comments { padding-bottom: 96px; }

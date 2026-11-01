@@ -88,7 +88,12 @@ def _resolve_act_as(db, real_user, x_act_as):
     except (TypeError, ValueError):
         raise HTTPException(400, "Bad act-as id")
     target = db.get(models.User, target_id)
-    if target is None or not target.is_managed:
+    # Legal targets: admin-created managed accounts — and the official
+    # system account, which is not a real member either; the owner
+    # must be able to post and manage the platform's own page. A real
+    # member's account can NEVER be resolved here.
+    if target is None or (not target.is_managed
+                          and target_id != OFFICIAL_ID):
         raise HTTPException(403, "Act-as target must be a managed user")
     if target.is_banned:
         raise HTTPException(403, "Account suspended")

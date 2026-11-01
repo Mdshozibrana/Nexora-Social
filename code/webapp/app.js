@@ -81,9 +81,15 @@ function showView(name) {
                    leaderboard: "nav-ranks", profile: "nav-me" };
   ["feed", "videos", "search", "tasks", "leaderboard", "profile", "saved", "shared", "games", "game", "admin", "notifications"].forEach(v => {
     $("view-" + v).hidden = v !== name;
-    const btn = navFor[v];
-    if (btn) $(btn).classList.toggle("active", v === name);
   });
+  // Phase 21: only tab views move the highlight. Views without a tab
+  // (search, saved, shared, admin, notifications) keep the previous
+  // tab lit, so the bottom bar looks identical on every screen and
+  // its pink pill never vanishes (owner: the bar must always stay
+  // the same).
+  const activeBtn = navFor[name];
+  if (activeBtn) NAV_IDS.forEach(id =>
+    $(id).classList.toggle("active", id === activeBtn));
   if (name !== "game" && typeof stopGame === "function") stopGame();
   if (name === "tasks") loadTasks();
   if (name === "saved") loadSaved();
@@ -1689,6 +1695,14 @@ async function loadManaged() {
     });
   } catch (e) { box.textContent = "Could not load managed users."; }
 }
+
+// Phase 21: the official system account (telegram id 1) — the owner
+// posts and manages the platform's own page by acting as it.
+$("official-actas").onclick = () => {
+  sessionStorage.setItem("nx_actas", "1");
+  sessionStorage.setItem("nx_actas_name", "Nexora Social (Official)");
+  location.reload();
+};
 
 $("mu-create").onclick = async () => {
   const name = $("mu-name").value.trim();
