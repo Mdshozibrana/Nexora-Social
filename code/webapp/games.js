@@ -817,6 +817,430 @@ registerGame({
   },
 });
 
+// --------------------------------------------------------------- Flappy --
+// Phase 52 (owner: more games): the 2013 one-tap legend.
+registerGame({
+  id: "flappy", icon: "🐦", name: "Flappy", title: "🐦 Flappy Bird",
+  desc: "The one-tap legend. Flap through the pipes, don't clip one.",
+  help: "Tap the sky (or press Space) to flap. One touch is all it takes — and all it forgives.",
+  start(stage, setScore) {
+    const W = 300, H = 340, GY = H - 34;
+    const cv = document.createElement("canvas");
+    cv.width = W; cv.height = H;
+    stage.appendChild(cv);
+    const ctx = cv.getContext("2d");
+    let y, vy, pipes, score, tick, timer = null, state = "ready";
+    const reset = () => {
+      y = H / 2; vy = 0; pipes = []; score = 0; tick = 0;
+      state = "ready"; draw(); setScore("Score: 0");
+    };
+    const draw = () => {
+      ctx.fillStyle = "#8ED6F2";
+      ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = "#AEE7FB";
+      ctx.beginPath();
+      ctx.arc(52, 52, 21, 0, 7); ctx.arc(76, 46, 26, 0, 7);
+      ctx.arc(240, 74, 18, 0, 7); ctx.arc(260, 68, 22, 0, 7);
+      ctx.fill();
+      pipes.forEach(p => {
+        ctx.fillStyle = "#3FA34D";
+        ctx.fillRect(p.x, 0, 54, p.top);
+        ctx.fillRect(p.x, p.top + 108, 54, GY - p.top - 108);
+        ctx.fillStyle = "#2F7D3B";
+        ctx.fillRect(p.x - 3, p.top - 18, 60, 18);
+        ctx.fillRect(p.x - 3, p.top + 108, 60, 18);
+      });
+      ctx.fillStyle = "#7BC96F";
+      ctx.fillRect(0, GY, W, H - GY);
+      ctx.fillStyle = "#5DA851";
+      ctx.fillRect(0, GY, W, 5);
+      // the bird: body, wing, eye, beak
+      ctx.fillStyle = "#FFD93D";
+      ctx.beginPath(); ctx.arc(70, y, 15, 0, 7); ctx.fill();
+      ctx.fillStyle = "#F4A259";
+      ctx.beginPath();
+      ctx.ellipse(63, y + 3, 8, 5, -0.5, 0, 7); ctx.fill();
+      ctx.fillStyle = "#fff";
+      ctx.beginPath(); ctx.arc(76, y - 5, 5.5, 0, 7); ctx.fill();
+      ctx.fillStyle = "#222";
+      ctx.beginPath(); ctx.arc(77.5, y - 5, 2.6, 0, 7); ctx.fill();
+      ctx.fillStyle = "#FF7B54";
+      ctx.beginPath();
+      ctx.moveTo(83, y - 1); ctx.lineTo(93, y + 2); ctx.lineTo(83, y + 5);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = "#fff";
+      ctx.font = "bold 26px monospace"; ctx.textAlign = "center";
+      ctx.fillText(score, W / 2, 52);
+      if (state !== "play") {
+        ctx.fillStyle = "rgba(10, 30, 46, .55)";
+        ctx.fillRect(0, H / 2 - 24, W, 48);
+        ctx.fillStyle = "#fff"; ctx.font = "bold 16px monospace";
+        ctx.fillText(state === "ready" ? "TAP TO FLAP" : "GAME OVER",
+                     W / 2, H / 2 + 6);
+      }
+    };
+    const die = () => {
+      state = "dead";
+      clearInterval(timer); timer = null;
+      toggleBtn.textContent = "▶ Start";
+      setScore("Game over — Score: " + score);
+      draw();
+    };
+    const step = () => {
+      tick++;
+      vy = Math.min(9.5, vy + 0.45);
+      y += vy;
+      if (tick % 88 === 0)
+        pipes.push({ x: W + 8, top: 36 + Math.random() * (GY - 190),
+                     passed: false });
+      pipes.forEach(p => { p.x -= 2.3; });
+      pipes = pipes.filter(p => p.x > -60);
+      for (const p of pipes) {
+        if (!p.passed && p.x + 54 < 70 - 15) {
+          p.passed = true; score++;
+          setScore("Score: " + score);
+        }
+        if (70 + 13 > p.x && 70 - 13 < p.x + 54 &&
+            (y - 13 < p.top || y + 13 > p.top + 108)) return die();
+      }
+      if (y + 15 >= GY || y - 15 <= 0) return die();
+      draw();
+    };
+    const flap = () => {
+      if (state === "dead") return;
+      if (state === "ready") {
+        state = "play";
+        timer = setInterval(step, 20);
+        toggleBtn.textContent = "⏸ Pause";
+      }
+      vy = -7.4;
+    };
+    const toggle = () => {
+      if (state === "dead" || !timer && state === "ready" && pipes.length === 0 && score === 0) {
+        reset(); flap(); return;
+      }
+      if (timer) {
+        clearInterval(timer); timer = null;
+        toggleBtn.textContent = "▶ Start";
+      } else if (state === "play") {
+        timer = setInterval(step, 20);
+        toggleBtn.textContent = "⏸ Pause";
+      } else flap();
+    };
+    const toggleBtn = document.createElement("button");
+    toggleBtn.textContent = "▶ Start";
+    toggleBtn.onclick = toggle;
+    toggleBtn.style.cssText = "padding:10px 22px;border-radius:12px;font-size:15px;background:#EC4899;color:#121212;font-weight:700;";
+    const wrap = document.createElement("div");
+    wrap.className = "grow";
+    wrap.appendChild(toggleBtn);
+    stage.appendChild(wrap);
+    cv.addEventListener("pointerdown", e => {
+      e.preventDefault(); flap();
+    });
+    const keys = e => {
+      if (e.code === "Space" || e.key === "ArrowUp") {
+        flap(); e.preventDefault();
+      }
+    };
+    document.addEventListener("keydown", keys);
+    reset();
+    return () => {
+      if (timer) clearInterval(timer);
+      document.removeEventListener("keydown", keys);
+    };
+  },
+});
+
+// ----------------------------------------------------------------- 2048 --
+// Phase 52: the sliding-tile puzzle everyone lost hours to.
+registerGame({
+  id: "g2048", icon: "🔢", name: "2048", title: "🔢 2048",
+  desc: "Slide the tiles, merge the numbers, chase the 2048 tile.",
+  help: "Swipe on the board, use the arrow pad, or the arrow keys.",
+  start(stage, setScore) {
+    const TILE = { 0: "#EFE3EC", 2: "#FBEFF5", 4: "#FADCEC",
+      8: "#F7A8C4", 16: "#F27FB0", 32: "#EC4899", 64: "#DB2777",
+      128: "#F6C453", 256: "#F0B429", 512: "#DE911D",
+      1024: "#C77414", 2048: "#9A3412" };
+    const grid = document.createElement("div");
+    grid.className = "g2048-grid";
+    stage.appendChild(grid);
+    const cells = [];
+    for (let i = 0; i < 16; i++) {
+      const c = document.createElement("div");
+      c.className = "g2048-cell";
+      cells.push(c); grid.appendChild(c);
+    }
+    let board, score, over, won;
+    const spawn = () => {
+      const free = board.map((v, i) => v ? -1 : i).filter(i => i >= 0);
+      if (!free.length) return;
+      board[free[(Math.random() * free.length) | 0]] =
+        Math.random() < 0.9 ? 2 : 4;
+    };
+    const draw = () => {
+      board.forEach((v, i) => {
+        cells[i].textContent = v || "";
+        cells[i].style.background = TILE[v] || "#9A3412";
+        cells[i].style.color = v >= 8 ? "#fff" : "#472A3E";
+        cells[i].style.fontSize = v >= 1000 ? "15px" :
+          v >= 100 ? "18px" : "21px";
+      });
+      setScore(over ? "No moves left — Score: " + score :
+               (won ? "🎉 2048! Keep going — Score: " + score :
+                      "Score: " + score));
+    };
+    const line = (a, b, c, d) => {
+      const vals = [board[a], board[b], board[c], board[d]]
+        .filter(v => v);
+      const out = [];
+      for (let i = 0; i < vals.length; i++) {
+        if (vals[i] === vals[i + 1]) {
+          out.push(vals[i] * 2);
+          score += vals[i] * 2;
+          if (vals[i] * 2 === 2048) won = true;
+          i++;
+        } else out.push(vals[i]);
+      }
+      while (out.length < 4) out.push(0);
+      return out;
+    };
+    const move = (dx, dy) => {
+      if (over) return;
+      const before = board.join(",");
+      for (let k = 0; k < 4; k++) {
+        // idxs run from the edge the tiles move TOWARD, and
+        // line() compacts toward its first cell.
+        let idxs;
+        if (dx === -1) idxs = [k * 4, k * 4 + 1, k * 4 + 2, k * 4 + 3];
+        else if (dx === 1) idxs = [k * 4 + 3, k * 4 + 2, k * 4 + 1, k * 4];
+        else if (dy === -1) idxs = [k, 4 + k, 8 + k, 12 + k];
+        else idxs = [12 + k, 8 + k, 4 + k, k];
+        const merged = line(idxs[0], idxs[1], idxs[2], idxs[3]);
+        idxs.forEach((cell, j) => { board[cell] = merged[j]; });
+      }
+      if (board.join(",") === before) return;
+      spawn();
+      over = !board.includes(0) &&
+        ![0, 1, 2, 3].some(k =>
+          [0, 1, 2].some(j =>
+            board[k * 4 + j] === board[k * 4 + j + 1] ||
+            board[j * 4 + k] === board[(j + 1) * 4 + k]));
+      draw();
+    };
+    const reset = () => {
+      board = Array(16).fill(0);
+      score = 0; over = false; won = false;
+      spawn(); spawn(); draw();
+    };
+    dpad(stage, move, []);
+    const again = document.createElement("button");
+    again.textContent = "↻ New game";
+    again.onclick = reset;
+    const wrap = document.createElement("div");
+    wrap.className = "grow";
+    wrap.appendChild(again);
+    stage.appendChild(wrap);
+    swipe(grid, move);
+    const keys = e => {
+      const k = { ArrowUp: [0, -1], ArrowDown: [0, 1],
+                  ArrowLeft: [-1, 0], ArrowRight: [1, 0] }[e.key];
+      if (k) { move(k[0], k[1]); e.preventDefault(); }
+    };
+    document.addEventListener("keydown", keys);
+    reset();
+    return () => document.removeEventListener("keydown", keys);
+  },
+});
+
+// -------------------------------------------------------------- Pac-Man --
+// Phase 52: the 1980 maze legend — dots, two ghosts, three lives.
+registerGame({
+  id: "pacman", icon: "🟡", name: "Pac-Man", title: "🟡 Pac-Man",
+  desc: "The 1980 maze legend. Eat every dot — the ghosts are hungry too.",
+  help: "Swipe, use the arrow pad, or the arrow keys to steer.",
+  start(stage, setScore) {
+    const MAP = [
+      "###############",
+      "#.....#.......#",
+      "#.##..#..##.#.#",
+      "#.............#",
+      "#.##.#####.##.#",
+      "#......#......#",
+      "####.#.###.####",
+      "#......#......#",
+      "#.##.#####.##.#",
+      "#.............#",
+      "#.##.#.#.#.##.#",
+      "#.....#.......#",
+      "###############",
+    ];
+    const COLS = 15, ROWS = 13, T = 20;
+    const cv = document.createElement("canvas");
+    cv.width = COLS * T; cv.height = ROWS * T;
+    stage.appendChild(cv);
+    const ctx = cv.getContext("2d");
+    let walls, dots, pac, ghosts, lives, score, level, tick,
+        timer = null, over = false;
+    const wall = (x, y) => walls.has(y * COLS + x);
+    const reset = full => {
+      walls = new Set(); dots = new Set();
+      MAP.forEach((row, y) => row.split("").forEach((ch, x) => {
+        if (ch === "#") walls.add(y * COLS + x);
+        else dots.add(y * COLS + x);
+      }));
+      pac = { x: 7, y: 9, dx: -1, dy: 0, nx: -1, ny: 0 };
+      dots.delete(9 * COLS + 7);
+      ghosts = [
+        { x: 6, y: 5, dx: 1, dy: 0, color: "#FF5C5C" },
+        { x: 8, y: 5, dx: -1, dy: 0, color: "#FF9DE2" },
+      ];
+      tick = 0;
+      if (full) { lives = 3; score = 0; level = 1; over = false; }
+      paint();
+    };
+    const paint = () => setScore(
+      "Score: " + score + " · Lives: " + "❤️".repeat(Math.max(0, lives)) +
+      " · Level " + level);
+    const draw = () => {
+      ctx.fillStyle = "#0B1035";
+      ctx.fillRect(0, 0, cv.width, cv.height);
+      ctx.fillStyle = "#2B3A8F";
+      walls.forEach(i => {
+        const x = (i % COLS) * T, y = ((i / COLS) | 0) * T;
+        ctx.fillRect(x + 1.5, y + 1.5, T - 3, T - 3);
+      });
+      ctx.fillStyle = "#FFE9A8";
+      dots.forEach(i => {
+        ctx.beginPath();
+        ctx.arc((i % COLS) * T + T / 2, ((i / COLS) | 0) * T + T / 2,
+                2.6, 0, 7);
+        ctx.fill();
+      });
+      ghosts.forEach(g => {
+        const gx = g.x * T, gy = g.y * T;
+        ctx.fillStyle = g.color;
+        ctx.beginPath();
+        ctx.arc(gx + T / 2, gy + T / 2 + 1, 8, Math.PI, 0);
+        ctx.rect(gx + 2, gy + T / 2 + 1, T - 4, 7);
+        ctx.fill();
+        ctx.fillStyle = "#fff";
+        ctx.beginPath();
+        ctx.arc(gx + 7, gy + 9, 2.6, 0, 7);
+        ctx.arc(gx + 13, gy + 9, 2.6, 0, 7);
+        ctx.fill();
+      });
+      const px = pac.x * T + T / 2, py = pac.y * T + T / 2;
+      const ang = Math.atan2(pac.dy, pac.dx);
+      const mouth = (tick % 2 === 0) ? 0.28 : 0.05;
+      ctx.fillStyle = "#FFD93D";
+      ctx.beginPath();
+      ctx.moveTo(px, py);
+      ctx.arc(px, py, 8.5, ang + mouth * Math.PI,
+              ang + (2 - mouth) * Math.PI);
+      ctx.closePath(); ctx.fill();
+      if (over) {
+        ctx.fillStyle = "rgba(7,7,20,.85)";
+        ctx.fillRect(0, cv.height / 2 - 24, cv.width, 48);
+        ctx.fillStyle = "#eef2c8";
+        ctx.font = "bold 16px monospace"; ctx.textAlign = "center";
+        ctx.fillText("GAME OVER", cv.width / 2, cv.height / 2 + 6);
+      }
+    };
+    const step = () => {
+      tick++;
+      if (!wall(pac.x + pac.nx, pac.y + pac.ny)) {
+        pac.dx = pac.nx; pac.dy = pac.ny;
+      }
+      if (!wall(pac.x + pac.dx, pac.y + pac.dy)) {
+        pac.x += pac.dx; pac.y += pac.dy;
+      }
+      const pi = pac.y * COLS + pac.x;
+      if (dots.has(pi)) { dots.delete(pi); score += 10; paint(); }
+      ghosts.forEach(g => {
+        const opts = [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(
+          ([dx, dy]) => !wall(g.x + dx, g.y + dy) &&
+                        !(dx === -g.dx && dy === -g.dy));
+        if (!opts.length) { g.dx *= -1; g.dy *= -1; }
+        else {
+          opts.sort((a, b) => {
+            const da = Math.abs(g.x + a[0] - pac.x) +
+                       Math.abs(g.y + a[1] - pac.y);
+            const db = Math.abs(g.x + b[0] - pac.x) +
+                       Math.abs(g.y + b[1] - pac.y);
+            return da - db;
+          });
+          const pick = Math.random() < 0.62 ? opts[0] :
+            opts[(Math.random() * opts.length) | 0];
+          g.dx = pick[0]; g.dy = pick[1];
+        }
+        g.x += g.dx; g.y += g.dy;
+      });
+      if (ghosts.some(g => g.x === pac.x && g.y === pac.y)) {
+        lives--; paint();
+        if (lives <= 0) {
+          over = true; draw();
+          clearInterval(timer); timer = null;
+          toggleBtn.textContent = "▶ Start";
+          setScore("Game over — Score: " + score);
+          return;
+        }
+        pac = { x: 7, y: 9, dx: -1, dy: 0, nx: -1, ny: 0 };
+        ghosts.forEach((g, i) => {
+          g.x = i ? 8 : 6; g.y = 5;
+        });
+      }
+      if (!dots.size) {
+        level++;
+        const keepScore = score, keepLives = lives;
+        reset(false);
+        score = keepScore; lives = keepLives;
+        paint();
+        restartTimer();
+      }
+      draw();
+    };
+    const restartTimer = () => {
+      if (timer) clearInterval(timer);
+      timer = setInterval(step, Math.max(95, 150 - level * 9));
+    };
+    const steer = (dx, dy) => { pac.nx = dx; pac.ny = dy; };
+    const toggle = () => {
+      if (over) reset(true);
+      if (timer) {
+        clearInterval(timer); timer = null;
+        toggleBtn.textContent = "▶ Start";
+      } else {
+        restartTimer();
+        toggleBtn.textContent = "⏸ Pause";
+      }
+    };
+    dpad(stage, steer, []);
+    const toggleBtn = document.createElement("button");
+    toggleBtn.textContent = "▶ Start";
+    toggleBtn.onclick = toggle;
+    toggleBtn.style.cssText = "padding:10px 22px;border-radius:12px;font-size:15px;background:#EC4899;color:#121212;font-weight:700;";
+    const wrap = document.createElement("div");
+    wrap.className = "grow";
+    wrap.appendChild(toggleBtn);
+    stage.appendChild(wrap);
+    swipe(cv, steer);
+    const keys = e => {
+      const k = { ArrowUp: [0, -1], ArrowDown: [0, 1],
+                  ArrowLeft: [-1, 0], ArrowRight: [1, 0] }[e.key];
+      if (k) { steer(k[0], k[1]); e.preventDefault(); }
+    };
+    document.addEventListener("keydown", keys);
+    reset(true);
+    draw();
+    return () => {
+      if (timer) clearInterval(timer);
+      document.removeEventListener("keydown", keys);
+    };
+  },
+});
+
 // ------------------------------------------------------------- game grid --
 // Built last: every game above must be registered first.
 (function buildGrid() {

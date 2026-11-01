@@ -1649,3 +1649,10 @@ button.liked { animation: heartPop .32s cubic-bezier(.22,.9,.3,1); }
 #glassbar.gb-right #gb-toggle { transform: scaleX(-1); }
 #glassbar.gb-right.open #gb-toggle {
   transform: scaleX(-1) rotate(180deg); }
+
+/* Phase 52: 2048 board */
+.g2048-grid { display: grid; grid-template-columns: repeat(4, 1fr);
+  gap: 6px; max-width: 300px; margin: 0 auto; }
+.g2048-cell { aspect-ratio: 1; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 800; background: #EFE3EC; color: #472A3E; }
