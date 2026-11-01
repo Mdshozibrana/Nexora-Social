@@ -30,7 +30,7 @@ SENT = {}
 async def fake_upload(chat_id, filename, data, content_type):
     SENT["content_type"] = content_type
     SENT["data"] = data
-    return tgupload.classify(content_type), "VID_FILE_ID_19"
+    return tgupload.classify(content_type), "VID_FILE_ID_19", "THUMB_ID_19"
 
 tgupload.upload_media = fake_upload
 

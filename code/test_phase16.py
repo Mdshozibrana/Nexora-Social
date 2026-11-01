@@ -34,7 +34,7 @@ STATE = {"mode": "ok"}
 async def fake_upload(chat_id, filename, data, content_type):
     if STATE["mode"] == "not_started":
         raise tgupload.TelegramUploadError("not_started")
-    return tgupload.classify(content_type), FAKE_ID
+    return tgupload.classify(content_type), FAKE_ID, None
 
 tgupload.upload_media = fake_upload
 

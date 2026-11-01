@@ -38,7 +38,7 @@ async def fake_upload_media(chat_id, filename, data, content_type):
     if chat_id in REFUSED:
         raise tgupload.TelegramUploadError("not_started")
     kind = tgupload.classify(content_type, filename) or "photo"
-    return kind, f"fid_via_{chat_id}"
+    return kind, f"fid_via_{chat_id}", None
 
 
 tgupload.upload_media = fake_upload_media

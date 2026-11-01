@@ -60,7 +60,10 @@ def classify(content_type: str, filename: str = ""):
 
 async def upload_media(chat_id: int, filename: str, data: bytes,
                        content_type: str):
-    """Send `data` to the member's bot chat; return (kind, file_id)."""
+    """Send `data` to the member's bot chat; return
+    (kind, file_id, thumb_file_id) — the thumbnail is Telegram's
+    own preview frame for a video (Phase 51), None for photos
+    and for videos Telegram made no thumbnail for."""
     kind = classify(content_type, filename)
     if kind is None:
         raise TelegramUploadError("failed")
@@ -87,10 +90,13 @@ async def upload_media(chat_id: int, filename: str, data: bytes,
                 raise TelegramUploadError("not_started")
             raise TelegramUploadError("failed")
         msg = payload["result"]
+        thumb_id = None
         if kind == "photo":
             file_id = msg["photo"][-1]["file_id"]
         else:
             file_id = msg["video"]["file_id"]
+            thumb = msg["video"].get("thumbnail") or {}
+            thumb_id = thumb.get("file_id")
         # Best-effort cleanup: remove the copy from the member's bot chat.
         try:
             await client.post(f"{api}/deleteMessage", data={
@@ -98,4 +104,4 @@ async def upload_media(chat_id: int, filename: str, data: bytes,
                 "message_id": str(msg["message_id"])})
         except Exception:
             pass
-    return kind, file_id
+    return kind, file_id, thumb_id

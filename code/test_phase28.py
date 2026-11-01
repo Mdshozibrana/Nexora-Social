@@ -28,7 +28,7 @@ import app.tgupload as tgupload
 
 
 async def _fake_upload(chat_id, filename, data, content_type):
-    return ("photo", "FID28")
+    return ("photo", "FID28", None)
 
 
 tgupload.upload_media = _fake_upload

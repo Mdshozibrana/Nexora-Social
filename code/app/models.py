@@ -46,6 +46,9 @@ class Post(Base):
     user_id = Column(BigInteger, ForeignKey("users.telegram_id"), index=True)
     type = Column(String(16), default="text")  # photo | video | text
     media_file_id = Column(String(256), nullable=True)
+    # Phase 51: Telegram's own thumbnail for a video post — the
+    # feed/profile player shows it as the preview (poster) frame.
+    thumb_file_id = Column(String(256), nullable=True)
     caption = Column(Text, default="")
     hashtags = Column(String(512), default="")
     like_count = Column(Integer, default=0)

@@ -40,7 +40,7 @@ async def fake_upload_media(chat_id, filename, data, content_type):
     captured.update(filename=filename, data=data,
                     content_type=content_type)
     kind = tgupload.classify(content_type, filename)
-    return (kind, "fileid_" + str(kind))
+    return (kind, "fileid_" + str(kind), None)
 
 tgupload.upload_media = fake_upload_media
 

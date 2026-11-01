@@ -323,6 +323,14 @@ function postCard(p) {
     vid.controls = true;
     vid.preload = "metadata";
     vid.playsInline = true;
+    // Phase 51: a preview frame before play — Telegram's own
+    // thumbnail as the poster; posts too old to have one get a
+    // seek-paint nudge (preload=metadata alone paints nothing
+    // inside the Telegram WebView, just a blank pink frame).
+    if (p.thumb_file_id) vid.poster = mediaUrl(p.thumb_file_id);
+    else vid.addEventListener("loadedmetadata", () => {
+      try { vid.currentTime = 0.1; } catch (e) {}
+    }, { once: true });
     // Phase 30: feed/profile videos stop when scrolled away.
     feedVidObserver.observe(vid);
     frame.appendChild(vid);
@@ -522,6 +530,7 @@ function reelCard(p) {
   vid.muted = reelMuted;
   vid.playsInline = true;
   vid.preload = "metadata";
+  if (p.thumb_file_id) vid.poster = mediaUrl(p.thumb_file_id);
   vid.onclick = () => { if (vid.paused) vid.play().catch(() => {}); else vid.pause(); };
   el.appendChild(vid);
 

@@ -29,7 +29,8 @@ def award_points(db, user_id, amount, reason, ref_id=None):
         u.points_balance = (u.points_balance or 0) + amount
 
 
-def register_post(db, author, ptype, media_file_id, caption):
+def register_post(db, author, ptype, media_file_id, caption,
+                  thumb_file_id=None):
     """Create a post for author (a models.User). Returns
     (post, is_first_post, referral_qualified_now).
     On the author's FIRST post ever: author earns post points, and a
@@ -38,7 +39,9 @@ def register_post(db, author, ptype, media_file_id, caption):
     author_id = author.telegram_id
     is_first = db.query(models.Post).filter_by(user_id=author_id).count() == 0
     post = models.Post(user_id=author_id, type=ptype,
-                       media_file_id=media_file_id, caption=caption or "",
+                       media_file_id=media_file_id,
+                       thumb_file_id=thumb_file_id,
+                       caption=caption or "",
                        hashtags=extract_hashtags(caption or ""))
     db.add(post)
     db.commit()

@@ -52,6 +52,12 @@ def _migrate():
         for name, ddl in wanted.items():
             if name not in existing:
                 conn.execute(text(f"ALTER TABLE users ADD COLUMN {name} {ddl}"))
+    # Phase 51: video preview thumbnails on posts.
+    post_cols = {c["name"] for c in inspect(engine).get_columns("posts")}
+    with engine.begin() as conn:
+        if "thumb_file_id" not in post_cols:
+            conn.execute(text(
+                "ALTER TABLE posts ADD COLUMN thumb_file_id VARCHAR(256)"))
 
 
 _migrate()
@@ -462,6 +468,7 @@ def post_dict(db, p, liked=False, saved=False, views=None):
             post_id=p.id).count()
     return {
         "id": p.id, "type": p.type, "media_file_id": p.media_file_id,
+        "thumb_file_id": getattr(p, "thumb_file_id", None),
         "caption": p.caption, "hashtags": p.hashtags,
         "like_count": p.like_count, "comment_count": p.comment_count,
         "views": views,
@@ -578,8 +585,9 @@ def _send_chat_id(user):
 
 async def _send_to_telegram(user, filename, data, content_type):
     try:
-        return await tgupload.upload_media(
+        kind, file_id, _thumb = await tgupload.upload_media(
             _send_chat_id(user), filename, data, content_type)
+        return kind, file_id
     except tgupload.TelegramUploadError as e:
         if e.kind == "not_started":
             raise HTTPException(
@@ -620,14 +628,15 @@ async def _finish_video_post(author_id, send_chat_id, src_path,
                                     src_path, dst)
         with open(dst, "rb") as f:
             mp4 = f.read()
-        _, file_id = await tgupload.upload_media(
+        _, file_id, thumb_id = await tgupload.upload_media(
             send_chat_id, "video.mp4", mp4, "video/mp4")
         db = SessionLocal()
         try:
             user = db.get(models.User, author_id)
             if user is not None and not user.is_banned:
                 post, _, _ = register_post(db, user, "video", file_id,
-                                           caption)
+                                           caption,
+                                           thumb_file_id=thumb_id)
                 notify.record(db, author_id, "post_live",
                               post_id=post.id,
                               text="Your video is now live on "

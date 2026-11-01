@@ -59,7 +59,8 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text, reply_markup=InlineKeyboardMarkup(buttons) if buttons else None)
 
 
-async def _save_media_post(update: Update, ptype: str, file_id: str):
+async def _save_media_post(update: Update, ptype: str, file_id: str,
+                           thumb_file_id: str = None):
     """A photo/video sent to the bot becomes a post (PRD section 7: the
     media already lives on Telegram's servers, we keep only the file_id).
     Same shared service as the Mini App, so first-post points and referral
@@ -75,7 +76,8 @@ async def _save_media_post(update: Update, ptype: str, file_id: str):
             await update.message.reply_text("This account is suspended.")
             return
         post, is_first, _ = register_post(
-            db, user, ptype, file_id, update.message.caption or "")
+            db, user, ptype, file_id, update.message.caption or "",
+            thumb_file_id=thumb_file_id)
     finally:
         db.close()
     note = " \U0001F389 First post bonus earned!" if is_first else ""
@@ -104,7 +106,12 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def video_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await _save_media_post(update, "video", update.message.video.file_id)
+    video = update.message.video
+    # Phase 51: keep Telegram's own thumbnail so the app can show
+    # a preview frame before the video plays.
+    thumb = video.thumbnail.file_id if video.thumbnail else None
+    await _save_media_post(update, "video", video.file_id,
+                           thumb_file_id=thumb)
 
 
 def build_bot_app() -> Application:
