@@ -1,7 +1,9 @@
-"""Phase-13 tests: side drawer menu + floating pill bottom-nav —
-the owner's panel-design round. Asserts the served webapp carries the
-drawer markup (Menu / Library / Account, badges, Log out), the drawer
-and capsule styles, and the drawer logic."""
+"""Phase-13 tests, updated in Phase 39: the side menu — originally
+the slide-in drawer, now the Glassy Sidebar (a slim frosted-glass
+icon rail that expands into a labelled panel). Asserts the served
+webapp carries the sidebar markup (MAIN / LIBRARY / ACCOUNT,
+badges, Log out), the glass styles, the sidebar logic, and the
+floating pill bottom-nav."""
 import hashlib, hmac, json, os, urllib.parse
 
 os.environ["BOT_TOKEN"] = "123456789:AAE" + "x" * 32
@@ -20,27 +22,33 @@ from app.main import app
 
 with TestClient(app) as c:
     html = c.get("/webapp/").text
-    for marker in ("hero-menu", "drawer-wrap", "drawer-close", "drawer-logo",
-                   'data-go="feed"', 'data-go="videos"', 'data-go="games"',
+    for marker in ("hero-menu", "glassbar", "gb-toggle", "gb-logo",
+                   'data-go="feed"', 'data-go="videos"',
+                   'data-go="designs"', 'data-go="games"',
                    'data-go="tasks"', 'data-go="leaderboard"',
+                   'data-go="messages"', 'data-go="notifications"',
                    'data-go="saved"', 'data-go="shared"',
                    'data-go="profile"', 'data-go="search"',
-                   "badge-saved", "badge-shared", "drawer-logout",
+                   "badge-saved", "badge-shared", "gb-logout",
+                   "gb-msg-badge", "gb-bell-badge", "gb-foot",
                    "CONNECT ANYWHERE", "Log out"):
         assert marker in html, marker
-    print("drawer markup OK")
+    assert "drawer-wrap" not in html
+    print("sidebar markup OK")
 
     css = c.get("/webapp/style.css").text
-    for marker in ("#drawer", ".drawer-item.active", ".drawer-badge",
+    for marker in ("#glassbar", ".gb-item.active", ".gb-badge",
+                   "backdrop-filter: blur(18px)",
                    "border-radius: 999px", ".bottom-nav button.active"):
         assert marker in css, marker
-    print("drawer + pill-nav styles OK")
+    print("sidebar + pill-nav styles OK")
 
     js = c.get("/webapp/app.js").text
-    for marker in ("openDrawer", "closeDrawer", "syncDrawerActive",
-                   "drawer-logout", 'removeItem("nx_remember")',
+    for marker in ("openSidebar", "closeSidebar", "toggleSidebar",
+                   "syncSidebarActive", "gb-logout",
+                   'removeItem("nx_remember")',
                    "/me/saved", "/me/shared"):
         assert marker in js, marker
-    print("drawer logic OK")
+    print("sidebar logic OK")
 
 print("PHASE-13 TESTS PASSED")

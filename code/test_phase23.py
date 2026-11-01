@@ -49,7 +49,8 @@ with TestClient(app) as c:
     i_open = html.index('id="app-scroll"')
     i_head = html.index("<header")
     i_close = html.index("/#app-scroll")
-    i_drawer = html.index('id="drawer-wrap"')
+    # Phase 39: the glassy sidebar sits where the drawer wrap was.
+    i_drawer = html.index('id="glassbar"')
     i_nav = html.index('class="bottom-nav"')
     assert i_open < i_head < i_close < i_drawer < i_nav, \
         (i_open, i_head, i_close, i_drawer, i_nav)
@@ -78,10 +79,10 @@ with TestClient(app) as c:
     print("nav fit locks OK")
 
     # --- (C) official posting doors -------------------------------------------
-    assert 'id="drawer-official"' in html
+    assert 'id="gb-official"' in html
     assert 'id="composer-as"' in html
     assert "function startActAs" in js and "function stopActAs" in js
-    assert '$("drawer-official").onclick' in js
+    assert '$("gb-official").onclick' in js
     assert '$("composer-as-btn").onclick' in js
     assert "function paintComposerAs" in js
     print("official posting doors OK")
@@ -89,7 +90,7 @@ with TestClient(app) as c:
     # --- (D) logout fully clears act-as ---------------------------------------
     assert js.count('removeItem("nx_actas")') >= 2, \
         js.count('removeItem("nx_actas")')
-    logout_at = js.index('$("drawer-logout").onclick')
+    logout_at = js.index('$("gb-logout").onclick')
     clear_at = js.index('removeItem("nx_actas")', logout_at)
     entry_at = js.index('$("entry-screen").hidden = false', logout_at)
     assert logout_at < clear_at < entry_at

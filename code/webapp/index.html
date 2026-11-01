@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Nexora Social</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
-<link rel="stylesheet" href="style.css?v=38">
+<link rel="stylesheet" href="style.css?v=39">
 </head>
 <body>
 <div id="entry-screen">
@@ -370,40 +370,43 @@
   </div>
 </div>
 
-<div id="drawer-wrap" hidden>
-  <div id="drawer-backdrop"></div>
-  <aside id="drawer">
-    <div class="drawer-head">
-      <div class="drawer-logo">N</div>
-      <div class="drawer-brand">
-        <div class="drawer-name">Nexora Social</div>
-        <div class="drawer-tag">CONNECT ANYWHERE</div>
-      </div>
-      <button id="drawer-close" title="Close">‹</button>
+<div id="gb-backdrop" hidden></div>
+<aside id="glassbar">
+  <div class="gb-head">
+    <div class="gb-logo">N</div>
+    <div class="gb-brand">
+      <div class="gb-name">Nexora Social</div>
+      <div class="gb-tag">CONNECT ANYWHERE</div>
     </div>
-    <div class="drawer-sec">Menu</div>
-    <button class="drawer-item" data-go="feed"><span class="di-ic">🏠</span>Home</button>
-    <button class="drawer-item" data-go="messages"><span class="di-ic">💬</span>Messages
-      <span id="drawer-msg-badge" class="badge" hidden></span></button>
-    <button class="drawer-item" data-go="videos"><span class="di-ic">▶️</span>Videos</button>
-    <button class="drawer-item" data-go="games"><span class="di-ic">🎮</span>Games</button>
-    <button class="drawer-item" data-go="tasks"><span class="di-ic">⭐</span>Daily Tasks</button>
-    <button class="drawer-item" data-go="leaderboard"><span class="di-ic">🏆</span>Leaderboard</button>
-    <div class="drawer-div"></div>
-    <div class="drawer-sec">Library</div>
-    <button class="drawer-item" data-go="saved"><span class="di-ic">🔖</span>Saved
-      <span class="drawer-badge" id="badge-saved" hidden></span></button>
-    <button class="drawer-item" data-go="shared"><span class="di-ic">📥</span>Shared with me
-      <span class="drawer-badge" id="badge-shared" hidden></span></button>
-    <div class="drawer-div"></div>
-    <div class="drawer-sec">Account</div>
-    <button class="drawer-item" data-go="profile"><span class="di-ic">👤</span>My Profile</button>
-    <button class="drawer-item" data-go="search"><span class="di-ic">🔍</span>Search</button>
-    <button class="drawer-item" id="drawer-admin" data-go="admin" hidden><span class="di-ic">🛡️</span>Admin Panel</button>
-    <button class="drawer-item" id="drawer-official" hidden><span class="di-ic">📣</span>Act as Official</button>
-    <button class="drawer-item" id="drawer-logout"><span class="di-ic">🚪</span>Log out</button>
-  </aside>
-</div>
+    <button id="gb-toggle" title="Expand or collapse">›</button>
+  </div>
+  <button class="gb-item gb-search" data-go="search"><span class="gb-ic">🔍</span><span class="gb-label">Search pages</span></button>
+  <div class="gb-sec">MAIN</div>
+  <button class="gb-item" data-go="feed"><span class="gb-ic">🏠</span><span class="gb-label">Home</span></button>
+  <button class="gb-item" data-go="videos"><span class="gb-ic">▶️</span><span class="gb-label">Videos</span></button>
+  <button class="gb-item" data-go="designs"><span class="gb-ic">🎨</span><span class="gb-label">Design</span></button>
+  <button class="gb-item" data-go="games"><span class="gb-ic">🎮</span><span class="gb-label">Games</span></button>
+  <div class="gb-sec">LIBRARY</div>
+  <button class="gb-item" data-go="messages"><span class="gb-ic">💬</span><span class="gb-label">Messages</span><span id="gb-msg-badge" class="gb-badge" hidden></span></button>
+  <button class="gb-item" data-go="notifications"><span class="gb-ic">🔔</span><span class="gb-label">Notifications</span><span id="gb-bell-badge" class="gb-badge" hidden></span></button>
+  <button class="gb-item" data-go="tasks"><span class="gb-ic">⭐</span><span class="gb-label">Daily Tasks</span></button>
+  <button class="gb-item" data-go="leaderboard"><span class="gb-ic">🏆</span><span class="gb-label">Leaderboard</span></button>
+  <button class="gb-item" data-go="saved"><span class="gb-ic">🔖</span><span class="gb-label">Saved</span><span class="gb-badge" id="badge-saved" hidden></span></button>
+  <button class="gb-item" data-go="shared"><span class="gb-ic">📥</span><span class="gb-label">Shared with me</span><span class="gb-badge" id="badge-shared" hidden></span></button>
+  <div class="gb-sec">ACCOUNT</div>
+  <button class="gb-item" data-go="profile"><span class="gb-ic">👤</span><span class="gb-label">My Profile</span></button>
+  <button class="gb-item" id="gb-admin" data-go="admin" hidden><span class="gb-ic">🛡️</span><span class="gb-label">Admin Panel</span></button>
+  <button class="gb-item" id="gb-official" hidden><span class="gb-ic">📣</span><span class="gb-label">Act as Official</span></button>
+  <button class="gb-item" id="gb-logout"><span class="gb-ic">🚪</span><span class="gb-label">Log out</span></button>
+  <div class="gb-foot" id="gb-foot">
+    <span id="gb-foot-avatar"></span>
+    <div class="gb-foot-info">
+      <div id="gb-foot-name">Member</div>
+      <div class="gb-foot-sub">View profile</div>
+    </div>
+    <span class="gb-online"></span>
+  </div>
+</aside>
 
 <nav class="bottom-nav">
   <span id="nav-pill"></span>
@@ -416,7 +419,7 @@
   <button id="nav-me">👤<span>Me</span></button>
 </nav>
 
-<script src="app.js?v=38"></script>
-<script src="games.js?v=38"></script>
+<script src="app.js?v=39"></script>
+<script src="games.js?v=39"></script>
 </body>
 </html>

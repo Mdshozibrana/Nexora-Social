@@ -2,7 +2,7 @@
 Backend: /auth exposes is_admin (+ adsgram_block_id), new admin reads
 (/admin/stats, /admin/users with search, /admin/posts) are admin-only,
 and the ban guard refuses to ban the official account or an admin.
-Frontend: the Admin view, the hidden drawer item, and the AdsGram
+Frontend: the Admin view, the hidden sidebar item, and the AdsGram
 loader are wired in app.js / index.html / style.css."""
 import hashlib, hmac, json, os, urllib.parse
 
@@ -75,7 +75,7 @@ with TestClient(app) as c:
     print("ban guard (official + admins protected) OK")
 
     html = c.get("/webapp/").text
-    assert 'id="view-admin"' in html and 'id="drawer-admin"' in html
+    assert 'id="view-admin"' in html and 'id="gb-admin"' in html
     js = c.get("/webapp/app.js").text
     for marker in ("loadAdmin", "applyAdminVisibility", "initAds",
                    "Adsgram", "maybeShowAd"):

@@ -37,7 +37,7 @@ CSS = open("webapp/style.css").read()
 for marker in ('id="hero-msg"', 'id="msg-badge"', 'id="view-messages"',
                'id="view-chat"', 'id="stories-strip"',
                'id="story-file"', 'id="story-wrap"',
-               'id="drawer-msg-badge"'):
+               'id="gb-msg-badge"'):
     assert marker in HTML, marker
 for marker in ("loadMessages", "openChat", "loadStories",
                "refreshMsgBadge", "/messages/unread"):

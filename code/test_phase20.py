@@ -66,7 +66,7 @@ with TestClient(app) as c:
     js = open("webapp/app.js").read()
     assert 'name === "admin" && !(me && me.is_admin)' in js
     assert '"notifications"' in js and "loadNotifications" in js
-    assert 'id="drawer-admin" data-go="admin" hidden' in \
+    assert 'id="gb-admin" data-go="admin" hidden' in \
         open("webapp/index.html").read()
     print("visibility fix locks OK")
 

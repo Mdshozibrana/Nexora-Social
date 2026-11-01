@@ -22,8 +22,10 @@ from fastapi.testclient import TestClient
 from app.main import app
 
 HTML = open("webapp/index.html").read()
-assert "app.js?v=38" in HTML and "style.css?v=38" in HTML
-assert "games.js?v=38" in HTML
+# Phase 39 bumped the asset version to ?v=39 (the pin
+# here is that assets ARE versioned, not the number).
+assert "app.js?v=39" in HTML and "style.css?v=39" in HTML
+assert "games.js?v=39" in HTML
 print("versioned assets OK")
 
 
@@ -52,14 +54,14 @@ with TestClient(app) as c:
     assert r.status_code == 200, r.status_code
     assert "no-cache" in r.headers.get("cache-control", ""), \
         r.headers.get("cache-control")
-    r = c.get("/webapp/app.js?v=38")
+    r = c.get("/webapp/app.js?v=39")
     assert r.status_code == 200, r.status_code
     cc = r.headers.get("cache-control", "")
     assert "max-age=604800" in cc, cc
     # --- gzip on the big asset (httpx decodes; the header proves it)
     assert r.headers.get("content-encoding") == "gzip", r.headers
     assert b"paintDesignAccess" in r.content
-    r = c.get("/webapp/style.css?v=38")
+    r = c.get("/webapp/style.css?v=39")
     assert r.headers.get("content-encoding") == "gzip", r.headers
     print("cache + gzip on assets OK")
 

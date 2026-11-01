@@ -1325,6 +1325,7 @@ async function loadMe() {
   maybeOpenAdmin();
   refreshBell();
   refreshMsgBadge();
+  paintGlassFoot();
   initAds();
   if (!me.photo_file_id) {
     api("/me/photo/sync", { method: "POST" }).then(r => {
@@ -1521,14 +1522,17 @@ if (localStorage.getItem("nx_remember") === "1" ||
 }
 paintEntry();
 
-// ---------------------------------------------------------- drawer menu ---
-// Side menu in the owner's chosen panel design (Oct 31). Items mirror
-// the bottom nav plus Library (Saved / Shared with count badges) and
-// Account (My Profile / Search / Log out back to the entry screen).
-function openDrawer() {
-  $("drawer-wrap").hidden = false;
-  requestAnimationFrame(() => $("drawer-wrap").classList.add("open"));
-  syncDrawerActive();
+// ------------------------------------------------- glassy sidebar (P39) --
+// Owner reference: a "Glassy SideBar" video — a slim frosted-glass
+// icon rail floats at the left edge; tapping its chevron (or the
+// hero ☰) expands it with a spring animation into a wide glass
+// panel with labels, sections and the member's profile at the
+// bottom. This REPLACES the old slide-in drawer entirely; every
+// destination the drawer had lives here.
+function openSidebar() {
+  $("glassbar").classList.add("open");
+  $("gb-backdrop").hidden = false;
+  syncSidebarActive();
   api("/me/saved").then(list => {
     const b = $("badge-saved");
     b.textContent = list.length;
@@ -1540,35 +1544,53 @@ function openDrawer() {
     b.hidden = !list.length;
   }).catch(() => {});
 }
-function closeDrawer() {
-  $("drawer-wrap").classList.remove("open");
-  setTimeout(() => { $("drawer-wrap").hidden = true; }, 260);
+function closeSidebar() {
+  $("glassbar").classList.remove("open");
+  $("gb-backdrop").hidden = true;
 }
-function syncDrawerActive() {
-  const current = ["feed", "videos", "search", "tasks", "leaderboard",
-    "profile", "saved", "shared", "games", "game"]
+function toggleSidebar() {
+  if ($("glassbar").classList.contains("open")) closeSidebar();
+  else openSidebar();
+}
+function syncSidebarActive() {
+  const current = ["feed", "videos", "designs", "search", "tasks",
+    "leaderboard", "profile", "saved", "shared", "games", "game",
+    "messages", "notifications"]
     .find(v => !$("view-" + v).hidden) || "feed";
   const key = current === "game" ? "games" : current;
-  document.querySelectorAll(".drawer-item[data-go]").forEach(b =>
+  document.querySelectorAll(".gb-item[data-go]").forEach(b =>
     b.classList.toggle("active", b.dataset.go === key));
 }
-$("hero-menu").onclick = openDrawer;
-$("drawer-close").onclick = closeDrawer;
-$("drawer-backdrop").onclick = closeDrawer;
-document.querySelectorAll(".drawer-item[data-go]").forEach(b => {
+function paintGlassFoot() {
+  if (!me) return;
+  const av = $("gb-foot-avatar");
+  av.innerHTML = "";
+  av.appendChild(avatarEl(me.first_name, me.telegram_id, false,
+                          me.photo_file_id));
+  $("gb-foot-name").textContent = me.first_name || "Member";
+}
+$("hero-menu").onclick = toggleSidebar;
+$("gb-toggle").onclick = toggleSidebar;
+$("gb-backdrop").onclick = closeSidebar;
+document.querySelectorAll(".gb-item[data-go]").forEach(b => {
   b.onclick = () => {
     const go = b.dataset.go;
-    closeDrawer();
+    closeSidebar();
     showView(go);
     if (go === "profile") loadMe();
   };
 });
-$("drawer-official").onclick = () => {
-  closeDrawer();
+$("gb-foot").onclick = () => {
+  closeSidebar();
+  showView("profile");
+  loadMe();
+};
+$("gb-official").onclick = () => {
+  closeSidebar();
   startActAs(1, "Nexora Social (Official)");
 };
-$("drawer-logout").onclick = () => {
-  closeDrawer();
+$("gb-logout").onclick = () => {
+  closeSidebar();
   localStorage.removeItem("nx_remember");
   sessionStorage.removeItem("nx_entered");
   // Phase 23: logging out FULLY returns to the owner's own ID — any
@@ -1583,13 +1605,13 @@ $("drawer-logout").onclick = () => {
 moveNavPill();
 
 // ---------------------------------------------------------------- admin --
-// Owner-only panel (Phase 18). The drawer item stays hidden unless /auth
+// Owner-only panel (Phase 18). The sidebar item stays hidden unless /auth
 // says this account is in ADMIN_IDS; every /admin/* endpoint re-checks
 // that server-side, so the panel is a convenience, not the security.
 function applyAdminVisibility() {
-  const it = $("drawer-admin");
+  const it = $("gb-admin");
   if (it) it.hidden = !(me && me.is_admin);
-  const off = $("drawer-official");
+  const off = $("gb-official");
   if (off) off.hidden = !(me && me.is_admin);
   paintComposerAs();
 }
@@ -1609,9 +1631,15 @@ function statCard(label, val) {
 // In-app notifications: badge in the hero, list in view-notifications.
 function paintBell(count) {
   const b = $("bell-badge");
-  if (!b) return;
-  b.hidden = !count;
-  b.textContent = count > 99 ? "99+" : String(count || "");
+  if (b) {
+    b.hidden = !count;
+    b.textContent = count > 99 ? "99+" : String(count || "");
+  }
+  const g = $("gb-bell-badge");
+  if (g) {
+    g.hidden = !count;
+    g.textContent = count > 99 ? "99+" : String(count || "");
+  }
 }
 async function refreshBell() {
   try {
@@ -2610,7 +2638,7 @@ function paintMsgBadge(count) {
   const label = count > 99 ? "99+" : String(count || "");
   const b = $("msg-badge");
   if (b) { b.hidden = !count; b.textContent = label; }
-  const d = $("drawer-msg-badge");
+  const d = $("gb-msg-badge");
   if (d) { d.hidden = !count; d.textContent = label; }
 }
 async function refreshMsgBadge() {
