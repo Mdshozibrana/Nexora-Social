@@ -111,7 +111,7 @@ from app.main import app
 
 
 def make_init_data(user):
-    params = {"auth_date": "1730000000", "user": json.dumps(user)}
+    params = {"auth_date": str(int(__import__("time").time())), "user": json.dumps(user)}
     data_check = "\n".join(f"{k}={v}" for k, v in sorted(params.items()))
     secret = hmac.new(b"WebAppData", os.environ["BOT_TOKEN"].encode(),
                       hashlib.sha256).digest()
@@ -128,11 +128,17 @@ AMY = H(888, "Amy")
 
 with TestClient(app) as c:
     # --- /media streams the file bytes end to end ---
+    # Phase 28: /media requires the signed token issued at /auth;
+    # a bare file_id is rejected first.
     r = c.get("/media/SOME_FILE_ID")
+    assert r.status_code == 401, r.status_code
+    mtok = c.post("/auth", json={
+        "initData": AMY["X-Init-Data"]}).json()["media_token"]
+    r = c.get("/media/SOME_FILE_ID?mt=" + mtok)
     assert r.status_code == 200, r.status_code
     assert r.content == b"abcde", r.content
     assert r.headers["content-type"] == "image/jpeg"
-    print("/media streams bytes intact OK")
+    print("/media streams bytes intact OK (token-gated since Phase 28)")
 
     # --- in-app photo upload creates a media post (+5 points) ---
     before = c.post("/auth", json={"initData": AMY["X-Init-Data"]}).json()["points"]
@@ -167,14 +173,16 @@ with TestClient(app) as c:
     tgupload.MAX_MEDIA_BYTES = old_max
     STATE["mode"] = "not_started"
     r = c.post("/posts/upload", headers=AMY, data={"caption": "x"},
-               files={"file": ("p.jpg", b"\xff\xd8", "image/jpeg")})
+               files={"file": ("p.jpg", b"\xff\xd8\xff\xe0" + b"\x00" * 16,
+                               "image/jpeg")})
     assert r.status_code == 400 and "Start" in r.json()["detail"], r.text
     STATE["mode"] = "ok"
     print("upload validation + friendly errors OK")
 
     # --- profile photo change from inside the app ---
     r = c.post("/me/photo/upload", headers=AMY,
-               files={"file": ("me.png", b"\x89PNG\r\n\x1a\n", "image/png")})
+               files={"file": ("me.png", b"\x89PNG\r\n\x1a\n" + b"\x00" * 8,
+                               "image/png")})
     assert r.status_code == 200 and r.json()["photo_file_id"] == FAKE_ID, r.text
     me = c.post("/auth", json={"initData": AMY["X-Init-Data"]}).json()
     assert me["photo_file_id"] == FAKE_ID

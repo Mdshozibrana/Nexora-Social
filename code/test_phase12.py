@@ -19,7 +19,7 @@ from app.main import app
 
 
 def make_init_data(user):
-    params = {"auth_date": "1730000000", "user": json.dumps(user)}
+    params = {"auth_date": str(int(__import__("time").time())), "user": json.dumps(user)}
     data_check = "\n".join(f"{k}={v}" for k, v in sorted(params.items()))
     secret = hmac.new(b"WebAppData", os.environ["BOT_TOKEN"].encode(),
                       hashlib.sha256).digest()

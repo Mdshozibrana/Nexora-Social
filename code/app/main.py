@@ -2,6 +2,7 @@
 referrals, points, search, reports, media proxy, and the Mini App host.
 Only the PRD section-8 admin endpoints remain for a later phase."""
 import asyncio
+import logging
 import os
 import tempfile
 import time
@@ -13,20 +14,26 @@ from fastapi import (Depends, FastAPI, File, Form, Header, HTTPException,
                      Request, UploadFile)
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, inspect, or_, text
 from sqlalchemy.orm import Session
 
 from datetime import datetime, timedelta
 
-from . import geoip, imgconv, models, notify, tgupload, videoutil
+from . import filesig, geoip, imgconv, models, notify, ratelimit, \
+    tgupload, videoutil
 from .config import (DAILY_TASKS, MONETIZATION, OFFICIAL_FOLLOWER_BASE,
-                     OFFICIAL_ID, OFFICIAL_NAME,
+                     OFFICIAL_ID, OFFICIAL_NAME, RATE_LIMITS,
                      VERIFICATION_MIN_FOLLOWERS, settings)
 from .db import Base, SessionLocal, engine, get_db
-from .security import validate_init_data
+from .security import init_data_auth_date, validate_init_data
 from .services import award_points, register_post
 from .users import get_or_create_user
+
+# Phase 28 (security §13): security events go to the service log —
+# rejected logins, admin denials, rate-limit hits, admin actions.
+# NEVER log initData, tokens or message content.
+sec_log = logging.getLogger("nexora.security")
 
 Base.metadata.create_all(bind=engine)
 
@@ -37,7 +44,8 @@ def _migrate():
     on users) are added here, once, on whichever dialect is live."""
     existing = {c["name"] for c in inspect(engine).get_columns("users")}
     wanted = {"country": "VARCHAR(64)", "language_code": "VARCHAR(16)",
-              "last_seen_at": "TIMESTAMP", "is_managed": "BOOLEAN"}
+              "last_seen_at": "TIMESTAMP", "is_managed": "BOOLEAN",
+              "auth_revoked_at": "TIMESTAMP"}
     with engine.begin() as conn:
         for name, ddl in wanted.items():
             if name not in existing:
@@ -59,6 +67,154 @@ async def webapp_no_cache(request, call_next):
     if request.url.path.startswith("/webapp"):
         response.headers["Cache-Control"] = "no-cache"
     return response
+
+
+# --- Phase 28: security middleware (requirements §3/§4/§14) --------------
+# Content-Security-Policy notes: script sources stay strict ('self' +
+# Telegram + the AdsGram SDK host). Image/media sources allow https:
+# because ad creatives are served from rotating ad-network CDNs —
+# scripts, the dangerous vector, remain locked down. Framing is
+# restricted to Telegram's own web clients (frame-ancestors): the Mini
+# App MUST be framable by Telegram, so X-Frame-Options is deliberately
+# NOT set (SAMEORIGIN/DENY would break the app inside Telegram).
+_CSP = (
+    "default-src 'self'; "
+    "script-src 'self' https://telegram.org https://sad.adsgram.ai; "
+    "style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data: blob: https:; "
+    "media-src 'self' blob: https:; "
+    "connect-src 'self' https://sad.adsgram.ai https://api.adsgram.ai; "
+    "font-src 'self' data:; "
+    "object-src 'none'; base-uri 'self'; form-action 'self'; "
+    "frame-ancestors 'self' https://web.telegram.org "
+    "https://web-a.telegram.org https://*.telegram.org"
+)
+
+
+@app.middleware("http")
+async def security_middleware(request, call_next):
+    # Emergency maintenance mode (§14): the API pauses with 503 while
+    # the shell and /health stay up, so the platform can be frozen
+    # during an incident without stopping the service.
+    if settings.MAINTENANCE_MODE == "1" \
+            and request.url.path != "/health" \
+            and not request.url.path.startswith("/webapp"):
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "Nexora Social is briefly down for "
+                               "maintenance — please try again soon"})
+    response = await call_next(request)
+    response.headers["Content-Security-Policy"] = _CSP
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "same-origin"
+    response.headers["Permissions-Policy"] = \
+        "camera=(), microphone=(), geolocation=()"
+    response.headers["Strict-Transport-Security"] = \
+        "max-age=31536000; includeSubDomains"
+    return response
+
+
+@app.exception_handler(Exception)
+async def unhandled_error(request, exc):
+    """§3 secure error handling: clients get a generic message, the
+    detail stays in the server log. (HTTPException keeps its own,
+    more specific handler and never lands here.)"""
+    sec_log.exception("unhandled error on %s %s",
+                      request.method, request.url.path)
+    return JSONResponse(status_code=500,
+                        content={"detail": "Something went wrong — "
+                                           "please try again"})
+
+
+def _client_ip(request) -> str:
+    fwd = request.headers.get("x-forwarded-for") or ""
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _enforce_rate(bucket: str, key: str):
+    """Raise 429 when the (owner-adjustable) budget for an action is
+    exhausted — security §3/§6 rate limiting."""
+    limit, window = RATE_LIMITS[bucket]
+    if not ratelimit.hit(bucket, key, limit, window):
+        sec_log.warning("rate limit hit: %s key=%s", bucket, key)
+        raise HTTPException(
+            429, "Too many requests — please slow down a little",
+            headers={"Retry-After": str(min(window, 300))})
+
+
+def _audit(db, admin, action, target_id=None, detail=""):
+    """Append one admin-action record (§10/§13). The row rides the
+    caller's transaction, so it commits or rolls back with the action
+    itself — an action that failed leaves no false record."""
+    db.add(models.AdminAuditLog(
+        admin_id=admin.telegram_id, action=action,
+        target_id=target_id, detail=(detail or "")[:512]))
+    sec_log.info("admin action: %s by %s target=%s",
+                 action, admin.telegram_id, target_id)
+
+
+def _check_revoked(user, init_data: str):
+    """Phase 28 (H5): reject initData issued before the member's
+    revocation moment. Reopening the app issues fresh initData, so
+    the member recovers instantly while leaked strings stay dead."""
+    if user.auth_revoked_at is None:
+        return
+    auth_date = init_data_auth_date(init_data)
+    # auth_revoked_at is stored naive-UTC (datetime.utcnow); read it
+    # back as UTC for the epoch comparison.
+    from datetime import timezone as _tz
+    revoked_ts = int(user.auth_revoked_at.replace(
+        tzinfo=_tz.utc).timestamp())
+    if auth_date is not None and auth_date < revoked_ts:
+        raise HTTPException(
+            401, "This login was revoked — please reopen the app")
+
+
+def _media_token() -> str:
+    """Short-lived signed capability for /media URLs (H2). <img> and
+    <video> tags cannot send the X-Init-Data header, so media access
+    rides on this token instead: HMAC over an expiry, keyed by the
+    bot token (server-side only). 7 days covers a long-open WebView;
+    the app fetches a fresh one at every open via /auth."""
+    import base64
+    import hashlib as _hl
+    import hmac as _hm
+    exp = int(time.time()) + 7 * 86400
+    sig = _hm.new(settings.BOT_TOKEN.encode(),
+                  f"nexora-media:{exp}".encode(),
+                  _hl.sha256).hexdigest()
+    raw = f"{exp}.{sig}".encode()
+    return base64.urlsafe_b64encode(raw).decode()
+
+
+def _media_token_ok(token: str) -> bool:
+    import base64
+    import hashlib as _hl
+    import hmac as _hm
+    if not token or not settings.BOT_TOKEN:
+        return False
+    try:
+        decoded = base64.urlsafe_b64decode(
+            token.encode()).decode()
+        exp_s, sig = decoded.split(".", 1)
+        exp = int(exp_s)
+    except Exception:
+        return False
+    if exp < int(time.time()):
+        return False
+    expected = _hm.new(settings.BOT_TOKEN.encode(),
+                       f"nexora-media:{exp}".encode(),
+                       _hl.sha256).hexdigest()
+    return _hm.compare_digest(expected, sig)
+
+
+def _like_pattern(q: str) -> str:
+    """Escape LIKE wildcards in user search text (M3) — pair with
+    .ilike(pattern, escape="\\\\") at the call site."""
+    return "%" + q.replace("\\", "\\\\").replace("%", "\\%") \
+        .replace("_", "\\_") + "%"
 WEBAPP_DIR = Path(__file__).resolve().parent.parent / "webapp"
 
 _bot_app = None
@@ -85,7 +241,7 @@ async def _shutdown():
 
 
 class AuthIn(BaseModel):
-    initData: str
+    initData: str = Field(max_length=16384)
 
 
 def _resolve_act_as(db, real_user, x_act_as):
@@ -119,10 +275,12 @@ def current_user(x_init_data: str = Header(default=""),
                  db: Session = Depends(get_db)):
     tg_user = validate_init_data(x_init_data, settings.BOT_TOKEN)
     if not tg_user:
+        sec_log.warning("rejected initData on API request")
         raise HTTPException(401, "Invalid Telegram login")
     user, _ = get_or_create_user(db, tg_user)
     if user.is_banned:
         raise HTTPException(403, "Account suspended")
+    _check_revoked(user, x_init_data)
     # Phase 19: "last seen" powers the admin dashboard's activity
     # figures. Written at most once a minute per member, so the extra
     # UPDATE stays negligible.
@@ -146,10 +304,14 @@ def health():
 async def auth(body: AuthIn, request: Request,
                x_act_as: str = Header(default=""),
                db: Session = Depends(get_db)):
+    _enforce_rate("auth_ip", f"ip:{_client_ip(request)}")
     tg_user = validate_init_data(body.initData, settings.BOT_TOKEN)
     if not tg_user:
+        sec_log.warning("rejected initData at /auth from %s",
+                        _client_ip(request))
         raise HTTPException(401, "Invalid Telegram login")
     user, is_new = get_or_create_user(db, tg_user)
+    _check_revoked(user, body.initData)
     user.last_seen_at = datetime.utcnow()
     db.commit()
     # Phase 20: an admin acting as a managed user sees the app as that
@@ -183,6 +345,8 @@ async def auth(body: AuthIn, request: Request,
         "posts": posts,
         "bot_username": settings.BOT_USERNAME,
         "is_admin": user.telegram_id in settings.ADMIN_IDS,
+        "is_moderator": user.telegram_id in settings.MODERATOR_IDS,
+        "media_token": _media_token(),
         "adsgram_block_id": settings.ADSGRAM_BLOCK_ID,
     }
 
@@ -258,14 +422,15 @@ def get_live_post(db, post_id):
 
 
 class PostIn(BaseModel):
-    type: str = "text"
-    media_file_id: Optional[str] = None
-    caption: str = ""
+    type: str = Field(default="text", max_length=16)
+    media_file_id: Optional[str] = Field(default=None, max_length=256)
+    caption: str = Field(default="", max_length=2000)
 
 
 @app.post("/posts")
 def create_post(body: PostIn, user: models.User = Depends(current_user),
                 db: Session = Depends(get_db)):
+    _enforce_rate("post", f"u{user.telegram_id}")
     if body.type not in ("photo", "video", "text"):
         raise HTTPException(400, "type must be photo, video or text")
     post, _, _ = register_post(db, user, body.type, body.media_file_id,
@@ -362,9 +527,33 @@ async def _telegram_upload_or_400(user, file: UploadFile, caption=""):
         raise HTTPException(
             400, "Only photos (JPG, PNG, WebP, HEIC) and videos "
                  "(MP4, MOV, WebM) are supported")
-    data = await file.read()
+    # Phase 28 (C3): read with a hard cap. The old code buffered the
+    # whole body and only then checked its length, so a single huge
+    # upload could exhaust the instance's memory — the read now
+    # aborts the moment the cap for the kind is exceeded.
+    cap = tgupload.MAX_MEDIA_BYTES if kind == "photo" \
+        else tgupload.RAW_VIDEO_MAX_BYTES
+    chunks, total = [], 0
+    while True:
+        chunk = await file.read(256 * 1024)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > cap:
+            raise HTTPException(
+                400, "File is too large — maximum "
+                     + ("20 MB" if kind == "photo" else "60 MB"))
+        chunks.append(chunk)
+    data = b"".join(chunks)
     if not data:
         raise HTTPException(400, "Empty file")
+    # Phase 28 (H3): the claimed type must agree with the file's
+    # actual signature (magic bytes) before anything is sent on —
+    # a renamed file no longer passes as a photo or video.
+    if not filesig.matches(kind, data):
+        raise HTTPException(
+            400, "That file's content does not match its type — "
+                 "please pick a real photo or video file")
     if kind == "photo":
         if len(data) > tgupload.MAX_MEDIA_BYTES:
             raise HTTPException(400, "File is too large — maximum 20 MB")
@@ -441,15 +630,17 @@ async def upload_post(caption: str = Form(""),
     hit = _dedupe_get(user.telegram_id, x_upload_id)
     if hit:
         return JSONResponse(status_code=hit[0], content=hit[1])
+    _enforce_rate("upload", f"u{user.telegram_id}")
     kind, file_id = await _telegram_upload_or_400(
-        user, file, caption.strip())
+        user, file, caption.strip()[:2000])
     if kind == "processing":
         body = {"status": "processing",
                 "detail": "Video received — it will appear in the feed "
                           "shortly, and the bot will message you"}
         _dedupe_put(user.telegram_id, x_upload_id, 202, body)
         return JSONResponse(status_code=202, content=body)
-    post, _, _ = register_post(db, user, kind, file_id, caption.strip())
+    post, _, _ = register_post(db, user, kind, file_id,
+                               caption.strip()[:2000])
     body = post_dict(db, post)
     _dedupe_put(user.telegram_id, x_upload_id, 200, body)
     return body
@@ -469,6 +660,7 @@ def delete_post(post_id: int, user: models.User = Depends(current_user),
 @app.post("/posts/{post_id}/like")
 async def toggle_like(post_id: int, user: models.User = Depends(current_user),
                       db: Session = Depends(get_db)):
+    _enforce_rate("like", f"u{user.telegram_id}")
     p = get_live_post(db, post_id)
     existing = db.query(models.Like).filter_by(
         post_id=p.id, user_id=user.telegram_id).first()
@@ -544,6 +736,7 @@ class ShareIn(BaseModel):
 async def share_post(post_id: int, body: ShareIn,
                      user: models.User = Depends(current_user),
                      db: Session = Depends(get_db)):
+    _enforce_rate("share", f"u{user.telegram_id}")
     """Send a post to another member inside the app (owner request,
     Oct 31): it lands in their 'Shared with me' inbox and they get a
     bot notification."""
@@ -590,7 +783,7 @@ def my_shared(user: models.User = Depends(current_user),
 
 
 class CommentIn(BaseModel):
-    text: str
+    text: str = Field(max_length=1000)
 
 
 def comment_dict(db, cm):
@@ -619,6 +812,7 @@ def list_comments(post_id: int, user: models.User = Depends(current_user),
 async def add_comment(post_id: int, body: CommentIn,
                       user: models.User = Depends(current_user),
                       db: Session = Depends(get_db)):
+    _enforce_rate("comment", f"u{user.telegram_id}")
     p = get_live_post(db, post_id)
     text = body.text.strip()
     if not text:
@@ -675,6 +869,7 @@ def public_profile(telegram_id: int, user: models.User = Depends(current_user),
 @app.post("/users/{telegram_id}/follow")
 async def toggle_follow(telegram_id: int, user: models.User = Depends(current_user),
                         db: Session = Depends(get_db)):
+    _enforce_rate("follow", f"u{user.telegram_id}")
     if telegram_id == user.telegram_id:
         raise HTTPException(400, "You cannot follow yourself")
     if db.get(models.User, telegram_id) is None:
@@ -733,6 +928,7 @@ async def upload_my_photo(file: UploadFile = File(...),
     if tgupload.classify(file.content_type or "",
                          file.filename or "") != "photo":
         raise HTTPException(400, "Please choose a photo (JPG, PNG, WebP or HEIC)")
+    _enforce_rate("upload", f"u{user.telegram_id}")
     _, file_id = await _telegram_upload_or_400(user, file)
     user.photo_file_id = file_id
     db.commit()
@@ -776,7 +972,8 @@ def my_points(user: models.User = Depends(current_user),
 @app.get("/search")
 def search(q: str = "", user: models.User = Depends(current_user),
            db: Session = Depends(get_db)):
-    q = q.strip()
+    _enforce_rate("search", f"u{user.telegram_id}")
+    q = q.strip()[:100]
     if q.startswith("#"):
         tag = q[1:].lower()
         if not tag:
@@ -791,10 +988,10 @@ def search(q: str = "", user: models.User = Depends(current_user),
                                        for p in matched]}
     if not q:
         return {"users": [], "posts": []}
-    like = f"%{q}%"
+    like = _like_pattern(q)
     users = db.query(models.User).filter(
-        (models.User.first_name.ilike(like))
-        | (models.User.username.ilike(like))).limit(20).all()
+        (models.User.first_name.ilike(like, escape="\\"))
+        | (models.User.username.ilike(like, escape="\\"))).limit(20).all()
     return {
         "users": [{
             "telegram_id": u.telegram_id, "first_name": u.first_name,
@@ -808,12 +1005,13 @@ def search(q: str = "", user: models.User = Depends(current_user),
 
 class ReportIn(BaseModel):
     post_id: int
-    reason: str = ""
+    reason: str = Field(default="", max_length=256)
 
 
 @app.post("/reports")
 def create_report(body: ReportIn, user: models.User = Depends(current_user),
                   db: Session = Depends(get_db)):
+    _enforce_rate("report", f"u{user.telegram_id}")
     p = db.get(models.Post, body.post_id)
     if p is None or p.is_deleted:
         raise HTTPException(404, "Post not found")
@@ -1158,7 +1356,22 @@ def my_notifications_read(user: models.User = Depends(current_user),
 
 def admin_user(user: models.User = Depends(current_user)):
     if user.telegram_id not in settings.ADMIN_IDS:
+        sec_log.warning("admin route denied for user %s",
+                        user.telegram_id)
         raise HTTPException(403, "Admins only")
+    return user
+
+
+def moderator_user(user: models.User = Depends(current_user)):
+    """Phase 28 (M1, least privilege): moderators get the moderation
+    subset only — reports, comment/post removal, bans. Points, verify
+    grants, profile edits, member deletion, broadcasts, managed
+    users and verification decisions stay ADMIN_IDS-only."""
+    if user.telegram_id not in settings.ADMIN_IDS \
+            and user.telegram_id not in settings.MODERATOR_IDS:
+        sec_log.warning("moderator route denied for user %s",
+                        user.telegram_id)
+        raise HTTPException(403, "Moderators only")
     return user
 
 
@@ -1168,15 +1381,20 @@ class BanIn(BaseModel):
 
 
 @app.post("/admin/ban")
-def admin_ban(body: BanIn, admin: models.User = Depends(admin_user),
+def admin_ban(body: BanIn, admin: models.User = Depends(moderator_user),
               db: Session = Depends(get_db)):
     if body.banned and (body.telegram_id == OFFICIAL_ID
                         or body.telegram_id in settings.ADMIN_IDS):
         raise HTTPException(400, "The official account and admins cannot be banned")
+    if body.banned and body.telegram_id in settings.MODERATOR_IDS \
+            and admin.telegram_id not in settings.ADMIN_IDS:
+        raise HTTPException(403, "Only an admin can ban a moderator")
     target = db.get(models.User, body.telegram_id)
     if target is None:
         raise HTTPException(404, "User not found")
     target.is_banned = body.banned
+    _audit(db, admin, "ban" if body.banned else "unban",
+           target_id=target.telegram_id)
     db.commit()
     return {"telegram_id": target.telegram_id, "is_banned": target.is_banned}
 
@@ -1285,10 +1503,10 @@ def admin_users(q: str = "", limit: int = 50, managed: int = 0,
     if managed:
         query = query.filter(models.User.is_managed.is_(True))
     if q:
-        like = f"%{q}%"
+        like = _like_pattern(q)
         query = query.filter(or_(
-            models.User.first_name.ilike(like),
-            models.User.username.ilike(like),
+            models.User.first_name.ilike(like, escape="\\"),
+            models.User.username.ilike(like, escape="\\"),
             models.User.telegram_id == (int(q) if q.isdigit() else -1)))
     rows = query.order_by(models.User.telegram_id.desc()) \
         .limit(max(1, min(limit, 100))).all()
@@ -1350,11 +1568,11 @@ def admin_user_detail(telegram_id: int,
 
 
 class FakeUserIn(BaseModel):
-    first_name: str
-    username: Optional[str] = None
-    bio: Optional[str] = None
-    country: Optional[str] = None
-    language_code: Optional[str] = None
+    first_name: str = Field(max_length=128)
+    username: Optional[str] = Field(default=None, max_length=64)
+    bio: Optional[str] = Field(default=None, max_length=1000)
+    country: Optional[str] = Field(default=None, max_length=64)
+    language_code: Optional[str] = Field(default=None, max_length=16)
     count: int = 1
 
 
@@ -1396,6 +1614,10 @@ def admin_create_fake_users(body: FakeUserIn,
                         "first_name": u.first_name,
                         "username": u.username})
         next_id += 1
+    _audit(db, admin, "managed_create",
+           detail=f"{len(created)} account(s): "
+                  + ",".join(str(x["telegram_id"]) for x in created))
+    db.commit()
     return {"created": created}
 
 
@@ -1410,12 +1632,13 @@ def admin_delete_fake_user(telegram_id: int,
     if u is None or not u.is_managed:
         raise HTTPException(404, "Managed user not found")
     _wipe_member(db, u)
+    _audit(db, admin, "managed_delete", target_id=telegram_id)
     db.commit()
     return {"deleted": telegram_id}
 
 
 @app.get("/admin/posts")
-def admin_posts(limit: int = 30, admin: models.User = Depends(admin_user),
+def admin_posts(limit: int = 30, admin: models.User = Depends(moderator_user),
                 db: Session = Depends(get_db)):
     rows = db.query(models.Post).order_by(models.Post.id.desc()) \
         .limit(max(1, min(limit, 100))).all()
@@ -1434,19 +1657,21 @@ def admin_posts(limit: int = 30, admin: models.User = Depends(admin_user),
 
 
 @app.post("/admin/posts/{post_id}/remove")
-def admin_remove_post(post_id: int, admin: models.User = Depends(admin_user),
+def admin_remove_post(post_id: int, admin: models.User = Depends(moderator_user),
                       db: Session = Depends(get_db)):
     p = db.get(models.Post, post_id)
     if p is None or p.is_deleted:
         raise HTTPException(404, "Post not found")
     p.is_deleted = True
+    _audit(db, admin, "post_remove", target_id=p.user_id,
+           detail=f"post {p.id}")
     db.commit()
     return {"ok": True, "id": p.id}
 
 
 @app.get("/admin/reports")
 def admin_reports(status: str = "open",
-                  admin: models.User = Depends(admin_user),
+                  admin: models.User = Depends(moderator_user),
                   db: Session = Depends(get_db)):
     rows = db.query(models.Report).filter_by(status=status) \
         .order_by(models.Report.id.desc()).limit(100).all()
@@ -1472,7 +1697,7 @@ class ResolveIn(BaseModel):
 
 @app.post("/admin/reports/{report_id}/resolve")
 def admin_resolve_report(report_id: int, body: ResolveIn,
-                         admin: models.User = Depends(admin_user),
+                         admin: models.User = Depends(moderator_user),
                          db: Session = Depends(get_db)):
     r = db.get(models.Report, report_id)
     if r is None:
@@ -1484,12 +1709,14 @@ def admin_resolve_report(report_id: int, body: ResolveIn,
         if p is not None:
             p.is_deleted = True
     r.status = "resolved"
+    _audit(db, admin, "report_resolve", target_id=r.reporter_id,
+           detail=f"report {r.id}: {body.action}")
     db.commit()
     return {"ok": True, "id": r.id, "status": r.status}
 
 
 class BroadcastIn(BaseModel):
-    text: str
+    text: str = Field(max_length=4000)
 
 
 @app.post("/admin/broadcast")
@@ -1513,6 +1740,8 @@ async def admin_broadcast(body: BroadcastIn,
         db.add(models.Notification(
             user_id=u.telegram_id, type="announcement",
             text=text[:250]))
+    _audit(db, admin, "broadcast",
+           detail=f"{len(targets)} recipients")
     db.commit()
     return {"recipients": len(targets), "sent": sent}
 
@@ -1567,6 +1796,9 @@ async def admin_verification_decide(
     req.decided_by = admin.telegram_id
     if body.approve and applicant is not None:
         applicant.is_verified = True
+    _audit(db, admin, "verification_decide",
+           target_id=req.user_id,
+           detail=f"request {req.id}: {req.status}")
     db.commit()
     if applicant is not None:
         if body.approve:
@@ -1652,7 +1884,7 @@ def _wipe_member(db, target):
 
 
 class PointsAdjustIn(BaseModel):
-    delta: int
+    delta: int = Field(ge=-1000000, le=1000000)
 
 
 class VerifyToggleIn(BaseModel):
@@ -1660,8 +1892,8 @@ class VerifyToggleIn(BaseModel):
 
 
 class ProfileEditIn(BaseModel):
-    first_name: Optional[str] = None
-    bio: Optional[str] = None
+    first_name: Optional[str] = Field(default=None, max_length=128)
+    bio: Optional[str] = Field(default=None, max_length=1000)
 
 
 @app.post("/admin/users/{telegram_id}/points")
@@ -1680,6 +1912,8 @@ def admin_adjust_points(telegram_id: int, body: PointsAdjustIn,
         db.add(models.PointsLedger(user_id=telegram_id,
                                    amount=applied,
                                    reason="admin_adjust"))
+    _audit(db, admin, "points_adjust", target_id=telegram_id,
+           detail=f"delta {applied:+d} -> {new_balance}")
     db.commit()
     return {"telegram_id": telegram_id, "points": new_balance,
             "applied": applied}
@@ -1696,6 +1930,8 @@ def admin_verify_toggle(telegram_id: int, body: VerifyToggleIn,
     if u is None:
         raise HTTPException(404, "Member not found")
     u.is_verified = bool(body.verified)
+    _audit(db, admin, "verify_grant" if body.verified else "verify_revoke",
+           target_id=telegram_id)
     db.commit()
     return {"telegram_id": telegram_id,
             "is_verified": bool(u.is_verified)}
@@ -1715,6 +1951,7 @@ def admin_edit_profile(telegram_id: int, body: ProfileEditIn,
         u.first_name = name[:128]
     if body.bio is not None:
         u.bio = body.bio.strip()[:1000]
+    _audit(db, admin, "profile_edit", target_id=telegram_id)
     db.commit()
     return {"telegram_id": telegram_id, "first_name": u.first_name,
             "bio": u.bio}
@@ -1734,12 +1971,13 @@ def admin_delete_member(telegram_id: int,
     if u is None:
         raise HTTPException(404, "Member not found")
     _wipe_member(db, u)
+    _audit(db, admin, "member_delete", target_id=telegram_id)
     db.commit()
     return {"deleted": telegram_id}
 
 
 @app.get("/admin/comments")
-def admin_comments(admin: models.User = Depends(admin_user),
+def admin_comments(admin: models.User = Depends(moderator_user),
                    db: Session = Depends(get_db)):
     rows = db.query(models.Comment) \
         .order_by(models.Comment.id.desc()).limit(50).all()
@@ -1759,7 +1997,7 @@ def admin_comments(admin: models.User = Depends(admin_user),
 
 @app.post("/admin/comments/{comment_id}/remove")
 def admin_comment_remove(comment_id: int,
-                         admin: models.User = Depends(admin_user),
+                         admin: models.User = Depends(moderator_user),
                          db: Session = Depends(get_db)):
     cm = db.get(models.Comment, comment_id)
     if cm is None:
@@ -1767,6 +2005,8 @@ def admin_comment_remove(comment_id: int,
     post = db.get(models.Post, cm.post_id)
     if post is not None and post.comment_count > 0:
         post.comment_count -= 1
+    _audit(db, admin, "comment_remove", target_id=cm.user_id,
+           detail=f"comment {cm.id} on post {cm.post_id}")
     db.delete(cm)
     db.commit()
     return {"ok": True, "removed": comment_id}
@@ -1824,6 +2064,7 @@ async def upload_design(prompt: str = Form(""),
         raise HTTPException(
             403, "Designs are posted as the Official account — "
                  "switch to Official first")
+    _enforce_rate("upload", f"u{user.telegram_id}")
     kind, file_id = await _telegram_upload_or_400(
         user, file, prompt.strip())
     if kind != "photo":
@@ -1842,6 +2083,7 @@ async def upload_design(prompt: str = Form(""),
 def like_design(design_id: int,
                 user: models.User = Depends(current_user),
                 db: Session = Depends(get_db)):
+    _enforce_rate("design_like", f"u{user.telegram_id}")
     design = db.get(models.Design, design_id)
     if design is None:
         raise HTTPException(404, "Design not found")
@@ -1877,14 +2119,135 @@ def delete_design(design_id: int,
 
 @app.delete("/admin/designs/{design_id}")
 def admin_delete_design(design_id: int,
-                        admin: models.User = Depends(admin_user),
+                        admin: models.User = Depends(moderator_user),
                         db: Session = Depends(get_db)):
     design = db.get(models.Design, design_id)
     if design is None:
         raise HTTPException(404, "Design not found")
     _remove_design(db, design)
+    _audit(db, admin, "design_remove", detail=f"design {design_id}")
     db.commit()
     return {"ok": True, "removed": design_id}
+
+
+# ---------------------------------------------------------------------------
+# Phase 28: session revocation, audit-log view, member data rights
+# (security §5/§10/§11/§13/§14)
+# ---------------------------------------------------------------------------
+
+@app.post("/admin/users/{telegram_id}/revoke-sessions")
+def admin_revoke_sessions(telegram_id: int,
+                          admin: models.User = Depends(admin_user),
+                          db: Session = Depends(get_db)):
+    """Invalidate every initData issued to this member so far (a
+    leaked login string dies immediately) without banning them:
+    reopening the app issues fresh initData and they are back in."""
+    u = db.get(models.User, telegram_id)
+    if u is None:
+        raise HTTPException(404, "Member not found")
+    u.auth_revoked_at = datetime.utcnow()
+    _audit(db, admin, "sessions_revoke", target_id=telegram_id)
+    db.commit()
+    return {"ok": True, "telegram_id": telegram_id}
+
+
+@app.get("/admin/audit-log")
+def admin_audit_log(limit: int = 100,
+                    admin: models.User = Depends(admin_user),
+                    db: Session = Depends(get_db)):
+    rows = db.query(models.AdminAuditLog) \
+        .order_by(models.AdminAuditLog.id.desc()) \
+        .limit(max(1, min(limit, 200))).all()
+    return {"entries": [{
+        "id": r.id, "admin_id": r.admin_id, "action": r.action,
+        "target_id": r.target_id, "detail": r.detail,
+        "created_at": r.created_at.isoformat() if r.created_at else None,
+    } for r in rows]}
+
+
+@app.get("/me/export")
+def my_export(user: models.User = Depends(current_user),
+              db: Session = Depends(get_db)):
+    """Everything the platform holds about the caller, as JSON —
+    the member's copy of their own data (§11)."""
+    me = db.get(models.User, user.telegram_id)
+    posts = db.query(models.Post).filter_by(
+        user_id=user.telegram_id).order_by(models.Post.id).all()
+    ledger = db.query(models.PointsLedger).filter_by(
+        user_id=user.telegram_id).order_by(
+        models.PointsLedger.id).all()
+    comments = db.query(models.Comment).filter_by(
+        user_id=user.telegram_id).order_by(models.Comment.id).all()
+    payload = {
+        "exported_at": datetime.utcnow().isoformat() + "Z",
+        "profile": {
+            "telegram_id": me.telegram_id, "username": me.username,
+            "first_name": me.first_name, "bio": me.bio,
+            "points_balance": me.points_balance,
+            "is_verified": bool(me.is_verified),
+            "country": me.country, "language_code": me.language_code,
+            "created_at": me.created_at.isoformat()
+            if me.created_at else None,
+        },
+        "posts": [{
+            "id": p.id, "type": p.type, "caption": p.caption,
+            "media_file_id": p.media_file_id,
+            "like_count": p.like_count,
+            "comment_count": p.comment_count,
+            "is_deleted": bool(p.is_deleted),
+            "created_at": p.created_at.isoformat()
+            if p.created_at else None,
+        } for p in posts],
+        "comments": [{
+            "id": cm.id, "post_id": cm.post_id, "text": cm.text,
+            "created_at": cm.created_at.isoformat()
+            if cm.created_at else None,
+        } for cm in comments],
+        "points_ledger": [{
+            "id": e.id, "amount": e.amount, "reason": e.reason,
+            "ref_id": e.ref_id,
+            "created_at": e.created_at.isoformat()
+            if e.created_at else None,
+        } for e in ledger],
+        "following": [f.following_id for f in db.query(
+            models.Follow).filter_by(follower_id=user.telegram_id)],
+        "followers": [f.follower_id for f in db.query(
+            models.Follow).filter_by(following_id=user.telegram_id)],
+    }
+    return JSONResponse(
+        content=payload,
+        headers={"Content-Disposition":
+                 "attachment; filename=nexora-export.json"})
+
+
+class DeleteAccountIn(BaseModel):
+    confirm: str
+
+
+@app.post("/me/delete-account")
+def my_delete_account(body: DeleteAccountIn,
+                      x_act_as: str = Header(default=""),
+                      user: models.User = Depends(current_user),
+                      db: Session = Depends(get_db)):
+    """Permanent self-service account deletion (§5/§11): the same
+    complete wipe the admin delete performs. Guarded three ways: an
+    explicit typed confirmation, never while acting as another
+    account, and never for the official account."""
+    if x_act_as:
+        raise HTTPException(
+            400, "Switch back to your own account to delete it")
+    if user.telegram_id == OFFICIAL_ID:
+        raise HTTPException(
+            400, "The official account cannot be deleted")
+    if body.confirm != "DELETE":
+        raise HTTPException(
+            400, "Type DELETE to confirm account deletion")
+    target = db.get(models.User, user.telegram_id)
+    _wipe_member(db, target)
+    db.commit()
+    sec_log.warning("member self-deleted account %s",
+                    user.telegram_id)
+    return {"ok": True, "deleted": user.telegram_id}
 
 
 @app.get("/media/{file_id}")
@@ -1901,6 +2264,12 @@ async def media_proxy(file_id: str, request: Request):
     Range requests are forwarded so video seeking works in reels."""
     if not settings.BOT_TOKEN:
         raise HTTPException(503, "Media unavailable until the bot is live")
+    # Phase 28 (H2): a bare file_id is no longer enough — media
+    # requires the short-lived signed token the app receives at
+    # /auth (image/video tags cannot send the login header, so the
+    # capability rides in the URL and expires).
+    if not _media_token_ok(request.query_params.get("mt", "")):
+        raise HTTPException(401, "Media token missing or expired")
     api = f"https://api.telegram.org/bot{settings.BOT_TOKEN}"
     async with httpx.AsyncClient(timeout=30) as client:
         info = await client.get(f"{api}/getFile", params={"file_id": file_id})

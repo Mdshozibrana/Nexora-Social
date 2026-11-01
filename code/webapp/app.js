@@ -10,6 +10,14 @@ if (tg.disableVerticalSwipes) tg.disableVerticalSwipes();
 
 const initData = tg.initData || "";
 let me = null;
+// Phase 28: /media requires the short-lived signed token issued by
+// /auth — <img>/<video> tags cannot send the login header, so the
+// capability rides in the URL and expires (see mediaUrl).
+let mediaToken = "";
+function mediaUrl(id) {
+  return "/media/" + encodeURIComponent(id || "") +
+    (mediaToken ? "?mt=" + encodeURIComponent(mediaToken) : "");
+}
 let tab = "explore";
 let feedCursor = null;
 let profileId = null;
@@ -168,7 +176,7 @@ function avatarEl(name, id, big, photoId) {
   if (photoId) {
     const img = document.createElement("img");
     img.className = "avatar" + (big ? " big" : "");
-    img.src = "/media/" + encodeURIComponent(photoId);
+    img.src = mediaUrl(photoId);
     img.alt = name || "";
     img.loading = "lazy";
     img.onerror = () => img.replaceWith(avatarEl(name, id, big));
@@ -212,7 +220,7 @@ function postCard(p) {
     const frame = document.createElement("div");
     frame.className = "post-media";
     const img = document.createElement("img");
-    img.src = "/media/" + encodeURIComponent(p.media_file_id);
+    img.src = mediaUrl(p.media_file_id);
     img.loading = "lazy";
     img.alt = "photo";
     frame.appendChild(img);
@@ -221,7 +229,7 @@ function postCard(p) {
     const frame = document.createElement("div");
     frame.className = "post-media";
     const vid = document.createElement("video");
-    vid.src = "/media/" + encodeURIComponent(p.media_file_id);
+    vid.src = mediaUrl(p.media_file_id);
     vid.controls = true;
     vid.preload = "metadata";
     vid.playsInline = true;
@@ -404,7 +412,7 @@ function reelCard(p) {
   el.className = "reel";
 
   const vid = document.createElement("video");
-  vid.src = "/media/" + encodeURIComponent(p.media_file_id || "");
+  vid.src = mediaUrl(p.media_file_id);
   vid.loop = true;
   vid.muted = reelMuted;
   vid.playsInline = true;
@@ -553,7 +561,7 @@ async function openReelMenu(p, reelEl) {
   });
   if (p.media_file_id) row("⬇️", "Download", () => {
     const a = document.createElement("a");
-    a.href = "/media/" + encodeURIComponent(p.media_file_id);
+    a.href = mediaUrl(p.media_file_id);
     a.download = "";
     document.body.appendChild(a);
     a.click();
@@ -1151,6 +1159,7 @@ function startHeartbeat() {
 
 async function loadMe() {
   me = await api("/auth", { method: "POST", body: JSON.stringify({ initData }) });
+  if (me.media_token) mediaToken = me.media_token;
   startHeartbeat();
   $("profile-line").textContent =
     me.first_name + (me.username ? " @" + me.username : "");
@@ -1577,7 +1586,7 @@ function designCard(d) {
   const el = document.createElement("div");
   el.className = "design-card";
   const img = document.createElement("img");
-  img.src = "/media/" + encodeURIComponent(d.image_file_id);
+  img.src = mediaUrl(d.image_file_id);
   img.loading = "lazy";
   img.alt = "Design";
   const body = document.createElement("div");
@@ -1616,7 +1625,7 @@ $("design-more").onclick = () => loadDesigns(false);
 
 function openDesignSheet(d) {
   currentDesign = d;
-  $("ds-img").src = "/media/" + encodeURIComponent(d.image_file_id);
+  $("ds-img").src = mediaUrl(d.image_file_id);
   $("ds-prompt").textContent = d.prompt || "(no prompt saved)";
   $("ds-like").textContent =
     (d.liked ? "❤️ " : "🤍 ") + d.like_count;

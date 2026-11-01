@@ -30,6 +30,11 @@ class User(Base):
     # Panel (managed/test members). Only admins can create them or act
     # as them; they are tagged in admin lists.
     is_managed = Column(Boolean, default=False)
+    # Phase 28: auth revocation. When set, initData issued BEFORE this
+    # moment is rejected — the member must reopen the app (Telegram
+    # issues fresh initData), which kills any leaked string without
+    # banning the account (security §1/§14).
+    auth_revoked_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -226,3 +231,17 @@ class DesignLike(Base):
     user_id = Column(BigInteger, ForeignKey("users.telegram_id"))
     created_at = Column(DateTime, default=datetime.utcnow)
     __table_args__ = (UniqueConstraint("design_id", "user_id"),)
+
+
+class AdminAuditLog(Base):
+    """Phase 28 (security §10/§13): every privileged action leaves a
+    record — which admin, what action, on whom, when. Rows are only
+    ever appended by the admin endpoints; nothing in the app updates
+    or deletes them."""
+    __tablename__ = "admin_audit_logs"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    admin_id = Column(BigInteger, index=True, nullable=False)
+    action = Column(String(64), nullable=False)
+    target_id = Column(BigInteger, nullable=True)
+    detail = Column(String(512), default="")
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)

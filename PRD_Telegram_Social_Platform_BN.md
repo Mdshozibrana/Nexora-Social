@@ -279,3 +279,22 @@ LOGOUT (owner: লগআউটের পর পুরোপুরি নিজ�
 - **অটো ফলব্যাক রিট্রাই:** apiFormProgress-এ XHR নেটওয়ার্ক-এরর/timeout হলে একই FormData fetch দিয়ে একবার আবার পাঠানো হয় (% তখন indeterminate)।
 - **ডুপ্লিকেট-রোধ (X-Upload-Id):** প্রতিটা attach-এ নতুন আপলোড আইডি; ক্লায়েন্ট হেডারে পাঠায়; সার্ভার /posts/upload ও /designs/upload-এ (user, id) → ফলাফল ১০ মিনিট ধরে রাখে — রিট্রাই এলে সংরক্ষিত ফল রিপ্লে হয়, ডবল পোস্ট/ডবল জব হয় না। এরর ক্যাশ হয় না।
 - টেস্ট: test_phase27 — ছবি ডিডুপ (একই পোস্ট আইডি, ফিডে একটি), ভিডিও 202 + জব ডিডুপ, ডিজাইন ডিডুপ, ফ্রন্টএন্ড লক। মোট ২৫টি স্যুট সবুজ।
+
+---
+
+## সংযোজন — Phase 28 (১ নভেম্বর ২০২৬): সম্পূর্ণ নিরাপত্তা শক্তিশালীকরণ
+
+মালিকের ১৫-সেকশনের নিরাপত্তা চাহিদাপত্র অনুযায়ী: প্রথমে পুরো কোড অডিট (রিপোর্ট: `SECURITY_AUDIT.md` — Critical 3, High 6, Medium 7, Low/platform 4), তারপর Critical+High আগে ঠিক করা হয়েছে। বিস্তারিত অবস্থা ও প্রমাণ: `SECURITY.md`। কোনো বিদ্যমান ফিচার/ডেটা ভাঙা হয়নি — সব ২৬টি টেস্ট স্যুট সবুজ।
+
+- **C1 — initData মেয়াদ:** signature-এর পাশাপাশি এখন auth_date যাচাই হয় — ২৪ ঘণ্টার পুরনো বা ভবিষ্যতের initData বাতিল (401)। ধরা পড়া লগইন-স্ট্রিং আর চিরদিন চলবে না। (সব টেস্ট স্যুটের হেলপার এখন লাইভ auth_date ব্যবহার করে।)
+- **C2 — রেট লিমিট:** প্রতি ইউজার প্রতি অ্যাকশনে বাজেট (post 30/ঘণ্টা, comment 120, like 600, follow 200, report 30/দিন, upload 30, share 120, search 240) + /auth-তে IP-ভিত্তিক (120/মিনিট); অতিক্রমে 429 + Retry-After। সংখ্যাগুলো config.RATE_LIMITS-এ, মালিক বদলাতে পারবেন।
+- **C3 — আপলোড মেমরি-ঝুঁকি দূর:** ফাইল এখন capped streaming read-এ আসে — সাইজ চেকের আগে পুরো বডি আর মেমরিতে ওঠে না; সীমা পেরোলেই read থেমে 400।
+- **H1 — সিকিউরিটি হেডার:** সব রেসপন্সে CSP (script-src কঠোর; frame-ancestors শুধু Telegram — Mini App ফ্রেম করা যায় এমনভাবে), nosniff, Referrer-Policy, Permissions-Policy, HSTS। X-Frame-Options ইচ্ছাকৃতভাবে দেওয়া হয়নি (Telegram-এ অ্যাপই ভেঙে যেত)।
+- **H2 — /media টোকেন-গেট:** ছবি/ভিডিও এখন শুধু file_id দিয়ে পাওয়া যায় না — /auth থেকে পাওয়া ৭-দিনের signed token (HMAC) লাগে; app.js-এর সব media URL mediaUrl() দিয়ে তৈরি।
+- **H3 — ফাইল সিগনেচার যাচাই:** নতুন app/filesig.py — MIME/এক্সটেনশনের পাশাপাশি আসল magic byte মিলতে হবে (app/fake দুটোই টেস্টে প্রমাণিত)।
+- **H4 — অ্যাডমিন অডিট লগ:** admin_audit_logs টেবিল — ban/unban, points adjust, verify, profile edit, member/managed delete, broadcast, report resolve, comment/post/design remove, verification decide, sessions revoke — সব লেখা থাকে; GET /admin/audit-log (শুধু অ্যাডমিন)।
+- **H5 — সেশন রিভোক:** users.auth_revoked_at + POST /admin/users/{id}/revoke-sessions — ফাঁস হওয়া লগইন তৎক্ষণাৎ মেরে ফেলা যায়, ব্যান ছাড়াই; অ্যাপ আবার খুললেই সদস্য ফিরে আসেন।
+- **H6 — ইনপুট সীমা:** সব টেক্সট ফিল্ডে pydantic max_length (caption 2000, comment 1000, reason 256, broadcast 4000, name 128, bio 1000)।
+- **Medium যা করা হয়েছে:** M1 moderator tier (MODERATOR_IDS env — শুধু reports/comments/posts moderation + ban; points/verify/delete/broadcast নয়), M3 search LIKE-escape, M4 MAINTENANCE_MODE env (API 503, /health চালু), M5 GET /me/export + POST /me/delete-account (DELETE লিখে নিশ্চিত করতে হয়; act-as অবস্থায় নিষিদ্ধ), M6 security event logging (ব্যর্থ লগইন, admin denial, rate-limit hit — initData/token/কনটেন্ট কখনো লগ হয় না), L4 requirements.txt পিন করা।
+- **যা হয়নি (সৎ হিসাব, SECURITY.md-তে বিস্তারিত):** DB backup — ফ্রি Render প্ল্যানে নেই (৩০ নভেম্বরের পেইড আপগ্রেডেই সমাধান); admin MFA — Telegram অ্যাকাউন্টের 2-step verification-ই এর বিকল্প (মালিকের কাজ); block/mute, malware scan, বাইরের pen-test — ব্যাকলগ। পাসওয়ার্ড হ্যাশিং/CSRF টোকেন — এই আর্কিটেকচারে প্রযোজ্য নয় (পাসওয়ার্ডই নেই; auth কুকি নয়, হেডার)।
+- **টেস্ট:** test_phase28 (নতুন সিকিউরিটি স্যুট) + আগের ২৫টি — মোট ২৬টি স্যুট সবুজ। Phase 16-এর দুটি ফিক্সচার নতুন সিগনেচার-গেট অনুযায়ী হালনাগাদ।
