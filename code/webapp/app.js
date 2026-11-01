@@ -115,11 +115,40 @@ function newUploadId() {
 
 function setStatus(msg) { $("status").textContent = msg || ""; }
 
+// ---------------------------------------------------------------
+// Phase 30 (owner report): a video kept playing after being
+// scrolled past and after switching to another page. One lifecycle
+// now governs every <video> in the app:
+//  · only one video plays at a time (a starting video pauses the
+//    rest, via the capture-phase "play" listener below);
+//  · feed/profile videos pause when scrolled out of the shell
+//    (feedVidObserver, observed at creation in postCard);
+//  · every view switch pauses everything (showView);
+//  · hiding the app (switching chats, minimising) pauses everything.
+// Reels keep their own observer for autoplay; this layer only ever
+// pauses, so the two never fight.
+function pauseAllVideos(except) {
+  document.querySelectorAll("video").forEach(v => {
+    if (v !== except && !v.paused) v.pause();
+  });
+}
+document.addEventListener("play", e => {
+  if (e.target && e.target.tagName === "VIDEO") pauseAllVideos(e.target);
+}, true);
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) pauseAllVideos();
+});
+const feedVidObserver = new IntersectionObserver(entries => {
+  entries.forEach(en => { if (!en.isIntersecting) en.target.pause(); });
+}, { root: document.getElementById("app-scroll"), threshold: 0.2 });
+
 function showView(name) {
   // Phase 20: defense in depth — the admin view refuses to open for
   // non-admins even if triggered programmatically (the API is guarded
   // too; this keeps the shell itself private as the owner expects).
   if (name === "admin" && !(me && me.is_admin)) name = "feed";
+  // Phase 30: no video may follow the member to another page.
+  pauseAllVideos();
   // Phase 23: each view starts at the top of the app shell.
   const sc = $("app-scroll");
   if (sc) sc.scrollTop = 0;
@@ -146,7 +175,6 @@ function showView(name) {
   if (name === "admin") loadAdmin();
   if (name === "notifications") loadNotifications(true);
   if (name === "videos") { loadVideos(true); maybeShowAd(); }
-  else document.querySelectorAll("#video-list video").forEach(v => v.pause());
   if (name === "leaderboard") loadRanks();
   if (name === "designs") loadDesigns(true);
   moveNavPill();
@@ -233,6 +261,8 @@ function postCard(p) {
     vid.controls = true;
     vid.preload = "metadata";
     vid.playsInline = true;
+    // Phase 30: feed/profile videos stop when scrolled away.
+    feedVidObserver.observe(vid);
     frame.appendChild(vid);
     const playBadge = document.createElement("div");
     playBadge.className = "play-badge";

@@ -1074,3 +1074,70 @@ body { padding: 0; overflow: hidden; }
 /* R5: the profile Block/Unblock button — quiet until it matters. */
 button.block-btn { background: transparent; color: #B0416E;
   border: 2px solid #F3C6D8; box-shadow: none; font-weight: 600; }
+
+/* ================================================================
+   Phase 30 — uniqueness polish on the clay theme (owner request):
+   a living pastel background, cards that arrive softly, a sheen
+   on the Post button, a glowing nav pill, popping likes and a
+   branded scrollbar. Pure decoration layered over Phase 17 clay;
+   layout and colours are unchanged.
+   ================================================================ */
+
+/* Living aurora backdrop: three soft pastel blobs drift slowly
+   behind the app (the shell paints above them). */
+body::before, body::after { content: ""; position: fixed; z-index: -1;
+  border-radius: 50%; filter: blur(70px); pointer-events: none; }
+body::before { width: 340px; height: 340px; left: -110px; top: -90px;
+  background: radial-gradient(circle at 35% 35%, #FFC7DE, #FF8FBE);
+  opacity: .5; animation: auroraA 26s ease-in-out infinite alternate; }
+body::after { width: 300px; height: 300px; right: -100px; bottom: -80px;
+  background: radial-gradient(circle at 60% 40%, #C9F2E0, #9ADBE8);
+  opacity: .45; animation: auroraB 32s ease-in-out infinite alternate; }
+@keyframes auroraA { from { transform: translate(0, 0) scale(1); }
+  to { transform: translate(56px, 42px) scale(1.14); } }
+@keyframes auroraB { from { transform: translate(0, 0) scale(1.08); }
+  to { transform: translate(-48px, -38px) scale(.94); } }
+
+/* Cards arrive with a soft rise instead of popping in. */
+@keyframes cardIn { from { opacity: 0; transform: translateY(14px) scale(.985); }
+  to { opacity: 1; transform: none; } }
+.post, .design-card, .rank-row, .notif-row { animation: cardIn .45s cubic-bezier(.22,.9,.3,1) both; }
+
+/* The active bottom-nav pill breathes with a soft pink glow. */
+#nav-pill { box-shadow: 0 6px 18px rgba(232, 67, 147, .45),
+  inset 0 2px 3px rgba(255,255,255,.5); animation: pillGlow 3.2s ease-in-out infinite; }
+@keyframes pillGlow { 0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.13); } }
+
+/* Post button: a light sheen sweeps across, on a slow loop. */
+#composer-post { position: relative; overflow: hidden; }
+#composer-post::after { content: ""; position: absolute; inset: 0;
+  background: linear-gradient(115deg, transparent 30%,
+    rgba(255,255,255,.5) 50%, transparent 70%);
+  transform: translateX(-120%); animation: sheen 3.6s ease-in-out infinite; }
+@keyframes sheen { 0%, 55% { transform: translateX(-120%); }
+  85%, 100% { transform: translateX(120%); } }
+
+/* Liking pops the heart. */
+@keyframes heartPop { 0% { transform: scale(1); }
+  40% { transform: scale(1.35) rotate(-6deg); } 100% { transform: scale(1); } }
+button.liked { animation: heartPop .32s cubic-bezier(.22,.9,.3,1); }
+
+/* The wordmark wears the brand gradient (only where clipped
+   gradient text is supported, so the name can never go invisible). */
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  #app-name { background: linear-gradient(92deg, #fff 20%, #FFD7EA 55%, #fff 85%);
+    -webkit-background-clip: text; background-clip: text;
+    color: transparent; -webkit-text-fill-color: transparent; }
+}
+
+/* Branded thin scrollbar for the app shell. */
+#app-scroll { scrollbar-width: thin; scrollbar-color: #F19BC0 transparent; }
+#app-scroll::-webkit-scrollbar { width: 5px; }
+#app-scroll::-webkit-scrollbar-thumb { background: #F19BC0; border-radius: 99px; }
+
+@media (prefers-reduced-motion: reduce) {
+  body::before, body::after, #nav-pill, #composer-post::after,
+  .post, .design-card, .rank-row, .notif-row, button.liked {
+    animation: none !important; }
+}

@@ -311,3 +311,14 @@ LOGOUT (owner: লগআউটের পর পুরোপুরি নিজ�
 - **R4:** upload-dedupe dict ও rate-limiter bucket-এর মেয়াদোত্তীর্ণ key pruning — দীর্ঘজীবী প্রসেসে মেমরি জমবে না।
 - **R5 — Block (§5/§6):** user_blocks টেবিল; POST /users/{id}/block (toggle), GET /me/blocked; ব্লক করলে দুই পক্ষের পোস্ট/প্রোফাইল পরস্পরের কাছে অদৃশ্য, দুই দিকের follow মুছে যায়, follow/comment/like/share 403; official অ্যাকাউন্ট ব্লক করা যায় না; প্রোফাইল পেজে Block/Unblock বাটন (blocked_by_me flag)।
 - টেস্ট: test_phase29 নতুন; মোট ২৭টি স্যুট সবুজ। বাকি থাকল শুধু প্ল্যাটফর্ম/মালিক-পক্ষের বিষয়: DB backup (ফ্রি প্ল্যানে নেই), Telegram 2-step (admin MFA-র বিকল্প), বাইরের pen test।
+
+---
+
+## সংযোজন — Phase 30 (১ নভেম্বর ২০২৬): ভিডিও লাইফসাইকেল ফিক্স + ইন্টারফেস পলিশ
+
+মালিকের রিপোর্ট: "ভিডিও প্লে করার পরে স্ক্রল করে নিচে বা উপরে গেলে বা অন্য পেজে গেলেও বন্ধ হয় না" + ইন্টারফেস আরও ইউনিক/আকর্ষণীয় করার অনুরোধ।
+
+- **মূল কারণ:** Reels-এর নিজের observer ছিল, কিন্তু ফিড/প্রোফাইলের পোস্ট-ভিডিওর কোনো লাইফসাইকেলই ছিল না — স্ক্রল করে পেরিয়ে গেলেও, অন্য পেজে গেলেও চলতে থাকত; showView শুধু #video-list (reels) থামাত।
+- **ফিক্স (একটাই কেন্দ্রীয় লাইফসাইকেল, app.js):** `pauseAllVideos()` — (১) capture-phase "play" listener: একসাথে মাত্র একটা ভিডিও চলবে, নতুনটা শুরু হলে বাকি সব থামে; (২) `feedVidObserver` (root = #app-scroll, threshold 0.2): postCard-এর প্রতিটি ভিডিও স্ক্রলের বাইরে গেলেই pause; (৩) showView-এর শুরুতেই pauseAllVideos() — পেজ বদলালে কিছুই চলবে না (reels ব্যতিক্রম নয়); (৪) visibilitychange: অ্যাপ hide হলে সব pause। Reels autoplay আগের মতোই (এই লেয়ার শুধু pause করে, তাই সংঘর্ষ নেই)।
+- **পলিশ (clay থিমের ওপরে purely decorative layer, style.css শেষে Phase 30 অংশ):** পেছনে ধীরে ভাসমান pastel aurora blobs (blur 70px), কার্ডের soft rise-in animation (.post/.design-card/.rank-row/.notif-row), nav pill-এ pink glow pulse, Post বাটনে sheen sweep, like-এ heart pop, #app-name-এ gradient text (@supports গার্ডসহ), গোলাপি thin scrollbar; prefers-reduced-motion-এ সব animation বন্ধ। লেআউট/রং অপরিবর্তিত।
+- টেস্ট: test_phase30 নতুন (লাইফসাইকেল কন্ট্রাক্ট + পলিশ মার্কার + API smoke); মোট ২৮/২৮ স্যুট সবুজ।
