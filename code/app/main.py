@@ -2210,10 +2210,10 @@ def admin_comment_remove(comment_id: int,
 
 # ---------------------------------------------------------------------------
 # Phase 25: the Design gallery (owner: a Design tab in the nav,
-# Pinterest-style premium). Designs are posted ONLY as the official
-# account — the admin switches to Official (composer switch, drawer
-# or Admin Panel) and uploads image + prompt here. Members browse
-# and like.
+# Pinterest-style premium). Posting rule since Phase 34: ONLY the
+# admin's own account can post (no acting-as), and the gallery
+# shows no poster identity — designs carry the platform identity.
+# Members browse, open, like and copy prompts like any post.
 # ---------------------------------------------------------------------------
 
 def _design_dict(db, design, user):
@@ -2261,10 +2261,17 @@ async def upload_design(prompt: str = Form(""),
     hit = _dedupe_get(user.telegram_id, x_upload_id)
     if hit:
         return JSONResponse(status_code=hit[0], content=hit[1])
-    if user.telegram_id != OFFICIAL_ID:
+    # Phase 34 (owner directive, supersedes the Phase 25 rule):
+    # designs are posted ONLY from the admin's own account — no
+    # acting-as, not even as Official. The gallery never shows who
+    # posted: _design_dict reports only the platform identity, and
+    # the Design row stores no uploader at all, so the admin's
+    # personal id and name appear nowhere in the Design tab.
+    real_id = getattr(user, "_real_id", user.telegram_id)
+    if user.telegram_id not in settings.ADMIN_IDS \
+            or real_id != user.telegram_id:
         raise HTTPException(
-            403, "Designs are posted as the Official account — "
-                 "switch to Official first")
+            403, "Designs can be posted only from the admin account")
     _enforce_rate("upload", f"u{user.telegram_id}")
     kind, file_id = await _telegram_upload_or_400(
         user, file, prompt.strip())

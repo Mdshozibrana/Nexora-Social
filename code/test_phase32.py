@@ -103,12 +103,16 @@ with TestClient(app) as c:
     assert r.json()["media_file_id"] == "fid_via_999", r.json()
     print("official photo post via owner chat OK")
 
-    # 3) Designs as Official work the same way.
+    # 3) Designs: since Phase 34 they are posted ONLY from the
+    # admin's own account, so the act-as Official attempt is now
+    # refused before any Telegram send (the Phase 32 chat-routing
+    # proof lives on in cases 2 and 5, on the post path).
+    before = len(SENT_CHATS)
     r = c.post("/designs/upload", headers=OFFICIAL,
                files={"file": PNG}, data={"prompt": "poster prompt"})
-    assert r.status_code == 200, r.text
-    assert SENT_CHATS[-1] == 999, SENT_CHATS
-    print("official design upload OK")
+    assert r.status_code == 403, r.text
+    assert len(SENT_CHATS) == before, SENT_CHATS
+    print("official design upload superseded by Phase 34 OK")
 
     # 4) A member who truly never started the bot still gets the
     # friendly Start message (behaviour preserved).

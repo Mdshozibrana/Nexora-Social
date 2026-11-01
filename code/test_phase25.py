@@ -1,10 +1,10 @@
 """Phase-25 tests: the Design gallery (owner: a Design tab in the
-nav, Pinterest-style premium; designs posted ONLY as the official
-account, prompt as the caption). Covers official-only upload
-(member AND the admin's own ID are refused), image-only rule,
-listing, like toggling, removal by the official identity and by
-the admin moderation route, and the frontend wiring (7th nav tab,
-masonry CSS, detail sheet with Copy Prompt).
+nav, Pinterest-style premium). Posting rule updated in Phase 34:
+ONLY the admin's own account posts (acting as Official no longer
+can); members browse and like. Covers the permission matrix,
+image-only rule, listing, like toggling, removal by the official
+identity and by the admin moderation route, and the frontend
+wiring (7th nav tab, masonry CSS, detail sheet with Copy Prompt).
 """
 import hashlib, hmac, json, os, urllib.parse
 
@@ -76,13 +76,15 @@ with TestClient(app) as c:
     r = c.post("/designs/upload", headers=MEMBER,
                files={"file": PNG}, data={"prompt": "member attempt"})
     assert r.status_code == 403, r.status_code
-    r = c.post("/designs/upload", headers=OWNER,
-               files={"file": PNG}, data={"prompt": "owner own-ID"})
-    assert r.status_code == 403, r.status_code  # must be Official
+    # Phase 34 (owner directive): posting belongs to the ADMIN's own
+    # account only — acting as Official no longer posts designs.
     r = c.post("/designs/upload", headers=OFFICIAL,
+               files={"file": PNG}, data={"prompt": "official attempt"})
+    assert r.status_code == 403, r.status_code
+    r = c.post("/designs/upload", headers=OWNER,
                files={"file": MP4}, data={"prompt": "a video"})
     assert r.status_code == 400, r.status_code  # images only
-    r = c.post("/designs/upload", headers=OFFICIAL,
+    r = c.post("/designs/upload", headers=OWNER,
                files={"file": PNG},
                data={"prompt": "a majestic cat, studio light, 8k"})
     assert r.status_code == 200, r.text
@@ -116,7 +118,7 @@ with TestClient(app) as c:
     assert r.status_code == 200, r.text
     r = c.get("/designs", headers=MEMBER)
     assert r.json()["designs"] == [], r.json()
-    r = c.post("/designs/upload", headers=OFFICIAL,
+    r = c.post("/designs/upload", headers=OWNER,
                files={"file": PNG}, data={"prompt": "second design"})
     did2 = r.json()["id"]
     r = c.request("DELETE", f"/admin/designs/{did2}", headers=OWNER)
@@ -131,9 +133,11 @@ with TestClient(app) as c:
     css = open("webapp/style.css").read()
     for marker in ('id="nav-design"', 'id="view-designs"',
                    'id="design-grid"', 'id="design-upload"',
-                   'id="design-switch"', 'id="design-sheet-wrap"',
+                   'id="design-sheet-wrap"',
                    'id="ds-prompt"', 'id="ds-copy"'):
         assert marker in html, marker
+    # Phase 34: the switch-to-Official card is gone for good.
+    assert 'id="design-switch"' not in html
     for marker in ("loadDesigns", "openDesignSheet", "Copy Prompt",
                    "toggleDesignLike", 'showView("designs")',
                    '"nav-design"'):

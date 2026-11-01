@@ -113,7 +113,8 @@ with TestClient(app) as c:
     print("video 202 path + dedupe OK")
 
     # --- design dedupe ---------------------------------------------------------
-    hd = H(777, "Owner", act_as=1, upload_id="up-design-1")
+    # Phase 34: designs post from the admin's OWN id (no act-as).
+    hd = H(777, "Owner", upload_id="up-design-1")
     r1 = c.post("/designs/upload", headers=hd, files={"file": PNG},
                 data={"prompt": "one design"})
     r2 = c.post("/designs/upload", headers=hd, files={"file": PNG},

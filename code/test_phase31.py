@@ -85,7 +85,8 @@ with TestClient(app) as c:
         c.post("/auth", json={"initData": h["X-Init-Data"]})
 
     # --- design views: unique per member ---
-    r = c.post("/designs/upload", headers=OFFICIAL,
+    # Phase 34: designs post from the admin's own id (no act-as).
+    r = c.post("/designs/upload", headers=OWNER,
                files={"file": PNG}, data={"prompt": "sunset poster"})
     assert r.status_code == 200, r.text
     did = r.json()["id"]

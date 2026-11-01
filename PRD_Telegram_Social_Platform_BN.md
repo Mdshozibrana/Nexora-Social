@@ -355,3 +355,14 @@ LOGOUT (owner: লগআউটের পর পুরোপুরি নিজ�
 - তিনটি কল-সাইটেই: composer পোস্ট, ডিজাইন আপলোড, প্রোফাইল ফটো।
 - টেস্ট: test_phase33 নতুন (shrink কন্ট্রাক্ট + Phase 32 routing অক্ষত + API smoke); মোট ৩১/৩১ স্যুট সবুজ।
 - সৎ সীমা: এটি সম্ভাবনা বাড়ায়, গ্যারান্টি নয় — সংযোগ যদি ছোট আপলোডও মেরে ফেলে, তবু ব্যর্থ হতে পারে; দীর্ঘমেয়াদি সমাধান পেইড আপগ্রেড (30 নভেম্বরের deadline-সহ)।
+
+---
+
+## সংযোজন — Phase 34 (১ নভেম্বর ২০২৬): ডিজাইন পোস্টিং শুধু এডমিনের নিজের আইডি দিয়ে, পরিচয় গোপন
+
+মালিকের নির্দেশ (আপলোড আবার ব্যর্থ হওয়ার পর): "একমাত্র এডমিন আইডি দিয়ে Design এ পোস্ট করতে পারবে এবং সেখানে আইডি দেখাবে না এডমিনের" + "বাকী সব সাধারণ ইউজার শুধু পোস্ট ছাড়া বাকী সব করতে পারবে অন্য সব পোস্টের মতো।" Phase 25-এর official-only নিয়ম বাতিল।
+
+- **সার্ভার:** POST /designs/upload এখন শুধু তখনই যখন effective user ADMIN_IDS-তে AND real caller == effective user (কোনো act-as নয় — Official হিসেবেও না, managed হিসেবেও না) → নইলে 403 "Designs can be posted only from the admin account"।
+- **পরিচয় গোপন:** Design রো-তে uploader সংরক্ষণই হয় না; _design_dict আগের মতোই শুধু প্ল্যাটফর্ম পরিচয় (Nexora Social) রিপোর্ট করে — এডমিনের ব্যক্তিগত id/নাম API রেসপন্স, লিস্টিং, কার্ড, শিট — কোথাও নেই (test_phase34 পুরো JSON blob স্ক্যান করে যাচাই করে)।
+- **ক্লায়েন্ট:** paintDesignAccess — upload কার্ড শুধু `me.is_admin && !actAsId()`; "Switch to Official" কার্ড (design-switch) HTML+JS থেকে সম্পূর্ণ সরানো; আপলোড কার্ডের শিরোনামে "(admin only — posted without your name or ID)"। সদস্যদের জন্য আগের সবই: browse, open/view, like, prompt পড়া ও Copy Prompt।
+- টেস্ট: test_phase34 নতুন; test_phase25 (permission matrix), test_phase27 (design dedupe fixture), test_phase31 (design views fixture), test_phase32 (official design case → 403) নতুন নিয়মে আপডেট; মোট ৩২/৩২ স্যুট সবুজ।

@@ -1691,12 +1691,13 @@ let designUploadId = null;
 let currentDesign = null;
 
 function paintDesignAccess() {
-  const isOfficial = !!(me && me.telegram_id === 1);
-  $("design-upload").hidden = !isOfficial;
-  $("design-switch").hidden = isOfficial || !(me && me.is_admin);
+  // Phase 34 (owner directive): the upload card belongs to the
+  // admin's OWN account only — never while acting as anyone
+  // (not even Official). Members simply never see it; they can
+  // browse, open, like and copy prompts like any other post.
+  const canPost = !!(me && me.is_admin) && !actAsId();
+  $("design-upload").hidden = !canPost;
 }
-$("design-switch-btn").onclick = () =>
-  startActAs(1, "Nexora Social (Official)");
 
 function paintDesignLike(d) {
   document.querySelectorAll('[data-did="' + d.id + '"]')
