@@ -117,13 +117,19 @@ WEBM = gen("tiny.webm", ["-c:v", "libvpx-vp9", "-b:v", "200k"])
 with TestClient(app) as c:
     c.post("/auth", json={"initData": OWNER["X-Init-Data"]})
 
-    # --- small MP4: fast path, bytes pass through untouched ----------
+    # --- small MP4: Phase 27 — ALL videos take the background path.
+    # The old fast path kept the phone's request open through the
+    # Telegram send and the WebView dropped it at network level;
+    # now the request ends with a 202 as soon as the bytes arrive.
     raw = open(MP4, "rb").read()
     r = c.post("/posts/upload", headers=RAFI, data={"caption": "mp4"},
                files={"file": ("tiny.mp4", raw, "video/mp4")})
-    assert r.status_code == 200 and r.json()["type"] == "video", r.text
-    assert SENT["content_type"] == "video/mp4" and SENT["data"] == raw
-    print("small MP4 fast path OK")
+    assert r.status_code == 202 and r.json()["status"] == "processing", r.text
+    assert len(JOBS) == 1
+    drain_jobs()
+    assert SENT["content_type"] == "video/mp4"
+    assert SENT["data"][4:8] == b"ftyp", SENT["data"][:12]
+    print("small MP4 background path OK (Phase 27: no fast path)")
 
     # --- MOV: accepted (202), transcoded by the background job --------
     r = c.post("/posts/upload", headers=RAFI, data={"caption": "mov"},

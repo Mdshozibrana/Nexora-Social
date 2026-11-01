@@ -4,6 +4,7 @@ Only the PRD section-8 admin endpoints remain for a later phase."""
 import asyncio
 import os
 import tempfile
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -387,16 +388,13 @@ async def _telegram_upload_or_400(user, file: UploadFile, caption=""):
         raise HTTPException(
             400, "Video is too large — the maximum upload is 60 MB. "
                  "Please trim it or record at a lower resolution")
-    ct = (file.content_type or "").split(";")[0].strip().lower()
-    ext = (file.filename or "").rsplit(".", 1)[-1].strip().lower()
-    # Phase 26: a small MP4 goes straight through even when the
-    # picker reported a generic MIME type — the .mp4 name is proof
-    # enough; anything else still takes the transcode path.
-    if len(data) <= tgupload.MAX_MEDIA_BYTES and \
-            (ct == "video/mp4" or ext == "mp4"):
-        return await _send_to_telegram(
-            user, file.filename or "upload", data,
-            ct if ct in tgupload.VIDEO_TYPES else "video/mp4")
+    # Phase 27: EVERY video takes the background path now. The old
+    # small-MP4 fast path kept the phone's request open through the
+    # Telegram send, and the Telegram WebView dropped such requests
+    # at network level (the owner hit xhr.onerror with the file
+    # already uploaded). Answering 202 the moment the bytes arrive
+    # keeps the request as short as the upload itself; the job
+    # transcodes (or passes through), posts, and DMs the result.
     with tempfile.NamedTemporaryFile(delete=False, suffix=".src") as f:
         f.write(data)
         src = f.name
@@ -405,25 +403,56 @@ async def _telegram_upload_or_400(user, file: UploadFile, caption=""):
     return "processing", None
 
 
+# Phase 27: upload dedupe. When the WebView drops an upload at
+# network level, the client retries once over fetch with the same
+# X-Upload-Id; if the first attempt actually landed, the stored
+# result is replayed instead of creating a duplicate post/design.
+_upload_results = {}
+_UPLOAD_TTL = 600
+
+
+def _dedupe_get(user_id, upload_id):
+    if not upload_id:
+        return None
+    hit = _upload_results.get((user_id, upload_id))
+    if hit and time.time() - hit[0] < _UPLOAD_TTL:
+        return hit[1], hit[2]
+    _upload_results.pop((user_id, upload_id), None)
+    return None
+
+
+def _dedupe_put(user_id, upload_id, status_code, body):
+    if upload_id:
+        _upload_results[(user_id, upload_id)] = (
+            time.time(), status_code, body)
+
+
 @app.post("/posts/upload")
 async def upload_post(caption: str = Form(""),
                       file: UploadFile = File(...),
+                      x_upload_id: str = Header(default=""),
                       user: models.User = Depends(current_user),
                       db: Session = Depends(get_db)):
     """Post a photo/video picked inside the app. The file is sent to
     Telegram (as the bot) to obtain its file_id, then the post is created
-    exactly like a bot-submitted media post. A video that needs
-    transcoding is accepted with 202 instead: the post (and a bot
-    message to the member) follow when processing finishes."""
+    exactly like a bot-submitted media post. Videos are accepted
+    with 202 instead: the post (and a bot message to the member)
+    follow when the background job finishes."""
+    hit = _dedupe_get(user.telegram_id, x_upload_id)
+    if hit:
+        return JSONResponse(status_code=hit[0], content=hit[1])
     kind, file_id = await _telegram_upload_or_400(
         user, file, caption.strip())
     if kind == "processing":
-        return JSONResponse(status_code=202, content={
-            "status": "processing",
-            "detail": "Video received — it will appear in the feed "
-                      "shortly, and the bot will message you"})
+        body = {"status": "processing",
+                "detail": "Video received — it will appear in the feed "
+                          "shortly, and the bot will message you"}
+        _dedupe_put(user.telegram_id, x_upload_id, 202, body)
+        return JSONResponse(status_code=202, content=body)
     post, _, _ = register_post(db, user, kind, file_id, caption.strip())
-    return post_dict(db, post)
+    body = post_dict(db, post)
+    _dedupe_put(user.telegram_id, x_upload_id, 200, body)
+    return body
 
 
 @app.delete("/posts/{post_id}")
@@ -1785,8 +1814,12 @@ def list_designs(cursor: int = 0, limit: int = 20,
 @app.post("/designs/upload")
 async def upload_design(prompt: str = Form(""),
                         file: UploadFile = File(...),
+                        x_upload_id: str = Header(default=""),
                         user: models.User = Depends(current_user),
                         db: Session = Depends(get_db)):
+    hit = _dedupe_get(user.telegram_id, x_upload_id)
+    if hit:
+        return JSONResponse(status_code=hit[0], content=hit[1])
     if user.telegram_id != OFFICIAL_ID:
         raise HTTPException(
             403, "Designs are posted as the Official account — "
@@ -1800,7 +1833,9 @@ async def upload_design(prompt: str = Form(""),
     db.add(design)
     db.commit()
     db.refresh(design)
-    return _design_dict(db, design, user)
+    body = _design_dict(db, design, user)
+    _dedupe_put(user.telegram_id, x_upload_id, 200, body)
+    return body
 
 
 @app.post("/designs/{design_id}/like")

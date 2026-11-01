@@ -44,6 +44,10 @@ async def fake_upload_media(chat_id, filename, data, content_type):
 
 tgupload.upload_media = fake_upload_media
 
+# Phase 27 schedules video jobs in the background; swallow them so
+# the fake video bytes never reach the transcoder in this suite.
+main_mod._schedule_video_job = lambda coro: coro.close()
+
 from fastapi.testclient import TestClient
 from app.main import app
 
@@ -96,15 +100,15 @@ with TestClient(app) as c:
     assert captured["filename"].endswith(".jpg"), captured
     print("HEIC -> JPEG upload OK")
 
-    # --- .mp4 with a generic MIME type takes the fast path ---------------------
+    # --- .mp4 with a generic MIME type: extension classifies it as
+    # a video; Phase 27 sends every video down the background path.
     r = c.post("/posts/upload", headers=MEMBER,
                files={"file": ("clip.mp4", b"\x00\x00\x00\x18ftypmp42",
                                "application/octet-stream")},
                data={"caption": "generic mime video"})
-    assert r.status_code == 200, r.text
-    assert r.json()["type"] == "video", r.json()
-    assert captured["content_type"] == "video/mp4", captured
-    print("generic-MIME mp4 fast path OK")
+    assert r.status_code == 202, r.text
+    assert r.json()["status"] == "processing", r.json()
+    print("generic-MIME mp4 accepted (background path) OK")
 
     # --- photo with a generic MIME type, recognised by extension ---------------
     r = c.post("/posts/upload", headers=MEMBER,

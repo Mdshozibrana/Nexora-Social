@@ -38,6 +38,11 @@ async def fake_upload(chat_id, filename, data, content_type):
 
 tgupload.upload_media = fake_upload
 
+# Phase 27: videos are scheduled as background jobs; swallow them
+# in this suite (the fake clip bytes are not a real video).
+import app.main as _main_mod
+_main_mod._schedule_video_job = lambda coro: coro.close()
+
 
 class FakeGetFileResp:
     status_code = 200
@@ -142,12 +147,13 @@ with TestClient(app) as c:
     assert after == before + 5, (before, after)
     print("photo upload post + points OK")
 
-    # --- video upload accepted as a video post ---
+    # --- video upload accepted (Phase 27: 202 background path) ---
     r = c.post("/posts/upload", headers=AMY, data={"caption": "clip"},
                files={"file": ("v.mp4", b"\x00\x00\x00\x18ftypmp42",
                                "video/mp4")})
-    assert r.status_code == 200 and r.json()["type"] == "video", r.text
-    print("video upload post OK")
+    assert r.status_code == 202 and \
+        r.json()["status"] == "processing", r.text
+    print("video upload accepted (background) OK")
 
     # --- unsupported type, oversize, and bot-not-started errors ---
     r = c.post("/posts/upload", headers=AMY, data={"caption": "x"},

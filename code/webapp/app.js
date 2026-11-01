@@ -51,12 +51,38 @@ async function apiForm(path, form) {
 // data, and a frozen "Uploading…" made members give up. XHR reports
 // real progress; onProgress(percent|null) — null once the file is with
 // the server and it is converting/processing.
-function apiFormProgress(path, form, onProgress) {
+function apiFormProgress(path, form, onProgress, uploadId) {
   return new Promise((resolve, reject) => {
+    // Phase 27: when the XHR dies at network level (the Telegram
+    // WebView drops some file uploads outright — the owner watched
+    // it happen), retry ONCE over fetch with the same upload id.
+    // The server dedupes by that id, so a retry can never create a
+    // duplicate post even if the first attempt secretly landed.
+    let retried = false;
+    const fetchRetry = async () => {
+      if (retried) return;
+      retried = true;
+      onProgress(null);
+      try {
+        const res = await fetch(path, { method: "POST",
+          headers: { "X-Init-Data": initData,
+                     ...(actAsId() ? { "X-Act-As": actAsId() } : {}),
+                     ...(uploadId ? { "X-Upload-Id": uploadId } : {}) },
+          body: form });
+        let j = null;
+        try { j = await res.json(); } catch (e) {}
+        if (res.status >= 200 && res.status < 300) resolve(j || {});
+        else reject(new Error((j && j.detail) || ("API " + res.status)));
+      } catch (e) {
+        reject(new Error("Upload failed — check your connection " +
+                         "and try again"));
+      }
+    };
     const xhr = new XMLHttpRequest();
     xhr.open("POST", path);
     xhr.setRequestHeader("X-Init-Data", initData);
     if (actAsId()) xhr.setRequestHeader("X-Act-As", actAsId());
+    if (uploadId) xhr.setRequestHeader("X-Upload-Id", uploadId);
     xhr.upload.onprogress = e => {
       if (e.lengthComputable) onProgress(Math.round(e.loaded / e.total * 100));
     };
@@ -67,14 +93,16 @@ function apiFormProgress(path, form, onProgress) {
       if (xhr.status >= 200 && xhr.status < 300) resolve(j || {});
       else reject(new Error((j && j.detail) || ("API " + xhr.status)));
     };
-    xhr.onerror = () => reject(new Error("Upload failed — check your connection and try again"));
-    // Phase 26: an upload must never hang the Post button forever.
+    xhr.onerror = () => fetchRetry();
     xhr.timeout = 180000;
-    xhr.ontimeout = () => reject(new Error(
-      "Upload timed out — check your connection and tap Post again " +
-      "(your file is still attached)"));
+    xhr.ontimeout = () => fetchRetry();
     xhr.send(form);
   });
+}
+
+function newUploadId() {
+  return "u" + Date.now().toString(36) +
+    Math.random().toString(36).slice(2, 10);
 }
 
 function setStatus(msg) { $("status").textContent = msg || ""; }
@@ -1151,6 +1179,7 @@ function composerStatus(msg) {
 }
 
 let composerFile = null;
+let composerUploadId = null;
 
 function paintAttach() {
   const chip = $("composer-attach");
@@ -1162,7 +1191,7 @@ function paintAttach() {
   x.className = "attach-x";
   x.textContent = "✕";
   x.title = "Remove";
-  x.onclick = () => { composerFile = null; $("composer-file").value = ""; paintAttach(); };
+  x.onclick = () => { composerFile = null; composerUploadId = null; $("composer-file").value = ""; paintAttach(); };
   chip.appendChild(x);
 }
 
@@ -1186,8 +1215,10 @@ $("composer-file").onchange = () => {
         ? "That video is over 60 MB — please trim it or record at a lower resolution."
         : "That file is over 20 MB — please pick a smaller one.");
       composerFile = null;
+      composerUploadId = null;
       $("composer-file").value = "";
     } else {
+      composerUploadId = newUploadId();
       composerStatus("Attached ✓ — now tap Post.");
     }
   }
@@ -1215,7 +1246,7 @@ $("composer-post").onclick = async () => {
         btn.textContent = pct === null
           ? "Sending… keep the app open"
           : "Uploading… " + pct + "%";
-      });
+      }, composerUploadId);
       if (res && res.status === "processing") {
         setStatus("🎬 Video received! It's being processed — the bot " +
           "will message you when it's live in the feed.");
@@ -1223,6 +1254,7 @@ $("composer-post").onclick = async () => {
           "you when it's live in the feed.");
       }
       composerFile = null;
+      composerUploadId = null;
       $("composer-file").value = "";
       paintAttach();
     } else {
@@ -1509,6 +1541,7 @@ paintActAs();
 // the official identity gets the upload card.
 let designCursor = null;
 let designFile = null;
+let designUploadId = null;
 let currentDesign = null;
 
 function paintDesignAccess() {
@@ -1637,6 +1670,7 @@ $("ds-remove").onclick = async () => {
 $("design-pick").onclick = () => $("design-file").click();
 $("design-file").onchange = () => {
   designFile = $("design-file").files[0] || null;
+  designUploadId = designFile ? newUploadId() : null;
   const chip = $("design-attach");
   chip.hidden = !designFile;
   chip.textContent = designFile ? "🖼️ " + designFile.name : "";
@@ -1654,9 +1688,11 @@ $("design-post").onclick = async () => {
   fd.append("prompt", $("design-prompt").value.trim());
   try {
     await apiFormProgress("/designs/upload", fd,
-      pct => { $("design-status").textContent =
-        "Uploading… " + pct + "%"; });
+      pct => { $("design-status").textContent = pct === null
+        ? "Sending… keep the app open"
+        : "Uploading… " + pct + "%"; }, designUploadId);
     designFile = null;
+    designUploadId = null;
     $("design-file").value = "";
     $("design-attach").hidden = true;
     $("design-prompt").value = "";
