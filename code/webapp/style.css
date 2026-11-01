@@ -1629,3 +1629,15 @@ button.liked { animation: heartPop .32s cubic-bezier(.22,.9,.3,1); }
 .mine-cell.mine-open { background: #FDF3F8;
   box-shadow: inset 1px 1px 3px rgba(160, 60, 110, .18); }
 .mine-cell.mine-hit { background: #FFE0E6; }
+
+/* Phase 48: the sidebar pill is draggable — it snaps to the
+   nearer edge, keeps its height, and the panel opens from
+   that side; the chevron mirrors on the right edge. */
+#glassbar.gb-right { left: auto; right: 8px; }
+#glassbar:not(.open) { touch-action: none; cursor: grab; }
+#glassbar.gb-drag { transition: none; cursor: grabbing;
+  box-shadow: 0 24px 52px rgba(160, 60, 110, .42),
+    inset 0 1px 0 rgba(255, 255, 255, .8); }
+#glassbar.gb-right #gb-toggle { transform: scaleX(-1); }
+#glassbar.gb-right.open #gb-toggle {
+  transform: scaleX(-1) rotate(180deg); }

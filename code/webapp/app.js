@@ -1606,6 +1606,9 @@ paintEntry();
 // removed; the pill is the ONE way to open the sidebar.
 function openSidebar() {
   $("glassbar").classList.add("open");
+  // Phase 48: the inline top belongs to the dragged pill spot;
+  // the open panel always docks to the top of its side.
+  $("glassbar").style.top = "";
   $("gb-backdrop").hidden = false;
   syncSidebarActive();
   api("/me/saved").then(list => {
@@ -1622,6 +1625,7 @@ function openSidebar() {
 function closeSidebar() {
   $("glassbar").classList.remove("open");
   $("gb-backdrop").hidden = true;
+  gbRestorePos();  // Phase 48: the pill returns to its dragged spot
 }
 function toggleSidebar() {
   if ($("glassbar").classList.contains("open")) closeSidebar();
@@ -1646,6 +1650,75 @@ function paintGlassFoot() {
 }
 $("gb-toggle").onclick = toggleSidebar;
 $("gb-backdrop").onclick = closeSidebar;
+
+// ------------------------------------------- draggable sidebar (P48) --
+// Owner: the sidebar must be movable — drag it wherever is
+// convenient. The COLLAPSED pill can be dragged anywhere on
+// screen; on release it snaps to the nearer edge (left/right)
+// and keeps its height, and the open panel grows from that
+// same side. The spot persists in localStorage (nx_gb_pos).
+const gbBar = $("glassbar");
+let gbDrag = null, gbSuppressClick = false;
+function gbApplyPos(side, y) {
+  gbBar.classList.toggle("gb-right", side === "right");
+  gbBar.style.top = y + "px";
+}
+function gbRestorePos() {
+  try {
+    const p = JSON.parse(localStorage.getItem("nx_gb_pos") || "null");
+    if (p && (p.side === "left" || p.side === "right") &&
+        isFinite(p.y)) {
+      gbApplyPos(p.side, Math.max(44, Math.min(
+        window.innerHeight - 44, p.y)));
+    }
+  } catch (e) {}
+}
+gbRestorePos();
+gbBar.addEventListener("pointerdown", e => {
+  if (gbBar.classList.contains("open")) return;
+  const r = gbBar.getBoundingClientRect();
+  gbDrag = { id: e.pointerId, sx: e.clientX, sy: e.clientY,
+             cx: r.left + r.width / 2, cy: r.top + r.height / 2,
+             nx: null, ny: null, moved: false };
+});
+window.addEventListener("pointermove", e => {
+  if (!gbDrag || e.pointerId !== gbDrag.id) return;
+  const dx = e.clientX - gbDrag.sx, dy = e.clientY - gbDrag.sy;
+  if (!gbDrag.moved && Math.hypot(dx, dy) < 7) return;
+  gbDrag.moved = true;
+  gbBar.classList.add("gb-drag");
+  gbDrag.nx = gbDrag.cx + dx;
+  gbDrag.ny = gbDrag.cy + dy;
+  gbBar.style.left = (gbDrag.nx - gbBar.offsetWidth / 2) + "px";
+  gbBar.style.top = (gbDrag.ny - gbBar.offsetHeight / 2) + "px";
+  gbBar.style.transform = "none";
+});
+function gbEndDrag(e) {
+  if (!gbDrag || e.pointerId !== gbDrag.id) return;
+  const d = gbDrag;
+  gbDrag = null;
+  gbBar.classList.remove("gb-drag");
+  if (!d.moved) return;
+  gbSuppressClick = true;
+  const side = d.nx < window.innerWidth / 2 ? "left" : "right";
+  const y = Math.max(44, Math.min(window.innerHeight - 44, d.ny));
+  gbBar.style.left = "";
+  gbBar.style.transform = "";
+  gbApplyPos(side, y);
+  try {
+    localStorage.setItem("nx_gb_pos",
+                         JSON.stringify({ side, y }));
+  } catch (err) {}
+}
+window.addEventListener("pointerup", gbEndDrag);
+window.addEventListener("pointercancel", gbEndDrag);
+gbBar.addEventListener("click", e => {
+  if (gbSuppressClick) {
+    gbSuppressClick = false;
+    e.stopPropagation();
+    e.preventDefault();
+  }
+}, true);
 document.querySelectorAll(".gb-item[data-go]").forEach(b => {
   b.onclick = () => {
     const go = b.dataset.go;
