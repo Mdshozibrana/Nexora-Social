@@ -22,9 +22,14 @@ from .config import settings
 # transcoded down to size by app.videoutil before they reach Telegram.
 MAX_MEDIA_BYTES = 20 * 1024 * 1024
 RAW_VIDEO_MAX_BYTES = 60 * 1024 * 1024
-IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
+IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp",
+               "image/heic", "image/heif", "image/avif"}
 VIDEO_TYPES = {"video/mp4", "video/quicktime", "video/webm",
                "video/x-matroska", "video/3gpp", "video/x-msvideo"}
+# Phase 26: phone pickers often report an empty or generic MIME
+# type for gallery files, so the file-name extension is a fallback.
+IMAGE_EXTS = {"jpg", "jpeg", "png", "webp", "heic", "heif", "avif"}
+VIDEO_EXTS = {"mp4", "mov", "webm", "mkv", "3gp", "avi", "m4v"}
 
 
 class TelegramUploadError(Exception):
@@ -35,12 +40,20 @@ class TelegramUploadError(Exception):
         self.kind = kind
 
 
-def classify(content_type: str):
-    """'photo', 'video', or None when the type is not supported."""
+def classify(content_type: str, filename: str = ""):
+    """'photo', 'video', or None when the type is not supported.
+    MIME type first; when it is missing or generic (some phone
+    pickers send '' or 'application/octet-stream'), the file-name
+    extension decides (Phase 26)."""
     ct = (content_type or "").split(";")[0].strip().lower()
     if ct in IMAGE_TYPES:
         return "photo"
     if ct in VIDEO_TYPES:
+        return "video"
+    ext = (filename or "").rsplit(".", 1)[-1].strip().lower()
+    if ext in IMAGE_EXTS:
+        return "photo"
+    if ext in VIDEO_EXTS:
         return "video"
     return None
 
@@ -48,7 +61,7 @@ def classify(content_type: str):
 async def upload_media(chat_id: int, filename: str, data: bytes,
                        content_type: str):
     """Send `data` to the member's bot chat; return (kind, file_id)."""
-    kind = classify(content_type)
+    kind = classify(content_type, filename)
     if kind is None:
         raise TelegramUploadError("failed")
     if not settings.BOT_TOKEN:

@@ -1063,3 +1063,10 @@ body { padding: 0; overflow: hidden; }
   line-height: 1.55; margin: 0; }
 .ds-actions { display: flex; gap: 8px; margin: 12px 0; flex-wrap: wrap; }
 .ds-actions button { flex: 1; white-space: nowrap; }
+
+/* Phase 26: composer feedback line — attach confirmations and
+   upload errors appear right under the Post button, where the
+   member is looking, instead of only in the top status strip. */
+.composer-status { font-size: 13px; font-weight: 600;
+  color: #B03060; padding: 6px 4px 0; min-height: 18px; }
+.composer-status:empty { padding: 0; min-height: 0; }

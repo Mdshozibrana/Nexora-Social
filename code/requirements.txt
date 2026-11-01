@@ -7,3 +7,5 @@ pydantic
 httpx
 python-multipart
 imageio-ffmpeg
+Pillow
+pillow-heif

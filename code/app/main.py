@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from datetime import datetime, timedelta
 
-from . import geoip, models, notify, tgupload, videoutil
+from . import geoip, imgconv, models, notify, tgupload, videoutil
 from .config import (DAILY_TASKS, MONETIZATION, OFFICIAL_FOLLOWER_BASE,
                      OFFICIAL_ID, OFFICIAL_NAME,
                      VERIFICATION_MIN_FOLLOWERS, settings)
@@ -355,10 +355,11 @@ async def _telegram_upload_or_400(user, file: UploadFile, caption=""):
     rule — real phone clips are bigger and often .mov/.webm. A small
     MP4 still goes straight through; anything else is transcoded to a
     compact MP4 (max 720p, sized to fit Telegram) in the background."""
-    kind = tgupload.classify(file.content_type or "")
+    kind = tgupload.classify(file.content_type or "",
+                             file.filename or "")
     if kind is None:
         raise HTTPException(
-            400, "Only photos (JPG, PNG, WebP) and videos "
+            400, "Only photos (JPG, PNG, WebP, HEIC) and videos "
                  "(MP4, MOV, WebM) are supported")
     data = await file.read()
     if not data:
@@ -366,17 +367,36 @@ async def _telegram_upload_or_400(user, file: UploadFile, caption=""):
     if kind == "photo":
         if len(data) > tgupload.MAX_MEDIA_BYTES:
             raise HTTPException(400, "File is too large — maximum 20 MB")
+        filename = file.filename or "upload"
+        content_type = file.content_type
+        # Phase 26: phone HEIC/HEIF photos become JPEG before the
+        # Telegram send (sendPhoto and browsers can't use HEIC).
+        if imgconv.is_heif(content_type or "", filename):
+            try:
+                data = imgconv.to_jpeg(data)
+            except Exception:
+                raise HTTPException(
+                    400, "That photo could not be read — please pick "
+                         "a JPG or PNG version of it")
+            filename = filename.rsplit(".", 1)[0] + ".jpg"
+            content_type = "image/jpeg"
         return await _send_to_telegram(
-            user, file.filename or "upload", data, file.content_type)
+            user, filename, data, content_type)
     # --- video ---
     if len(data) > tgupload.RAW_VIDEO_MAX_BYTES:
         raise HTTPException(
             400, "Video is too large — the maximum upload is 60 MB. "
                  "Please trim it or record at a lower resolution")
     ct = (file.content_type or "").split(";")[0].strip().lower()
-    if ct == "video/mp4" and len(data) <= tgupload.MAX_MEDIA_BYTES:
+    ext = (file.filename or "").rsplit(".", 1)[-1].strip().lower()
+    # Phase 26: a small MP4 goes straight through even when the
+    # picker reported a generic MIME type — the .mp4 name is proof
+    # enough; anything else still takes the transcode path.
+    if len(data) <= tgupload.MAX_MEDIA_BYTES and \
+            (ct == "video/mp4" or ext == "mp4"):
         return await _send_to_telegram(
-            user, file.filename or "upload", data, file.content_type)
+            user, file.filename or "upload", data,
+            ct if ct in tgupload.VIDEO_TYPES else "video/mp4")
     with tempfile.NamedTemporaryFile(delete=False, suffix=".src") as f:
         f.write(data)
         src = f.name
@@ -681,8 +701,9 @@ async def upload_my_photo(file: UploadFile = File(...),
     """Set the member's profile picture from a photo picked in the app.
     The upload goes to Telegram (as the bot) for its file_id; the new
     photo then appears everywhere avatars render."""
-    if tgupload.classify(file.content_type or "") != "photo":
-        raise HTTPException(400, "Please choose a photo (JPG, PNG or WebP)")
+    if tgupload.classify(file.content_type or "",
+                         file.filename or "") != "photo":
+        raise HTTPException(400, "Please choose a photo (JPG, PNG, WebP or HEIC)")
     _, file_id = await _telegram_upload_or_400(user, file)
     user.photo_file_id = file_id
     db.commit()

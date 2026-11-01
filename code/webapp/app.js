@@ -68,6 +68,11 @@ function apiFormProgress(path, form, onProgress) {
       else reject(new Error((j && j.detail) || ("API " + xhr.status)));
     };
     xhr.onerror = () => reject(new Error("Upload failed — check your connection and try again"));
+    // Phase 26: an upload must never hang the Post button forever.
+    xhr.timeout = 180000;
+    xhr.ontimeout = () => reject(new Error(
+      "Upload timed out — check your connection and tap Post again " +
+      "(your file is still attached)"));
     xhr.send(form);
   });
 }
@@ -1140,6 +1145,11 @@ async function loadMe() {
   }
 }
 
+function composerStatus(msg) {
+  const el = $("composer-status");
+  if (el) el.textContent = msg || "";
+}
+
 let composerFile = null;
 
 function paintAttach() {
@@ -1159,17 +1169,26 @@ function paintAttach() {
 $("composer-media").onclick = () => $("composer-file").click();
 $("composer-file").onchange = () => {
   composerFile = $("composer-file").files[0] || null;
+  composerStatus("");
   if (composerFile) {
-    // Phase 19: photos cap at 20 MB; videos may be up to 60 MB — the
-    // server shrinks them to fit Telegram before posting.
-    const isVideo = composerFile.type.startsWith("video");
+    // Phase 19 caps: photos 20 MB; videos up to 60 MB (the server
+    // shrinks them to fit Telegram before posting). Phase 26: some
+    // phone pickers report an empty or generic MIME type, so the
+    // file-name extension decides the kind when the type is vague.
+    const t = (composerFile.type || "").toLowerCase();
+    const ext = (composerFile.name || "").split(".").pop()
+      .toLowerCase();
+    const isVideo = t.startsWith("video") ||
+      ["mp4", "mov", "webm", "mkv", "3gp", "avi", "m4v"].includes(ext);
     const cap = (isVideo ? 60 : 20) * 1024 * 1024;
     if (composerFile.size > cap) {
-      setStatus(isVideo
+      composerStatus(isVideo
         ? "That video is over 60 MB — please trim it or record at a lower resolution."
         : "That file is over 20 MB — please pick a smaller one.");
       composerFile = null;
       $("composer-file").value = "";
+    } else {
+      composerStatus("Attached ✓ — now tap Post.");
     }
   }
   paintAttach();
@@ -1177,9 +1196,15 @@ $("composer-file").onchange = () => {
 
 $("composer-post").onclick = async () => {
   const text = $("composer-text").value.trim();
-  if (!text && !composerFile) return;
+  if (!text && !composerFile) {
+    // Phase 26: never a silent no-op — say what is missing, right
+    // under the button where the member is looking.
+    composerStatus("Write something or attach a photo/video first 📷");
+    return;
+  }
   const btn = $("composer-post");
   btn.disabled = true;
+  composerStatus("");
   try {
     if (composerFile) {
       btn.textContent = "Uploading…";
@@ -1194,6 +1219,8 @@ $("composer-post").onclick = async () => {
       if (res && res.status === "processing") {
         setStatus("🎬 Video received! It's being processed — the bot " +
           "will message you when it's live in the feed.");
+        composerStatus("🎬 Video received — the bot will message " +
+          "you when it's live in the feed.");
       }
       composerFile = null;
       $("composer-file").value = "";
@@ -1205,7 +1232,10 @@ $("composer-post").onclick = async () => {
     $("composer-text").value = "";
     setTab("explore");
     loadMe().catch(() => {});
-  } catch (e) { setStatus(e.message || "Could not post."); }
+  } catch (e) {
+    composerStatus(e.message || "Could not post.");
+    setStatus(e.message || "Could not post.");
+  }
   btn.disabled = false;
   btn.textContent = "Post";
 };
