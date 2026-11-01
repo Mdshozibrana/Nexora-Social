@@ -221,3 +221,15 @@ ADSGRAM STATUS (Nov 1, 08:45 লাইভ যাচাই): প্ল্যা�
 ## Addendum — Nov 1, 2026 (Phase 22: Blue-tick Verification Applications)
 
 OWNER RULE: "ফলোয়ার ১০০০ হলে ব্লু টিক এর জন্য আবেদন করতে পারবে।" নতুন `verification_requests` টেবিল (pending/approved/rejected, decided_at/by)। Member side: GET /me/verification (followers, required=1000 `VERIFICATION_MIN_FOLLOWERS` কনফিগে, is_verified, pending, last_status, can_apply) + POST /me/verification/apply — সার্ভারেই গেট যাচাই (verified হলে 400, 1000-এর কম হলে 400, pending থাকলে 400)। Admin side: GET /admin/verifications (আবেদনকারীর followers/posts/joined-সহ তালিকা) + POST /admin/verifications/{id}/decide — approve হলে `users.is_verified=True` (বিদ্যমান নীল ব্যাজ সব জায়গায় জ্বলে ওঠে), আবেদনকারী 🔔 + bot DM-এ সিদ্ধান্ত জানতে পারে; reject হলেও জানানো হয় এবং আবার আবেদন করা যায়। UI: Me পেজে Monetization কার্ডের পাশে 🛡️ Verification কার্ড (progress X/1000 + Apply বোতাম) ও Admin Panel-এ "🛡️ Verification requests" সেকশন (Approve/Reject)। সব 20টি স্যুট পাস; HEAD 7be5005। লাইভ যাচাই: owner/member দুজনের /me/verification 200, member-এর admin list 403।
+
+---
+
+## Addendum — Nov 1, 2026 (Phase 23: Scroll-proof Nav, Tab Fit, Official Doors, Clean Logout)
+
+NAV ON SCROLL (owner: "স্কল করলে নেভিগেশন বার গায়েব হয়ে যায় কেনো?"): পুরো ডকুমেন্ট স্ক্রল হতো বলে Telegram webview স্ক্রলের সময় fixed বারটাকে সরিয়ে দিত। এখন body scroll বন্ধ; header+সব ভিউ নতুন `#app-scroll` fixed shell-এর ভেতরে স্ক্রল হয় (padding shell-এ সরেছে, #status shell-এর ভেতরে hero-র নিচে), বার shell-এর বাইরে স্থির। `tg.disableVerticalSwipes()` যোগ হয়েছে; showView shell-কে top-এ রিসেট করে। `/webapp` অ্যাসেটে `Cache-Control: no-cache` middleware — পুরনো ক্যাশে আটকে নতুন ফিচার না-দেখার সমস্যা শেষ।
+
+TAB FIT (owner: Me ট্যাবে জায়গা হয়নি): bottom-nav বোতাম এখন icon-over-label column flex, min-width 0, 10px label nowrap; capsule padding 5px ও pill geometry হালনাগাদ — ছয় ট্যাবই যেকোনো প্রস্থে ধরে।
+
+OFFICIAL DOORS: Act-as Official এখন তিন জায়গায় — Admin Panel সেকশন (আগের), drawer-এ admin-only "📣 Act as Official" আইটেম, আর composer-এর ওপরে switch row (admin হলে "Post as Official 📣", acting অবস্থায় "Posting as … / Back to my account")। সবই একজোড়া startActAs/stopActAs হেলপার দিয়ে চলে।
+
+LOGOUT (owner: লগআউটের পর পুরোপুরি নিজের আইডিতে থাকতে চান): drawer logout এখন nx_actas/nx_actas_name-ও মোছে — আগে act-as পরিচয় লগআউট পেরিয়েও থেকে যেত, পরের লগইনেও সেই পরিচয়েই ঢুকত। এখন লগআউট = সম্পূর্ণ নিজের আইডি। সব 21টি স্যুট পাস; HEAD 2775cda।
