@@ -958,6 +958,75 @@ async function myExtras() {
     card.appendChild(note);
     wrap.appendChild(card);
   } catch (e) { /* monetization card is optional decoration */ }
+  try {
+    // Phase 22: blue-tick verification card (owner rule: applications
+    // open at 1,000 followers; the admin reviews them).
+    const ver = await api("/me/verification");
+    const card = document.createElement("div");
+    card.className = "mon-card";
+    const vh = document.createElement("div");
+    vh.className = "mon-head";
+    const vt = document.createElement("b");
+    vt.textContent = "🛡️ Verification";
+    const vb = document.createElement("span");
+    if (ver.is_verified) {
+      vb.className = "mon-badge open";
+      vb.textContent = "Verified ✓";
+    } else if (ver.pending) {
+      vb.className = "mon-badge";
+      vb.textContent = "Under review ⏳";
+    } else {
+      vb.className = "mon-badge";
+      vb.textContent = ver.can_apply ? "You can apply" : "Locked";
+    }
+    vh.append(vt, vb);
+    card.appendChild(vh);
+    const row = document.createElement("div");
+    row.className = "mon-row";
+    const left = document.createElement("span");
+    left.textContent = (ver.followers >= ver.required ? "✅ " : "⬜ ") +
+      "👥 Followers for the blue tick";
+    const right = document.createElement("span");
+    right.className = ver.followers >= ver.required ? "done" : "";
+    right.textContent = ver.followers + " / " + ver.required;
+    row.append(left, right);
+    card.appendChild(row);
+    const note = document.createElement("p");
+    note.className = "hint";
+    if (ver.is_verified) {
+      note.textContent = "Your account carries the blue tick ✓.";
+      card.appendChild(note);
+    } else if (ver.pending) {
+      note.textContent = "Your application is with the admin team. " +
+        "You will get a notification when it is decided.";
+      card.appendChild(note);
+    } else if (ver.can_apply) {
+      note.textContent = ver.last_status === "rejected"
+        ? "Your last application was not approved. You may apply again."
+        : "You have enough followers to apply for the blue tick.";
+      card.appendChild(note);
+      const btn = document.createElement("button");
+      btn.className = "wide";
+      btn.textContent = "Apply for the Blue Tick ✓";
+      btn.onclick = async () => {
+        btn.disabled = true;
+        try {
+          await api("/me/verification/apply", { method: "POST" });
+          btn.textContent = "⏳ Application sent — under review";
+          setStatus("Verification application sent.");
+        } catch (e) {
+          btn.disabled = false;
+          setStatus("Could not send the application.");
+        }
+      };
+      card.appendChild(btn);
+    } else {
+      note.textContent = "Reach " + ver.required +
+        " followers to apply for the blue tick.";
+      card.appendChild(note);
+    }
+    wrap.appendChild(card);
+  } catch (e) { /* verification card is optional decoration */ }
   return wrap;
 }
 
@@ -1308,7 +1377,8 @@ async function refreshBell() {
 
 let notifCursor = null;
 const NOTIF_ICONS = { like: "❤️", comment: "💬", follow: "👥",
-                      share: "📤", post_live: "🎬", announcement: "📣" };
+                      share: "📤", post_live: "🎬", announcement: "📣",
+                      verification: "🛡️" };
 async function loadNotifications(reset) {
   const box = $("notif-list");
   if (reset) { box.innerHTML = ""; notifCursor = null; }
@@ -1551,6 +1621,7 @@ function loadAdmin() {
   loadAdminStats();
   loadAdminReports();
   loadAdminUsers($("admin-user-q").value.trim());
+  loadVerifications();
   loadManaged();
   loadAdminPosts();
 }
@@ -1724,6 +1795,60 @@ $("mu-create").onclick = async () => {
   } catch (e) { $("mu-result").textContent = "Could not create the user."; }
   btn.disabled = false;
 };
+
+async function loadVerifications() {
+  const box = $("admin-verifications");
+  box.innerHTML = "";
+  try {
+    const r = await api("/admin/verifications");
+    if (!r.requests.length) {
+      box.innerHTML = '<p class="hint">No verification applications ' +
+        'yet. Members can apply from their Me page at 1,000 ' +
+        'followers.</p>';
+      return;
+    }
+    r.requests.forEach(q => {
+      const rowEl = document.createElement("div");
+      rowEl.className = "card admin-row";
+      rowEl.appendChild(avatarEl(q.first_name, q.telegram_id,
+                                 false, q.photo_file_id));
+      const info = document.createElement("div");
+      info.className = "admin-info";
+      const t = document.createElement("div");
+      t.className = "admin-title";
+      t.textContent = q.first_name +
+        (q.username ? " (@" + q.username + ")" : "");
+      const s = document.createElement("div");
+      s.className = "admin-sub";
+      s.textContent = "👥 " + q.followers + " followers · 📝 " +
+        q.posts + " posts · applied " + relTime(q.created_at) +
+        " · " + q.status.toUpperCase();
+      info.append(t, s);
+      rowEl.appendChild(info);
+      if (q.status === "pending") {
+        const ok = document.createElement("button");
+        ok.textContent = "✓ Approve";
+        ok.onclick = () => decideVerification(q.id, true);
+        const no = document.createElement("button");
+        no.className = "danger-btn";
+        no.textContent = "Reject";
+        no.onclick = () => decideVerification(q.id, false);
+        rowEl.append(ok, no);
+      }
+      box.appendChild(rowEl);
+    });
+  } catch (e) { box.textContent = "Could not load applications."; }
+}
+
+async function decideVerification(id, approve) {
+  try {
+    await api("/admin/verifications/" + id + "/decide",
+              { method: "POST", body: JSON.stringify({ approve }) });
+    setStatus(approve ? "Application approved — blue tick granted."
+                      : "Application rejected.");
+    loadVerifications();
+  } catch (e) { setStatus("Could not decide that application."); }
+}
 
 async function loadAdminPosts() {
   const box = $("admin-posts");

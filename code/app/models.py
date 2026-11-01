@@ -187,3 +187,20 @@ class Notification(Base):
     text = Column(String(256), default="")
     is_read = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
+class VerificationRequest(Base):
+    """Blue-tick application (Phase 22). A member with at least
+    VERIFICATION_MIN_FOLLOWERS followers may apply; the admin approves
+    or rejects from the Admin Panel. Approval sets users.is_verified.
+    Only one pending request per member at a time; a rejected member
+    may apply again."""
+    __tablename__ = "verification_requests"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("users.telegram_id"),
+                     index=True, nullable=False)
+    status = Column(String(16), default="pending", nullable=False)
+    # pending | approved | rejected
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    decided_at = Column(DateTime, nullable=True)
+    decided_by = Column(BigInteger, nullable=True)

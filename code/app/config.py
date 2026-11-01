@@ -59,3 +59,8 @@ OFFICIAL_ID = 1  # reserved system id; no real Telegram account uses it
 OFFICIAL_NAME = "Nexora Social"
 OFFICIAL_USERNAME = "nexora"
 OFFICIAL_FOLLOWER_BASE = 10000
+
+# Verification (owner request, Nov 1): a member may APPLY for the
+# verified blue tick once they reach this many followers. The admin
+# reviews each application in the Admin Panel and approves/rejects.
+VERIFICATION_MIN_FOLLOWERS = 1000

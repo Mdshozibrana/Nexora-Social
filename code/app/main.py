@@ -20,7 +20,7 @@ from datetime import datetime, timedelta
 
 from . import geoip, models, notify, tgupload, videoutil
 from .config import (DAILY_TASKS, MONETIZATION, OFFICIAL_FOLLOWER_BASE,
-                     OFFICIAL_ID, settings)
+                     OFFICIAL_ID, VERIFICATION_MIN_FOLLOWERS, settings)
 from .db import Base, SessionLocal, engine, get_db
 from .security import validate_init_data
 from .services import award_points, register_post
@@ -929,6 +929,59 @@ def my_monetization(user: models.User = Depends(current_user),
 
 
 # ---------------------------------------------------------------------------
+# Phase 22: verification (blue tick) applications. A member with at
+# least VERIFICATION_MIN_FOLLOWERS followers may apply from their Me
+# page; the admin reviews applications in the Admin Panel.
+# ---------------------------------------------------------------------------
+
+def _followers_count(db, telegram_id):
+    return db.query(models.Follow).filter_by(
+        following_id=telegram_id).count()
+
+
+def _pending_verification(db, telegram_id):
+    return db.query(models.VerificationRequest).filter_by(
+        user_id=telegram_id, status="pending") \
+        .order_by(models.VerificationRequest.id.desc()).first()
+
+
+@app.get("/me/verification")
+def my_verification(user: models.User = Depends(current_user),
+                    db: Session = Depends(get_db)):
+    followers = _followers_count(db, user.telegram_id)
+    latest = db.query(models.VerificationRequest).filter_by(
+        user_id=user.telegram_id) \
+        .order_by(models.VerificationRequest.id.desc()).first()
+    pending = latest if latest and latest.status == "pending" else None
+    return {
+        "followers": followers,
+        "required": VERIFICATION_MIN_FOLLOWERS,
+        "is_verified": bool(user.is_verified),
+        "pending": pending is not None,
+        "last_status": latest.status if latest else None,
+        "can_apply": (not user.is_verified and pending is None
+                      and followers >= VERIFICATION_MIN_FOLLOWERS),
+    }
+
+
+@app.post("/me/verification/apply")
+def apply_verification(user: models.User = Depends(current_user),
+                       db: Session = Depends(get_db)):
+    if user.is_verified:
+        raise HTTPException(400, "Your account is already verified")
+    followers = _followers_count(db, user.telegram_id)
+    if followers < VERIFICATION_MIN_FOLLOWERS:
+        raise HTTPException(
+            400, f"You need {VERIFICATION_MIN_FOLLOWERS} followers to "
+                 f"apply for the blue tick (you have {followers})")
+    if _pending_verification(db, user.telegram_id):
+        raise HTTPException(400, "Your application is already pending")
+    db.add(models.VerificationRequest(user_id=user.telegram_id))
+    db.commit()
+    return {"ok": True, "status": "pending"}
+
+
+# ---------------------------------------------------------------------------
 # Phase 19: usage analytics — heartbeat time tracking + ad impressions.
 # The dashboard reads user_activity / ad_events; see /admin/dashboard.
 # ---------------------------------------------------------------------------
@@ -991,6 +1044,7 @@ _NOTIF_PHRASES = {
     "share": "shared a post with you",
     "post_live": "Your video is now live",
     "announcement": "Announcement",
+    "verification": "Verification update",
 }
 
 
@@ -1406,6 +1460,72 @@ async def admin_broadcast(body: BroadcastIn,
             text=text[:250]))
     db.commit()
     return {"recipients": len(targets), "sent": sent}
+
+
+# ---------------------------------------------------------------------------
+# Phase 22 (admin side): review blue-tick applications.
+# ---------------------------------------------------------------------------
+
+class VerifyDecideIn(BaseModel):
+    approve: bool
+
+
+@app.get("/admin/verifications")
+def admin_verifications(admin: models.User = Depends(admin_user),
+                        db: Session = Depends(get_db)):
+    rows = db.query(models.VerificationRequest) \
+        .order_by(models.VerificationRequest.id.desc()).limit(100).all()
+    out = []
+    for r in rows:
+        u = db.get(models.User, r.user_id)
+        if u is None:
+            continue
+        out.append({
+            "id": r.id, "status": r.status,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+            "decided_at": r.decided_at.isoformat() if r.decided_at else None,
+            "telegram_id": u.telegram_id, "first_name": u.first_name,
+            "username": u.username, "photo_file_id": u.photo_file_id,
+            "is_verified": bool(u.is_verified),
+            "followers": _followers_count(db, u.telegram_id),
+            "posts": db.query(models.Post).filter_by(
+                user_id=u.telegram_id, is_deleted=False).count(),
+            "joined": u.created_at.isoformat() if u.created_at else None,
+        })
+    return {"requests": out,
+            "pending_count": sum(1 for r in out if r["status"] == "pending")}
+
+
+@app.post("/admin/verifications/{request_id}/decide")
+async def admin_verification_decide(
+        request_id: int, body: VerifyDecideIn,
+        admin: models.User = Depends(admin_user),
+        db: Session = Depends(get_db)):
+    req = db.get(models.VerificationRequest, request_id)
+    if req is None:
+        raise HTTPException(404, "Application not found")
+    if req.status != "pending":
+        raise HTTPException(400, "This application was already decided")
+    applicant = db.get(models.User, req.user_id)
+    req.status = "approved" if body.approve else "rejected"
+    req.decided_at = datetime.utcnow()
+    req.decided_by = admin.telegram_id
+    if body.approve and applicant is not None:
+        applicant.is_verified = True
+    db.commit()
+    if applicant is not None:
+        if body.approve:
+            text = ("Your verification application was approved — "
+                    "the blue tick is now live on your profile ✓")
+        else:
+            text = ("Your verification application was not approved "
+                    "this time. You can apply again from your Me page.")
+        notify.record(db, applicant.telegram_id, "verification",
+                      actor_id=None, text=text)
+        await notify.notify_user(db, applicant.telegram_id,
+                                 "verification", "🛡️ Nexora Social\n" + text)
+    return {"ok": True, "status": req.status,
+            "is_verified": bool(applicant.is_verified) if applicant else False}
 
 
 @app.get("/media/{file_id}")
