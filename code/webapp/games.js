@@ -469,3 +469,57 @@ registerGame({
   });
   $("game-back").onclick = () => showView("games");
 })();
+
+// --------------------------------------------- Phase 37: the Games lamp --
+// Owner: the Games section opens in darkness with only a lamp
+// visible and a rope hanging beside it — pull the rope, the light
+// comes on, and only then do the games appear. Once lit it stays
+// lit for the rest of the session; a fresh app launch starts
+// dark again.
+(function () {
+  const dark = document.getElementById("games-dark");
+  if (!dark) return;
+  const grid = document.getElementById("game-grid");
+  if (sessionStorage.getItem("nx_games_lit") === "1") {
+    dark.hidden = true;
+    return;
+  }
+  if (grid) grid.style.visibility = "hidden";
+  const rope = document.getElementById("pull-rope");
+  let startY = null;
+  let dy = 0;
+  function lightOn() {
+    if (dark.classList.contains("lit")) return;
+    dark.classList.add("lit");
+    sessionStorage.setItem("nx_games_lit", "1");
+    setTimeout(() => { dark.style.opacity = "0"; }, 600);
+    setTimeout(() => {
+      dark.hidden = true;
+      if (grid) grid.style.visibility = "";
+    }, 950);
+  }
+  rope.addEventListener("pointerdown", e => {
+    startY = e.clientY;
+    dy = 0;
+    rope.style.transition = "none";
+    try { rope.setPointerCapture(e.pointerId); } catch (err) {}
+    e.preventDefault();
+  });
+  rope.addEventListener("pointermove", e => {
+    if (startY === null) return;
+    dy = Math.max(0, Math.min(64, e.clientY - startY));
+    rope.style.transform = "translateY(" + dy + "px)";
+  });
+  function release() {
+    if (startY === null) return;
+    const pulled = dy;
+    startY = null;
+    rope.style.transition =
+      "transform .35s cubic-bezier(.2, 2.2, .4, 1)";
+    rope.style.transform = "";
+    if (pulled > 30) lightOn();
+  }
+  rope.addEventListener("pointerup", release);
+  rope.addEventListener("pointercancel", release);
+  rope.addEventListener("click", lightOn);
+})();

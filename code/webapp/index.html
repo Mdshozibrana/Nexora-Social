@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Nexora Social</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=38">
 </head>
 <body>
 <div id="entry-screen">
@@ -43,6 +43,7 @@
     <button id="hero-menu" class="icon-btn" title="Menu">☰</button>
     <div id="app-name">Nexora Social</div>
     <button id="hero-bell" class="icon-btn" title="Notifications">🔔<span id="bell-badge" class="bell-badge" hidden></span></button>
+    <button id="hero-msg" class="icon-btn" title="Messages">💬<span id="msg-badge" class="bell-badge" hidden></span></button>
     <button id="hero-search" class="icon-btn" title="Search">🔍</button>
   </div>
   <div class="hero-row">
@@ -166,6 +167,33 @@
   <button id="notif-more" class="wide" hidden>Load more</button>
 </section>
 
+<section id="view-messages" hidden>
+  <h2 class="view-title">💬 Messages</h2>
+  <div id="stories-strip"></div>
+  <input id="story-file" type="file" accept="image/*" hidden>
+  <h3 class="msg-sec">Chats</h3>
+  <main id="conv-list"></main>
+  <p id="conv-empty" class="empty" hidden>No chats yet — start one from the list below or from any profile.</p>
+  <h3 class="msg-sec">People you follow</h3>
+  <main id="people-list"></main>
+  <p id="people-empty" class="empty" hidden>Follow someone first, then you can message them here.</p>
+</section>
+
+<section id="view-chat" hidden>
+  <div class="chat-head">
+    <button id="chat-back" class="icon-btn" title="Back">←</button>
+    <span id="chat-avatar"></span>
+    <div id="chat-title">Chat</div>
+  </div>
+  <main id="chat-thread"></main>
+  <p id="chat-empty" class="empty" hidden>No messages yet — say hello! 👋</p>
+  <div class="chat-bar">
+    <input id="chat-input" type="text" maxlength="2000"
+      placeholder="Write a message…" autocomplete="off">
+    <button id="chat-send" type="button">Send ➤</button>
+  </div>
+</section>
+
 <section id="view-tasks" hidden>
   <h2 class="view-title">⭐ Daily Tasks</h2>
   <p class="hint">Complete tasks to earn points. Each task can be claimed
@@ -181,6 +209,19 @@
 </section>
 
 <section id="view-games" hidden>
+  <div id="games-dark">
+    <div class="lamp-scene">
+      <div class="lamp-glow"></div>
+      <div class="lamp-cord"></div>
+      <div class="lamp-shade"></div>
+      <div class="lamp-bulb"></div>
+      <div class="pull-rope" id="pull-rope">
+        <div class="pull-line"></div>
+        <div class="pull-knob" id="pull-knob"></div>
+      </div>
+      <p class="lamp-hint">Pull the rope to turn on the light 💡</p>
+    </div>
+  </div>
   <h2 class="view-title">🎮 Games</h2>
   <p class="hint">Classic button-phone games — the Nokia-era favourites
   from the first mobile phones.</p>
@@ -291,6 +332,25 @@
 </section>
 </div><!-- /#app-scroll -->
 
+<div id="story-wrap" hidden>
+  <div id="story-backdrop"></div>
+  <div id="story-stage">
+    <div id="story-progress"><div id="story-progress-fill"></div></div>
+    <div class="story-top">
+      <span id="story-author"></span>
+      <span id="story-time"></span>
+      <button id="story-close" title="Close">✕</button>
+    </div>
+    <img id="story-img" alt="Story">
+    <div class="story-tap story-tap-l" id="story-prev"></div>
+    <div class="story-tap story-tap-r" id="story-next"></div>
+    <div class="story-foot">
+      <span id="story-views"></span>
+      <button id="story-del" type="button" hidden>🗑 Delete</button>
+    </div>
+  </div>
+</div>
+
 <div id="design-sheet-wrap" hidden>
   <div id="design-sheet-backdrop"></div>
   <div id="design-sheet">
@@ -323,6 +383,8 @@
     </div>
     <div class="drawer-sec">Menu</div>
     <button class="drawer-item" data-go="feed"><span class="di-ic">🏠</span>Home</button>
+    <button class="drawer-item" data-go="messages"><span class="di-ic">💬</span>Messages
+      <span id="drawer-msg-badge" class="badge" hidden></span></button>
     <button class="drawer-item" data-go="videos"><span class="di-ic">▶️</span>Videos</button>
     <button class="drawer-item" data-go="games"><span class="di-ic">🎮</span>Games</button>
     <button class="drawer-item" data-go="tasks"><span class="di-ic">⭐</span>Daily Tasks</button>
@@ -354,7 +416,7 @@
   <button id="nav-me">👤<span>Me</span></button>
 </nav>
 
-<script src="app.js"></script>
-<script src="games.js"></script>
+<script src="app.js?v=38"></script>
+<script src="games.js?v=38"></script>
 </body>
 </html>

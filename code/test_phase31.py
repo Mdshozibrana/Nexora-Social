@@ -116,7 +116,8 @@ with TestClient(app) as c:
     assert r.json() == {"views": 1, "counted": False}, r.json()
     r = c.post(f"/posts/{pid}/view", headers=A)
     assert r.json() == {"views": 2, "counted": True}, r.json()
-    feed = c.get("/feed", headers=B).json()["posts"]
+    # Phase 35: a video post is read back from the Videos source.
+    feed = c.get("/feed?type=video", headers=B).json()["posts"]
     mine = [p for p in feed if p["id"] == pid][0]
     assert mine["views"] == 2, mine
     r = c.post("/posts/99999/view", headers=A)
@@ -128,7 +129,7 @@ with TestClient(app) as c:
     assert r.status_code == 200, r.text
     r = c.get("/designs", headers=A)
     assert r.json()["designs"][0]["views"] == 1, r.json()
-    feed = c.get("/feed", headers=A).json()["posts"]
+    feed = c.get("/feed?type=video", headers=A).json()["posts"]
     mine = [p for p in feed if p["id"] == pid][0]
     assert mine["views"] == 1, mine
     print("wipe cleans views OK")

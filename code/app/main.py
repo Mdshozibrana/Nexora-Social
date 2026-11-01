@@ -62,10 +62,69 @@ async def webapp_no_cache(request, call_next):
     """Phase 23: the Mini App shell must never be served stale from a
     webview cache — the owner repeatedly missed new features because
     Telegram kept the old app.js. no-cache forces revalidation on
-    every open while keeping etags, so loads stay fast."""
+    every open while keeping etags, so loads stay fast.
+
+    Phase 38 (owner: make the site smooth and fast): two upgrades.
+    (a) Versioned assets: index.html loads the JS/CSS with ?v=N, so
+    those URLs may cache hard for a week — a deploy bumps N in the
+    no-cache shell, which makes a stale asset impossible.
+    (b) gzip: JSON API responses and the webapp text assets are
+    compressed when the client accepts it (~3x smaller on mobile
+    data). Streaming responses outside /webapp (the /media proxy)
+    are never touched, so video delivery keeps its range/streaming
+    behaviour."""
     response = await call_next(request)
-    if request.url.path.startswith("/webapp"):
-        response.headers["Cache-Control"] = "no-cache"
+    path = request.url.path
+    if path.startswith("/webapp"):
+        if path.endswith((".js", ".css")):
+            response.headers["Cache-Control"] = \
+                "public, max-age=604800"
+        else:
+            response.headers["Cache-Control"] = "no-cache"
+    if "gzip" in request.headers.get("accept-encoding", "") \
+            and request.method in ("GET", "POST") \
+            and response.status_code == 200 \
+            and "content-encoding" not in response.headers \
+            and not path.startswith("/media"):
+        ctype = response.headers.get("content-type", "")
+        if ctype.startswith(("application/json", "text/",
+                             "application/javascript")):
+            from starlette.responses import Response as _Resp
+            if hasattr(response, "body"):
+                body = response.body
+                buffered = False
+            else:
+                # BaseHTTPMiddleware hands back a streaming wrapper
+                # even for plain JSON; buffer it (payloads here are
+                # small — the media proxy is excluded above). A
+                # buffered body MUST be re-wrapped before returning:
+                # the drained original would stream nothing.
+                body = b"".join([chunk async for chunk
+                                 in response.body_iterator])
+                buffered = True
+            headers = {k: v for k, v in response.headers.items()
+                       if k.lower() not in
+                       ("content-length", "content-encoding")}
+            background = getattr(response, "background", None)
+            if len(body) >= 1024:
+                import gzip as _gz
+                packed = _gz.compress(body, compresslevel=6)
+                if len(packed) < len(body):
+                    if "etag" in headers:
+                        headers["etag"] = headers["etag"] + "-gz"
+                    headers["Content-Encoding"] = "gzip"
+                    headers["Content-Length"] = str(len(packed))
+                    headers["Vary"] = "Accept-Encoding"
+                    return _Resp(content=packed,
+                                 status_code=response.status_code,
+                                 headers=headers,
+                                 background=background)
+            if buffered:
+                headers["Content-Length"] = str(len(body))
+                return _Resp(content=body,
+                             status_code=response.status_code,
+                             headers=headers,
+                             background=background)
     return response
 
 
@@ -367,6 +426,11 @@ def feed(tab: str = "explore", type: str = "", cursor: int = 0,
         q = q.filter(~models.Post.user_id.in_(hidden))
     if type in ("photo", "video", "text"):
         q = q.filter_by(type=type)
+    else:
+        # Phase 35 (owner directive): the Feed page shows statuses
+        # and photos only — videos live on the Videos page, whose
+        # loader always asks with type=video explicitly.
+        q = q.filter(models.Post.type != "video")
     if tab == "following":
         ids = [f.following_id for f in
                db.query(models.Follow).filter_by(follower_id=user.telegram_id)]
@@ -376,7 +440,10 @@ def feed(tab: str = "explore", type: str = "", cursor: int = 0,
     rows = q.order_by(models.Post.id.desc()).limit(20).all()
     liked = liked_ids(db, user.telegram_id, rows)
     saved = saved_ids(db, user.telegram_id, rows)
-    out = [post_dict(db, p, liked=p.id in liked, saved=p.id in saved)
+    counts = _post_view_counts(db, rows)
+    _warm_authors(db, rows)
+    out = [post_dict(db, p, liked=p.id in liked, saved=p.id in saved,
+                     views=counts.get(p.id, 0))
            for p in rows]
     return {"posts": out, "next_cursor": rows[-1].id if len(rows) == 20 else None}
 
@@ -385,15 +452,17 @@ def feed(tab: str = "explore", type: str = "", cursor: int = 0,
 # Posts, likes, comments (PRD section 4, MVP items 3-5)
 # ---------------------------------------------------------------------------
 
-def post_dict(db, p, liked=False, saved=False):
+def post_dict(db, p, liked=False, saved=False, views=None):
     author = db.get(models.User, p.user_id)
+    if views is None:
+        # Phase 31: unique-view count (post_views), shown on reels.
+        views = db.query(models.PostView).filter_by(
+            post_id=p.id).count()
     return {
         "id": p.id, "type": p.type, "media_file_id": p.media_file_id,
         "caption": p.caption, "hashtags": p.hashtags,
         "like_count": p.like_count, "comment_count": p.comment_count,
-        # Phase 31: unique-view count (post_views), shown on reels.
-        "views": db.query(models.PostView).filter_by(
-            post_id=p.id).count(),
+        "views": views,
         "liked": liked,
         "saved": saved,
         "author_id": p.user_id,
@@ -403,6 +472,28 @@ def post_dict(db, p, liked=False, saved=False):
         "author_photo": author.photo_file_id if author else None,
         "created_at": p.created_at.isoformat() if p.created_at else None,
     }
+
+
+def _post_view_counts(db, posts):
+    """Phase 38 (speed): ONE grouped query returns the unique-view
+    counts for a whole page of posts, instead of one count query
+    per post (the feed was making 20+ extra round trips)."""
+    ids = [p.id for p in posts]
+    if not ids:
+        return {}
+    rows = db.query(models.PostView.post_id, func.count()).filter(
+        models.PostView.post_id.in_(ids)).group_by(
+        models.PostView.post_id).all()
+    return {pid: n for pid, n in rows}
+
+
+def _warm_authors(db, posts):
+    """Phase 38: batch-load the page's authors into the session so
+    post_dict's per-post author lookup never hits the database."""
+    ids = {p.user_id for p in posts}
+    if ids:
+        db.query(models.User).filter(
+            models.User.telegram_id.in_(ids)).all()
 
 
 def liked_ids(db, viewer_id, posts):
@@ -695,7 +786,7 @@ async def upload_post(caption: str = Form(""),
         user, file, caption.strip()[:2000])
     if kind == "processing":
         body = {"status": "processing",
-                "detail": "Video received — it will appear in the feed "
+                "detail": "Video received — it will appear in Videos "
                           "shortly, and the bot will message you"}
         _dedupe_put(user.telegram_id, x_upload_id, 202, body)
         return JSONResponse(status_code=202, content=body)
@@ -1223,8 +1314,12 @@ def user_posts(telegram_id: int, cursor: int = 0,
     rows = q.order_by(models.Post.id.desc()).limit(20).all()
     liked = liked_ids(db, user.telegram_id, rows)
     saved = saved_ids(db, user.telegram_id, rows)
+    counts = _post_view_counts(db, rows)
+    _warm_authors(db, rows)
     return {"posts": [post_dict(db, p, liked=p.id in liked,
-                                saved=p.id in saved) for p in rows],
+                                saved=p.id in saved,
+                                views=counts.get(p.id, 0))
+                      for p in rows],
             "next_cursor": rows[-1].id if len(rows) == 20 else None}
 
 
@@ -2076,6 +2171,23 @@ def _wipe_member(db, target):
                   models.PostView, models.DesignView):
         db.query(model).filter_by(user_id=tid) \
             .delete(synchronize_session=False)
+    # Phase 36: messages both ways, their stories (+ views on
+    # them), and their views of other members' stories.
+    db.query(models.Message).filter(or_(
+        models.Message.sender_id == tid,
+        models.Message.recipient_id == tid)) \
+        .delete(synchronize_session=False)
+    story_ids = [s.id for s in
+                 db.query(models.Story).filter_by(user_id=tid).all()]
+    if story_ids:
+        db.query(models.StoryView) \
+            .filter(models.StoryView.story_id.in_(story_ids)) \
+            .delete(synchronize_session=False)
+        db.query(models.Story) \
+            .filter(models.Story.id.in_(story_ids)) \
+            .delete(synchronize_session=False)
+    db.query(models.StoryView).filter_by(viewer_id=tid) \
+        .delete(synchronize_session=False)
     db.delete(target)
 
 
@@ -2216,16 +2328,19 @@ def admin_comment_remove(comment_id: int,
 # Members browse, open, like and copy prompts like any post.
 # ---------------------------------------------------------------------------
 
-def _design_dict(db, design, user):
-    liked = db.query(models.DesignLike).filter_by(
-        design_id=design.id, user_id=user.telegram_id).first() \
-        is not None
+def _design_dict(db, design, user, views=None, liked=None):
+    if liked is None:
+        liked = db.query(models.DesignLike).filter_by(
+            design_id=design.id, user_id=user.telegram_id).first() \
+            is not None
+    if views is None:
+        # Phase 31: unique-view count (design_views).
+        views = db.query(models.DesignView).filter_by(
+            design_id=design.id).count()
     return {"id": design.id, "image_file_id": design.image_file_id,
             "prompt": design.prompt,
             "like_count": design.like_count, "liked": liked,
-            # Phase 31: unique-view count (design_views).
-            "views": db.query(models.DesignView).filter_by(
-                design_id=design.id).count(),
+            "views": views,
             "author_id": OFFICIAL_ID, "author_name": OFFICIAL_NAME,
             "created_at": design.created_at.isoformat()
             if design.created_at else None}
@@ -2248,7 +2363,23 @@ def list_designs(cursor: int = 0, limit: int = 20,
         q = q.filter(models.Design.id < cursor)
     rows = q.order_by(models.Design.id.desc()) \
         .limit(max(1, min(limit, 40))).all()
-    return {"designs": [_design_dict(db, d, user) for d in rows],
+    # Phase 38: batched view counts + liked set for the whole page.
+    counts = {}
+    liked_set = set()
+    if rows:
+        ids = [d.id for d in rows]
+        counts = {did: n for did, n in db.query(
+            models.DesignView.design_id, func.count()).filter(
+            models.DesignView.design_id.in_(ids)).group_by(
+            models.DesignView.design_id).all()}
+        liked_set = {l.design_id for l in db.query(
+            models.DesignLike).filter_by(
+            user_id=user.telegram_id).filter(
+            models.DesignLike.design_id.in_(ids)).all()}
+    return {"designs": [_design_dict(db, d, user,
+                                     views=counts.get(d.id, 0),
+                                     liked=d.id in liked_set)
+                        for d in rows],
             "next_cursor": rows[-1].id if len(rows) == limit else None}
 
 
@@ -2536,3 +2667,237 @@ async def media_proxy(file_id: str, request: Request):
 
 if WEBAPP_DIR.exists():
     app.mount("/webapp", StaticFiles(directory=WEBAPP_DIR, html=True), name="webapp")
+
+
+# ---------------------------------------------------------------------------
+# Phase 36: Messages + Stories (owner: a Facebook-style messenger
+# in the top corner of the header — a conversation list, chat
+# threads, and a stories strip where members post 24-hour photo
+# stories). Text messages are rows in the DB (no media, so the
+# fragile upload path is never involved); stories are photos on
+# Telegram's servers, exactly like feed photos.
+# ---------------------------------------------------------------------------
+
+STORY_TTL = timedelta(hours=24)
+
+
+def _brief_user(u):
+    return {"telegram_id": u.telegram_id, "first_name": u.first_name,
+            "username": u.username, "verified": bool(u.is_verified),
+            "photo_file_id": u.photo_file_id}
+
+
+def _message_dict(m, me_id):
+    return {"id": m.id, "mine": m.sender_id == me_id, "text": m.text,
+            "created_at": m.created_at.isoformat() if m.created_at
+            else None,
+            "read": m.read_at is not None}
+
+
+@app.get("/messages/unread")
+def messages_unread(user: models.User = Depends(current_user),
+                    db: Session = Depends(get_db)):
+    n = db.query(models.Message).filter_by(
+        recipient_id=user.telegram_id).filter(
+        models.Message.read_at.is_(None)).count()
+    return {"count": n}
+
+
+@app.get("/messages")
+def conversations(user: models.User = Depends(current_user),
+                  db: Session = Depends(get_db)):
+    me = user.telegram_id
+    hidden = _block_related_ids(db, me)
+    rows = db.query(models.Message).filter(
+        or_(models.Message.sender_id == me,
+            models.Message.recipient_id == me)
+    ).order_by(models.Message.id.desc()).limit(1000).all()
+    convs = {}
+    order = []
+    for m in rows:
+        other = m.recipient_id if m.sender_id == me else m.sender_id
+        if other in hidden:
+            continue
+        c = convs.get(other)
+        if c is None:
+            u = db.get(models.User, other)
+            if u is None:
+                continue
+            c = {"user": _brief_user(u), "last": _message_dict(m, me),
+                 "unread": 0}
+            convs[other] = c
+            order.append(other)
+        if m.recipient_id == me and m.read_at is None:
+            c["unread"] += 1
+    return {"conversations": [convs[o] for o in order]}
+
+
+@app.get("/me/following")
+def my_following(user: models.User = Depends(current_user),
+                 db: Session = Depends(get_db)):
+    """The people the member follows — the Messages view's
+    start-a-chat list."""
+    ids = [f.following_id for f in db.query(models.Follow).filter_by(
+        follower_id=user.telegram_id).all()]
+    out = []
+    for i in ids:
+        u = db.get(models.User, i)
+        if u is not None:
+            out.append(_brief_user(u))
+    return {"users": out}
+
+
+@app.get("/messages/{uid}")
+def message_thread(uid: int,
+                   user: models.User = Depends(current_user),
+                   db: Session = Depends(get_db)):
+    me = user.telegram_id
+    other = db.get(models.User, uid)
+    if other is None or uid in _block_related_ids(db, me):
+        raise HTTPException(404, "User not found")
+    rows = db.query(models.Message).filter(
+        or_((models.Message.sender_id == me) &
+            (models.Message.recipient_id == uid),
+            (models.Message.sender_id == uid) &
+            (models.Message.recipient_id == me))
+    ).order_by(models.Message.id.desc()).limit(200).all()
+    rows.reverse()
+    db.query(models.Message).filter_by(
+        sender_id=uid, recipient_id=me).filter(
+        models.Message.read_at.is_(None)).update(
+        {"read_at": datetime.utcnow()})
+    db.commit()
+    return {"user": _brief_user(other),
+            "messages": [_message_dict(m, me) for m in rows]}
+
+
+class MessageIn(BaseModel):
+    text: str = Field(min_length=1, max_length=2000)
+
+
+@app.post("/messages/{uid}")
+def send_message(uid: int, body: MessageIn,
+                 user: models.User = Depends(current_user),
+                 db: Session = Depends(get_db)):
+    me = user.telegram_id
+    if uid == me:
+        raise HTTPException(400, "You can't message yourself")
+    other = db.get(models.User, uid)
+    if other is None:
+        raise HTTPException(404, "User not found")
+    if uid in _block_related_ids(db, me):
+        raise HTTPException(403, "You can't message this user")
+    text = body.text.strip()
+    if not text:
+        raise HTTPException(400, "Message is empty")
+    _enforce_rate("message", f"u{me}")
+    m = models.Message(sender_id=me, recipient_id=uid, text=text)
+    db.add(m)
+    db.commit()
+    db.refresh(m)
+    notify.record(db, uid, "message", actor_id=me,
+                  text=f"{user.first_name} sent you a message")
+    return _message_dict(m, me)
+
+
+def _story_dict(db, s, viewer_id):
+    views = db.query(models.StoryView).filter_by(story_id=s.id).count()
+    viewed = db.query(models.StoryView).filter_by(
+        story_id=s.id, viewer_id=viewer_id).first() is not None
+    return {"id": s.id, "media_file_id": s.media_file_id,
+            "created_at": s.created_at.isoformat() if s.created_at
+            else None,
+            "views": views, "viewed": viewed,
+            "mine": s.user_id == viewer_id}
+
+
+@app.post("/stories/upload")
+async def upload_story(request: Request,
+                       file: UploadFile = File(...),
+                       x_upload_id: Optional[str] = Header(None),
+                       user: models.User = Depends(current_user),
+                       db: Session = Depends(get_db)):
+    hit = _dedupe_get(user.telegram_id, x_upload_id)
+    if hit:
+        return JSONResponse(status_code=hit[0], content=hit[1])
+    _enforce_rate("upload", f"u{user.telegram_id}")
+    kind, file_id = await _telegram_upload_or_400(user, file)
+    if kind != "photo":
+        raise HTTPException(400, "Stories must be photos")
+    s = models.Story(user_id=user.telegram_id, media_file_id=file_id)
+    db.add(s)
+    db.commit()
+    db.refresh(s)
+    body = _story_dict(db, s, user.telegram_id)
+    _dedupe_put(user.telegram_id, x_upload_id, 200, body)
+    return body
+
+
+@app.get("/stories")
+def list_stories(user: models.User = Depends(current_user),
+                 db: Session = Depends(get_db)):
+    me = user.telegram_id
+    cutoff = datetime.utcnow() - STORY_TTL
+    author_ids = {me, OFFICIAL_ID}
+    author_ids.update(f.following_id for f in
+                      db.query(models.Follow).filter_by(
+                          follower_id=me).all())
+    author_ids -= _block_related_ids(db, me)
+    rows = db.query(models.Story).filter(
+        models.Story.created_at > cutoff,
+        models.Story.user_id.in_(author_ids)
+    ).order_by(models.Story.id.asc()).all()
+    groups = {}
+    for s in rows:
+        groups.setdefault(s.user_id, []).append(s)
+    out = []
+    for uid_, ss in groups.items():
+        u = db.get(models.User, uid_)
+        if u is None:
+            continue
+        dicts = [_story_dict(db, s, me) for s in ss]
+        out.append({"author": _brief_user(u), "stories": dicts,
+                    "has_unviewed": any(
+                        not d["viewed"] and not d["mine"]
+                        for d in dicts)})
+    out.sort(key=lambda g: (g["author"]["telegram_id"] != me,
+                            not g["has_unviewed"],
+                            -g["stories"][-1]["id"]))
+    return {"groups": out}
+
+
+@app.post("/stories/{sid}/view")
+def view_story(sid: int, user: models.User = Depends(current_user),
+               db: Session = Depends(get_db)):
+    s = db.get(models.Story, sid)
+    if s is None or s.created_at <= datetime.utcnow() - STORY_TTL:
+        raise HTTPException(404, "Story not found")
+    _enforce_rate("view", f"u{user.telegram_id}")
+    counted = False
+    if s.user_id != user.telegram_id:
+        exists = db.query(models.StoryView).filter_by(
+            story_id=sid, viewer_id=user.telegram_id).first()
+        if exists is None:
+            db.add(models.StoryView(
+                story_id=sid, viewer_id=user.telegram_id))
+            db.commit()
+            counted = True
+    views = db.query(models.StoryView).filter_by(story_id=sid).count()
+    return {"views": views, "counted": counted}
+
+
+@app.delete("/stories/{sid}")
+def delete_story(sid: int, user: models.User = Depends(current_user),
+                 db: Session = Depends(get_db)):
+    s = db.get(models.Story, sid)
+    if s is None:
+        raise HTTPException(404, "Story not found")
+    real_id = getattr(user, "_real_id", user.telegram_id)
+    admin_own = user.telegram_id in settings.ADMIN_IDS \
+        and real_id == user.telegram_id
+    if s.user_id != user.telegram_id and not admin_own:
+        raise HTTPException(403, "Not your story")
+    db.query(models.StoryView).filter_by(story_id=sid).delete()
+    db.delete(s)
+    db.commit()
+    return {"ok": True}

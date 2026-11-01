@@ -217,7 +217,7 @@ function showView(name) {
                    games: "nav-games",
                    game: "nav-games", tasks: "nav-tasks",
                    leaderboard: "nav-ranks", profile: "nav-me" };
-  ["feed", "videos", "designs", "search", "tasks", "leaderboard", "profile", "saved", "shared", "games", "game", "admin", "notifications"].forEach(v => {
+  ["feed", "videos", "designs", "search", "tasks", "leaderboard", "profile", "saved", "shared", "games", "game", "admin", "notifications", "messages", "chat"].forEach(v => {
     $("view-" + v).hidden = v !== name;
   });
   // Phase 21: only tab views move the highlight. Views without a tab
@@ -234,6 +234,8 @@ function showView(name) {
   if (name === "shared") loadShared();
   if (name === "admin") loadAdmin();
   if (name === "notifications") loadNotifications(true);
+  if (name === "messages") loadMessages();
+  if (name !== "chat") stopChatPoll();
   if (name === "videos") { loadVideos(true); maybeShowAd(); }
   if (name === "leaderboard") loadRanks();
   if (name === "designs") loadDesigns(true);
@@ -999,6 +1001,11 @@ async function openProfile(userId) {
       chip.disabled = true;
       chip.textContent = "✓ Following — Official account";
       box.appendChild(chip);
+      const omBtn = document.createElement("button");
+      omBtn.className = "wide";
+      omBtn.textContent = "💬 Message";
+      omBtn.onclick = () => openChat(userId);
+      box.appendChild(omBtn);
     } else if (me && userId !== me.telegram_id) {
       const fBtn = document.createElement("button");
       fBtn.className = "wide";
@@ -1016,6 +1023,11 @@ async function openProfile(userId) {
         } catch (e) { setStatus("Could not update follow."); }
       };
       box.appendChild(fBtn);
+      const mBtn = document.createElement("button");
+      mBtn.className = "wide";
+      mBtn.textContent = "💬 Message";
+      mBtn.onclick = () => openChat(userId);
+      box.appendChild(mBtn);
       // R5 (security §5): Block/Unblock — the member's self-help
       // control. While blocked, the follow button hides (the server
       // refuses follows between blocked pairs anyway).
@@ -1025,6 +1037,7 @@ async function openProfile(userId) {
         bBtn.textContent = u.blocked_by_me
           ? "🚫 Blocked — tap to unblock" : "🚫 Block this member";
         fBtn.hidden = !!u.blocked_by_me;
+        mBtn.hidden = !!u.blocked_by_me;
       };
       paintBlock();
       bBtn.onclick = async () => {
@@ -1311,6 +1324,7 @@ async function loadMe() {
   applyAdminVisibility();
   maybeOpenAdmin();
   refreshBell();
+  refreshMsgBadge();
   initAds();
   if (!me.photo_file_id) {
     api("/me/photo/sync", { method: "POST" }).then(r => {
@@ -1395,9 +1409,9 @@ $("composer-post").onclick = async () => {
       }, composerUploadId);
       if (res && res.status === "processing") {
         setStatus("🎬 Video received! It's being processed — the bot " +
-          "will message you when it's live in the feed.");
+          "will message you when it's live in Videos.");
         composerStatus("🎬 Video received — the bot will message " +
-          "you when it's live in the feed.");
+          "you when it's live in Videos.");
       }
       composerFile = null;
       composerUploadId = null;
@@ -2587,3 +2601,312 @@ function maybeShowAd() {
     }).catch(() => {});
   } catch (e) {}
 }
+
+// ------------------------------------------- Phase 36: messages + stories --
+// Owner: a Facebook-style messenger in the top corner (💬 in the
+// hero) — stories strip on top, conversation list, chat threads,
+// and a start-a-chat list of the people you follow.
+function paintMsgBadge(count) {
+  const label = count > 99 ? "99+" : String(count || "");
+  const b = $("msg-badge");
+  if (b) { b.hidden = !count; b.textContent = label; }
+  const d = $("drawer-msg-badge");
+  if (d) { d.hidden = !count; d.textContent = label; }
+}
+async function refreshMsgBadge() {
+  try {
+    const r = await api("/messages/unread");
+    paintMsgBadge(r.count);
+  } catch (e) { /* badge just stays as-is */ }
+}
+$("hero-msg").onclick = () => showView("messages");
+
+function loadMessages() {
+  loadStories();
+  loadConversations();
+  loadPeople();
+}
+
+function personRow(u, subText, onClick) {
+  const row = document.createElement("div");
+  row.className = "card conv-row";
+  row.appendChild(avatarEl(u.first_name, u.telegram_id, false,
+                           u.photo_file_id));
+  const info = document.createElement("div");
+  info.className = "admin-info";
+  const nm = document.createElement("div");
+  nm.className = "conv-name";
+  nm.textContent = u.first_name + (u.verified ? " ✓" : "");
+  const pv = document.createElement("div");
+  pv.className = "admin-sub conv-prev";
+  pv.textContent = subText || "";
+  info.append(nm, pv);
+  row.appendChild(info);
+  row.style.cursor = "pointer";
+  row.onclick = onClick;
+  return row;
+}
+
+async function loadConversations() {
+  const box = $("conv-list");
+  box.innerHTML = "";
+  try {
+    const r = await api("/messages");
+    $("conv-empty").hidden = r.conversations.length > 0;
+    r.conversations.forEach(cv => {
+      const row = personRow(cv.user,
+        (cv.last.mine ? "You: " : "") + cv.last.text,
+        () => openChat(cv.user.telegram_id));
+      const right = document.createElement("div");
+      right.className = "conv-right";
+      const tm = document.createElement("div");
+      tm.className = "admin-sub";
+      tm.textContent = relTime(cv.last.created_at);
+      right.appendChild(tm);
+      if (cv.unread) {
+        const pill = document.createElement("span");
+        pill.className = "conv-unread";
+        pill.textContent = cv.unread;
+        right.appendChild(pill);
+      }
+      row.appendChild(right);
+      box.appendChild(row);
+    });
+  } catch (e) { box.textContent = "Could not load chats."; }
+}
+
+async function loadPeople() {
+  const box = $("people-list");
+  box.innerHTML = "";
+  try {
+    const r = await api("/me/following");
+    const people = r.users.filter(u =>
+      !me || u.telegram_id !== me.telegram_id);
+    $("people-empty").hidden = people.length > 0;
+    people.forEach(u => box.appendChild(personRow(u,
+      u.username ? "@" + u.username : "Tap to chat",
+      () => openChat(u.telegram_id))));
+  } catch (e) { /* the section just stays empty */ }
+}
+
+// ------------------------------------------------------------- chat thread --
+let chatWith = null;
+let chatTimer = null;
+function stopChatPoll() {
+  if (chatTimer) { clearInterval(chatTimer); chatTimer = null; }
+}
+async function openChat(uid) {
+  chatWith = uid;
+  showView("chat");
+  $("chat-thread").innerHTML = "";
+  await loadThread(true);
+  stopChatPoll();
+  chatTimer = setInterval(() => {
+    if (chatWith === uid) loadThread(false);
+  }, 8000);
+}
+async function loadThread(scroll) {
+  if (!chatWith) return;
+  try {
+    const r = await api("/messages/" + chatWith);
+    $("chat-title").textContent = r.user.first_name +
+      (r.user.verified ? " ✓" : "");
+    const av = $("chat-avatar");
+    av.innerHTML = "";
+    av.appendChild(avatarEl(r.user.first_name, r.user.telegram_id,
+                            false, r.user.photo_file_id));
+    const box = $("chat-thread");
+    box.innerHTML = "";
+    $("chat-empty").hidden = r.messages.length > 0;
+    r.messages.forEach(m => {
+      const b = document.createElement("div");
+      b.className = "bubble " + (m.mine ? "mine" : "theirs");
+      b.appendChild(document.createTextNode(m.text));
+      const t = document.createElement("div");
+      t.className = "bubble-time";
+      t.textContent = relTime(m.created_at) +
+        (m.mine && m.read ? " · seen" : "");
+      b.appendChild(t);
+      box.appendChild(b);
+    });
+    refreshMsgBadge();
+    if (scroll) {
+      const sc = $("app-scroll");
+      if (sc) sc.scrollTop = sc.scrollHeight;
+    }
+  } catch (e) { setStatus("Could not load the chat."); }
+}
+async function sendChat() {
+  const inp = $("chat-input");
+  const text = inp.value.trim();
+  if (!text || !chatWith) return;
+  inp.value = "";
+  try {
+    await api("/messages/" + chatWith,
+      { method: "POST", body: JSON.stringify({ text }) });
+    loadThread(true);
+  } catch (e) {
+    inp.value = text;
+    setStatus("Message could not be sent.");
+  }
+}
+$("chat-send").onclick = sendChat;
+$("chat-input").addEventListener("keydown", e => {
+  if (e.key === "Enter") sendChat();
+});
+$("chat-back").onclick = () => showView("messages");
+
+// ----------------------------------------------------------------- stories --
+let storyGroups = [];
+let storyPos = null;
+let storyTimer = null;
+let ownStoryGroup = null;
+
+async function loadStories() {
+  const strip = $("stories-strip");
+  strip.innerHTML = "";
+  ownStoryGroup = null;
+  // Your own circle is always first (Facebook-style): tap it to
+  // view your story, tap the + to add one.
+  const own = document.createElement("div");
+  own.className = "story-item";
+  const oWrap = document.createElement("div");
+  oWrap.className = "story-ring own-ring";
+  if (me) oWrap.appendChild(avatarEl(me.first_name, me.telegram_id,
+                                     true, me.photo_file_id));
+  const plus = document.createElement("span");
+  plus.className = "story-plus";
+  plus.textContent = "+";
+  plus.onclick = e => { e.stopPropagation(); $("story-file").click(); };
+  oWrap.appendChild(plus);
+  const oLabel = document.createElement("div");
+  oLabel.className = "story-label";
+  oLabel.textContent = "Your story";
+  own.append(oWrap, oLabel);
+  own.onclick = () => {
+    if (ownStoryGroup) {
+      const gi = storyGroups.indexOf(ownStoryGroup);
+      if (gi >= 0) openStory(gi, 0);
+    } else {
+      $("story-file").click();
+    }
+  };
+  strip.appendChild(own);
+  try {
+    const r = await api("/stories");
+    storyGroups = r.groups;
+    storyGroups.forEach((g, gi) => {
+      if (me && g.author.telegram_id === me.telegram_id) {
+        ownStoryGroup = g;
+        return;
+      }
+      const item = document.createElement("div");
+      item.className = "story-item";
+      const ring = document.createElement("div");
+      ring.className = "story-ring" + (g.has_unviewed ? " unviewed" : "");
+      ring.appendChild(avatarEl(g.author.first_name,
+                                g.author.telegram_id, true,
+                                g.author.photo_file_id));
+      const label = document.createElement("div");
+      label.className = "story-label";
+      label.textContent = g.author.first_name.split(" ")[0];
+      item.append(ring, label);
+      item.onclick = () => openStory(gi, 0);
+      strip.appendChild(item);
+    });
+  } catch (e) { /* strip keeps just your own circle */ }
+}
+
+$("story-file").addEventListener("change", async () => {
+  const f = $("story-file").files[0];
+  $("story-file").value = "";
+  if (!f) return;
+  setStatus("Posting your story…");
+  try {
+    const form = new FormData();
+    form.append("file", await shrinkForUpload(f));
+    await apiFormProgress("/stories/upload", form, () => {}, null);
+    setStatus("📸 Story posted — it stays up for 24 hours.");
+    loadStories();
+  } catch (e) {
+    setStatus("Story upload failed — check your connection and try again.");
+  }
+});
+
+function stopStoryTimer() {
+  if (storyTimer) { clearTimeout(storyTimer); storyTimer = null; }
+}
+function openStory(gi, si) {
+  storyPos = { g: gi, s: si || 0 };
+  $("story-wrap").hidden = false;
+  paintStory();
+}
+function paintStory() {
+  stopStoryTimer();
+  const g = storyGroups[storyPos.g];
+  if (!g) { closeStory(); return; }
+  const s = g.stories[storyPos.s];
+  if (!s) { nextStory(); return; }
+  $("story-img").src = mediaUrl(s.media_file_id);
+  $("story-author").textContent = g.author.first_name +
+    (g.author.verified ? " ✓" : "");
+  $("story-time").textContent = relTime(s.created_at);
+  $("story-views").textContent = s.mine ? "👁 " + s.views + " views" : "";
+  $("story-del").hidden = !s.mine && !(me && me.is_admin);
+  const fill = $("story-progress-fill");
+  fill.style.transition = "none";
+  fill.style.width = "0%";
+  requestAnimationFrame(() => {
+    fill.style.transition = "width 6s linear";
+    fill.style.width = "100%";
+  });
+  if (!s.mine && !s.viewed) {
+    api("/stories/" + s.id + "/view", { method: "POST" })
+      .then(r => { s.views = r.views; s.viewed = true; })
+      .catch(() => {});
+  }
+  storyTimer = setTimeout(nextStory, 6000);
+}
+function nextStory() {
+  if (!storyPos) return;
+  const g = storyGroups[storyPos.g];
+  if (g && storyPos.s + 1 < g.stories.length) {
+    storyPos = { g: storyPos.g, s: storyPos.s + 1 };
+    paintStory();
+  } else if (storyPos.g + 1 < storyGroups.length) {
+    storyPos = { g: storyPos.g + 1, s: 0 };
+    paintStory();
+  } else {
+    closeStory();
+  }
+}
+function prevStory() {
+  if (!storyPos) return;
+  if (storyPos.s > 0) {
+    storyPos = { g: storyPos.g, s: storyPos.s - 1 };
+  } else if (storyPos.g > 0) {
+    const pg = storyGroups[storyPos.g - 1];
+    storyPos = { g: storyPos.g - 1, s: pg.stories.length - 1 };
+  }
+  paintStory();
+}
+function closeStory() {
+  stopStoryTimer();
+  storyPos = null;
+  $("story-wrap").hidden = true;
+  loadStories();
+}
+$("story-close").onclick = closeStory;
+$("story-backdrop").onclick = closeStory;
+$("story-next").onclick = nextStory;
+$("story-prev").onclick = prevStory;
+$("story-del").onclick = async () => {
+  const g = storyGroups[storyPos.g];
+  const s = g && g.stories[storyPos.s];
+  if (!s) return;
+  try {
+    await api("/stories/" + s.id, { method: "DELETE" });
+    setStatus("Story deleted.");
+  } catch (e) { setStatus("Could not delete the story."); }
+  closeStory();
+};

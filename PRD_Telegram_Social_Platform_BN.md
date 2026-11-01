@@ -366,3 +366,38 @@ LOGOUT (owner: লগআউটের পর পুরোপুরি নিজ�
 - **পরিচয় গোপন:** Design রো-তে uploader সংরক্ষণই হয় না; _design_dict আগের মতোই শুধু প্ল্যাটফর্ম পরিচয় (Nexora Social) রিপোর্ট করে — এডমিনের ব্যক্তিগত id/নাম API রেসপন্স, লিস্টিং, কার্ড, শিট — কোথাও নেই (test_phase34 পুরো JSON blob স্ক্যান করে যাচাই করে)।
 - **ক্লায়েন্ট:** paintDesignAccess — upload কার্ড শুধু `me.is_admin && !actAsId()`; "Switch to Official" কার্ড (design-switch) HTML+JS থেকে সম্পূর্ণ সরানো; আপলোড কার্ডের শিরোনামে "(admin only — posted without your name or ID)"। সদস্যদের জন্য আগের সবই: browse, open/view, like, prompt পড়া ও Copy Prompt।
 - টেস্ট: test_phase34 নতুন; test_phase25 (permission matrix), test_phase27 (design dedupe fixture), test_phase31 (design views fixture), test_phase32 (official design case → 403) নতুন নিয়মে আপডেট; মোট ৩২/৩২ স্যুট সবুজ।
+
+---
+
+## সংযোজন — Phase 35 (১ নভেম্বর ২০২৬): Feed/Video আলাদা + ওয়ার্ডমার্ক কন্ট্রাস্ট
+
+মালিকের নির্দেশ: ইউজারের ভিডিও শুধু Videos পেজে, স্ট্যাটাস ও ছবি Feed পেজে; আর "Nexora Social" লেখাটা ব্যাকগ্রাউন্ডের রঙের সাথে মিশে যাচ্ছিল।
+
+- GET /feed: type না বললে video বাদ (text+photo শুধু); Videos পেজের loader type=video দিয়ে আনে — আগের মতোই। Following ট্যাবেও একই নিয়ম। প্রোফাইলের নিজের পোস্ট তালিকা অপরিবর্তিত (সব ধরনের পোস্ট থাকে)।
+- ভিডিও প্রসেসিং বার্তা এখন "live in Videos" বলে (ক্লায়েন্ট + সার্ভার detail)।
+- ওয়ার্ডমার্ক: Phase 30-র সাদা-ঘেঁষা গ্রেডিয়েন্ট (পুরনো ডার্ক হিরোর জন্য ছিল) clay হিরোতে মিশে যাচ্ছিল → এখন গাঢ় প্লাম ফলব্যাক রঙ + rich rose→violet গ্রেডিয়েন্ট (#D81B60→#8E24AA)।
+
+## সংযোজন — Phase 36 (১ নভেম্বর ২০২৬): Messages + Stories (ফেসবুক-স্টাইল মেসেঞ্জার)
+
+মালিকের নির্দেশ: ফেসবুকের মতো উপরের এক কোণে মেসেজিং সিস্টেম, ভিতরে যা যা প্রয়োজন সব, আর সেখানেই ইউজার স্টোরি দিতে পারবে।
+
+- হেডারে 💬 বাটন + unread badge; ড্রয়ারেও Messages সারি একই badgeসহ।
+- Messages ভিউ: উপরে stories strip (নিজের সার্কেল + "+" দিয়ে ছবি স্টোরি, ২৪ ঘণ্টা মেয়াদ; follow করা মানুষ + Official-এর স্টোরি; ring রঙ unviewed বোঝায়; ট্যাপে full-screen viewer — auto-advance ৬ সে., ট্যাপে আগের/পরের, unique 👁 view count, নিজেরটা ডিলিট), তার নিচে Chats (conversation list, শেষ মেসেজ + unread pill), তার নিচে People you follow (নতুন চ্যাট শুরু)।
+- Chat ভিউ: থ্রেড (ডানে নিজের গোলাপি বাবল, বামে অন্যের), Enter/Send-এ পাঠানো, খুললেই read হয়ে যায়, খোলা থাকলে ৮ সে. পরপর auto-refresh; প্রোফাইল পেজে 💬 Message বাটন (Official প্রোফাইলেও)।
+- সার্ভার: messages / stories / story_views টেবিল; GET/POST /messages..., /messages/unread, /me/following, /stories (upload/list/view/delete); ব্লক থাকলে মেসেজ 403 ও conversation লুকানো; wipe-এ messages/stories cleanup; মেসেজ এলে 🔔 নোটিফিকেশন (type "message")। টেক্সট মেসেজ DB-তে থাকে — upload পথের দরকার নেই; স্টোরি ছবি আগের আপলোড পথেই যায়।
+
+## সংযোজন — Phase 37 (১ নভেম্বর ২০২৬): Games ল্যাম্প
+
+মালিকের নির্দেশ: Games সেকশনে অন্ধকার থাকবে, শুধু একটা ল্যাম্প দেখা যাবে, পাশে রশি ঝুলবে — রশি ধরে টান দিলে আলো জ্বলবে, তারপর সব Games দেখা যাবে।
+
+- #view-games-এর উপর dark overlay: মাঝখানে ঝুলন্ত ল্যাম্প (cord + shade + নিভে থাকা বাল্ব), ডান পাশে টানার রশি + গোলাপি নব।
+- রশি টানা: pointer drag (৩০px+) অথবা ট্যাপ/ক্লিক → বাল্ব জ্বলে ওঠে (হলুদ আভা ছড়ায়), overlay মিলিয়ে যায়, গেমের গ্রিড দেখা দেয়। সেশনে একবার জ্বললে জ্বলেই থাকে (sessionStorage nx_games_lit); অ্যাপ নতুন করে খুললে আবার অন্ধকার থেকে শুরু।
+
+## সংযোজন — Phase 38 (১ নভেম্বর ২০২৬): স্পিড ও স্মুথনেস
+
+মালিকের নির্দেশ: সাইট স্মুথ ও ফাস্ট করো।
+
+- **gzip:** API JSON ও webapp-এর টেক্সট অ্যাসেট gzip হয়ে যায় (মিডলওয়্যার; ~৩ গুণ ছোট)। /media স্ট্রিমিং কখনো বাফার/কমপ্রেস হয় না — ভিডিও ডেলিভারি আগের মতোই।
+- **ক্যাশ:** index.html অ্যাসেটগুলো ?v=38 ভার্সনে লোড করে; JS/CSS-এ Cache-Control: public, max-age=604800 (শেল নিজে no-cache থাকে, তাই নতুন ডিপ্লয়ে ভার্সন বদলালেই পুরনো অ্যাসেট অসম্ভব)।
+- **কোয়েরি ব্যাচিং:** Feed/profile পোস্ট তালিকা ও Design তালিকায় প্রতি আইটেমে আলাদা view-count কোয়েরির বদলে পুরো পেজে একটাই grouped কোয়েরি + লেখকদের batch preload (N+1 দূর)।
+- ছবি আগেই lazy-load হতো (আগের ফেজে করা) — যাচাই করে রাখা হলো।

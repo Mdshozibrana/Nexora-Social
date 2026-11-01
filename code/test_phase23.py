@@ -60,10 +60,14 @@ with TestClient(app) as c:
     assert "sc.scrollTop = 0" in js
     r = c.get("/webapp/app.js")
     assert r.status_code == 200, r.status_code
-    assert "no-cache" in r.headers.get("cache-control", ""), r.headers
+    # Phase 38 supersedes the blanket no-cache for ASSETS: the
+    # shell loads them versioned (?v=N), so they cache hard...
+    assert "max-age=604800" in r.headers.get("cache-control", ""), \
+        r.headers
+    # ...while the shell itself still never goes stale.
     r = c.get("/webapp/")
     assert "no-cache" in r.headers.get("cache-control", ""), r.headers
-    print("app shell + no-cache OK")
+    print("app shell + cache policy OK")
 
     # --- (B) six tabs, one screen -------------------------------------------
     assert "flex-direction: column" in css

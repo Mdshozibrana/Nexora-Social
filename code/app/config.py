@@ -49,6 +49,7 @@ RATE_LIMITS = {
     "upload": (30, 3600),
     "share": (120, 3600),
     "design_like": (600, 3600),
+    "message": (300, 3600),
     "search": (240, 3600),
     "auth_ip": (120, 60),
     # Second-pass audit (R3): analytics reporters get budgets too —

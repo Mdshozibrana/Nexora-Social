@@ -50,7 +50,10 @@ with TestClient(app) as c:
     photos = c.get("/feed?type=photo", headers=CY).json()["posts"]
     assert len(photos) == 1 and photos[0]["media_file_id"] == "IMG1"
     allp = c.get("/feed", headers=CY).json()["posts"]
-    assert len(allp) == 5  # 4 user posts + the official welcome post
+    # Phase 35: the Feed page shows statuses + photos only (Ann's
+    # text, Ben's photo, the official welcome) — videos moved to
+    # the Videos page source asserted above.
+    assert len(allp) == 3, allp
     print("feed type filter (Videos page source) OK")
 
     c.post("/users/101/follow", headers=CY)

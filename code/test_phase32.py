@@ -133,7 +133,8 @@ with TestClient(app) as c:
     assert SENT_CHATS[-1] == 999, SENT_CHATS
     assert DMS and DMS[-1][0] == 999, DMS
     assert "live" in DMS[-1][1], DMS
-    feed = c.get("/feed", headers=MEMBER).json()["posts"]
+    # Phase 35: video posts are read back from the Videos source.
+    feed = c.get("/feed?type=video", headers=MEMBER).json()["posts"]
     vids = [p for p in feed if p["type"] == "video"]
     assert vids and vids[0]["author_id"] == 1, vids
     print("official video job OK")

@@ -1166,3 +1166,149 @@ button.liked { animation: heartPop .32s cubic-bezier(.22,.9,.3,1); }
   font-weight: 800; font-size: 13.5px; padding: 5px 2px 0; }
 .ds-stats { margin-top: 9px; font-size: 13px; font-weight: 700;
   color: #96617E; }
+
+/* ================================================================
+   Phase 35 — the wordmark must never blend into the background
+   (owner: "Nexora Social" was washing out against the app's own
+   colours). The Phase 30 gradient used near-white tones meant for
+   the old dark hero; on the clay hero it vanished. Now: a deep
+   plum fallback colour, and where clipped gradient text works, a
+   rich rose-to-violet gradient — clearly readable on the light
+   pink hero.
+   ================================================================ */
+#app-name { color: #472A3E; }
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  #app-name { background: linear-gradient(92deg, #D81B60 5%, #8E24AA 95%);
+    -webkit-background-clip: text; background-clip: text;
+    color: transparent; -webkit-text-fill-color: transparent; }
+}
+
+/* ================================================================
+   Phase 36 — Messages + Stories (Facebook-style messenger)
+   ================================================================ */
+.msg-sec { margin: 18px 2px 8px; font-size: 15px; color: #472A3E; }
+.conv-row { display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; margin-bottom: 8px; }
+.conv-name { font-weight: 700; color: #472A3E; }
+.conv-prev { white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; max-width: 180px; }
+.conv-right { margin-left: auto; text-align: right; flex: none; }
+.conv-unread { display: inline-block; min-width: 20px; text-align: center;
+  background: linear-gradient(135deg, #FF8FBE, #E84393);
+  color: #fff; font-size: 11px; font-weight: 800;
+  border-radius: 999px; padding: 2px 6px; margin-top: 4px; }
+.chat-head { display: flex; align-items: center; gap: 10px;
+  margin-bottom: 10px; }
+.chat-head #chat-title { font-weight: 800; font-size: 17px;
+  color: #472A3E; }
+#chat-thread { display: flex; flex-direction: column; gap: 8px;
+  padding: 4px 2px 12px; }
+.bubble { max-width: 78%; padding: 9px 12px; border-radius: 18px;
+  font-size: 15px; line-height: 1.35; word-wrap: break-word;
+  box-shadow: 0 2px 6px rgba(160, 60, 110, .12); }
+.bubble.theirs { align-self: flex-start; background: #FFFBFC;
+  color: #472A3E; border-bottom-left-radius: 6px; }
+.bubble.mine { align-self: flex-end; color: #fff; font-weight: 600;
+  background: linear-gradient(135deg, #FF8FBE, #E84393);
+  border-bottom-right-radius: 6px; }
+.bubble-time { font-size: 10px; opacity: .75; margin-top: 4px;
+  text-align: right; }
+.chat-bar { display: flex; gap: 8px; position: sticky; bottom: 8px;
+  background: #FFFBFC; border-radius: 999px; padding: 6px;
+  box-shadow: 0 6px 18px rgba(160, 60, 110, .18); }
+.chat-bar input { flex: 1; border: none; background: transparent;
+  padding: 8px 12px; font-size: 15px; color: #472A3E; outline: none; }
+.chat-bar button { flex: none; border: none; border-radius: 999px;
+  padding: 9px 16px; font-weight: 800; color: #fff; cursor: pointer;
+  background: linear-gradient(135deg, #FF8FBE, #E84393); }
+#stories-strip { display: flex; gap: 14px; overflow-x: auto;
+  padding: 10px 2px 6px; }
+.story-item { flex: none; width: 68px; text-align: center;
+  cursor: pointer; }
+.story-ring { position: relative; width: 60px; height: 60px;
+  margin: 0 auto; border-radius: 50%; display: flex;
+  align-items: center; justify-content: center;
+  background: #E9D5DE; padding: 3px; }
+.story-ring.unviewed { background: linear-gradient(45deg,
+  #FF8FBE, #E84393, #8E24AA); }
+.story-ring .avatar { width: 54px; height: 54px; }
+.story-ring img.avatar { border: 2px solid #F8EAF1; }
+.story-plus { position: absolute; right: -2px; bottom: -2px;
+  width: 20px; height: 20px; border-radius: 50%;
+  background: linear-gradient(135deg, #FF8FBE, #E84393);
+  color: #fff; font-weight: 900; font-size: 15px; line-height: 20px;
+  text-align: center; border: 2px solid #F8EAF1; }
+.story-label { font-size: 11px; color: #96617E; margin-top: 5px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#story-wrap { position: fixed; inset: 0; z-index: 90; }
+#story-backdrop { position: absolute; inset: 0; background: #14050d; }
+#story-stage { position: absolute; inset: 0; display: flex;
+  align-items: center; justify-content: center; }
+#story-img { max-width: 100%; max-height: 100%; object-fit: contain; }
+#story-progress { position: absolute; top: 10px; left: 10px;
+  right: 10px; height: 3px; border-radius: 3px;
+  background: rgba(255, 255, 255, .3); overflow: hidden; z-index: 3; }
+#story-progress-fill { height: 100%; width: 0%;
+  background: #fff; border-radius: 3px; }
+.story-top { position: absolute; top: 20px; left: 12px; right: 12px;
+  display: flex; align-items: center; gap: 8px; z-index: 3;
+  color: #fff; font-weight: 700; text-shadow: 0 1px 4px rgba(0,0,0,.6); }
+#story-time { font-weight: 400; font-size: 12px; opacity: .85; }
+#story-close { margin-left: auto; background: rgba(0, 0, 0, .35);
+  color: #fff; border: none; border-radius: 50%; width: 32px;
+  height: 32px; font-size: 15px; cursor: pointer; }
+.story-tap { position: absolute; top: 0; bottom: 0; width: 35%;
+  z-index: 2; }
+.story-tap-l { left: 0; }
+.story-tap-r { right: 0; }
+.story-foot { position: absolute; left: 12px; right: 12px;
+  bottom: 16px; display: flex; align-items: center; z-index: 3;
+  color: #fff; font-size: 13px; text-shadow: 0 1px 4px rgba(0,0,0,.6); }
+#story-del { margin-left: auto; background: rgba(0, 0, 0, .4);
+  color: #fff; border: 1px solid rgba(255, 255, 255, .5);
+  border-radius: 999px; padding: 6px 12px; cursor: pointer; }
+
+/* ================================================================
+   Phase 37 — the Games lamp: the section opens in darkness,
+   only the lamp and its pull rope visible; pull the rope and
+   the light comes on, then the games appear.
+   ================================================================ */
+#view-games { position: relative; }
+#games-dark { position: absolute; inset: 0; z-index: 6;
+  background: #0a0612; border-radius: 18px; overflow: hidden;
+  display: flex; justify-content: center;
+  transition: opacity .35s ease; }
+.lamp-scene { position: relative; width: 100%; min-height: 66vh; }
+.lamp-glow { position: absolute; top: 30px; left: 50%;
+  width: 360px; height: 360px; margin-left: -180px;
+  border-radius: 50%; opacity: 0; transform: scale(.35);
+  background: radial-gradient(circle,
+    rgba(255, 216, 120, .55) 0%, rgba(255, 190, 90, .22) 45%,
+    rgba(255, 190, 90, 0) 68%);
+  transition: opacity .6s ease, transform .6s ease; }
+#games-dark.lit .lamp-glow { opacity: 1; transform: scale(1); }
+.lamp-cord { width: 3px; height: 86px; margin: 0 auto;
+  background: #3a2b3f; }
+.lamp-shade { width: 96px; height: 56px; margin: 0 auto;
+  clip-path: polygon(24% 0, 76% 0, 100% 100%, 0 100%);
+  background: linear-gradient(180deg, #FF8FBE, #C2185B);
+  filter: brightness(.5); transition: filter .5s ease; }
+#games-dark.lit .lamp-shade { filter: brightness(1.1); }
+.lamp-bulb { width: 26px; height: 26px; margin: -4px auto 0;
+  border-radius: 50%; background: #4a3b47;
+  transition: background .4s ease, box-shadow .5s ease; }
+#games-dark.lit .lamp-bulb { background: #FFE9A8;
+  box-shadow: 0 0 46px 20px rgba(255, 205, 90, .55); }
+.pull-rope { position: absolute; top: 0;
+  left: calc(50% + 74px); display: flex; flex-direction: column;
+  align-items: center; cursor: grab; touch-action: none;
+  user-select: none; -webkit-user-select: none; }
+.pull-line { width: 3px; height: 136px;
+  background: repeating-linear-gradient(180deg,
+    #c9aec4 0 5px, #9a7f95 5px 10px); }
+.pull-knob { width: 17px; height: 17px; margin-top: -1px;
+  border-radius: 50%; cursor: grab;
+  background: radial-gradient(circle at 35% 30%, #FFD7EA, #E84393);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, .5); }
+.lamp-hint { position: absolute; left: 0; right: 0; bottom: 30px;
+  text-align: center; color: #9a7f95; font-size: 13.5px; }

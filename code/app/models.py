@@ -284,3 +284,41 @@ class DesignView(Base):
     user_id = Column(BigInteger, ForeignKey("users.telegram_id"))
     created_at = Column(DateTime, default=datetime.utcnow)
     __table_args__ = (UniqueConstraint("design_id", "user_id"),)
+
+
+class Message(Base):
+    """Phase 36 (owner: a Facebook-style messenger in the top
+    corner): a direct message between two members. read_at stays
+    NULL until the recipient opens the thread."""
+    __tablename__ = "messages"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    sender_id = Column(BigInteger, ForeignKey("users.telegram_id"),
+                       index=True)
+    recipient_id = Column(BigInteger, ForeignKey("users.telegram_id"),
+                          index=True)
+    text = Column(Text, default="")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    read_at = Column(DateTime, nullable=True)
+
+
+class Story(Base):
+    """Phase 36: a photo story. Visible for 24 hours from
+    created_at (the API filters expired ones out), shown in the
+    stories strip at the top of the Messages view."""
+    __tablename__ = "stories"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("users.telegram_id"),
+                     index=True)
+    media_file_id = Column(String(256))
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class StoryView(Base):
+    """Phase 36: UNIQUE story views — one row per (story,
+    viewer); the author's own opens never count."""
+    __tablename__ = "story_views"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    story_id = Column(Integer, ForeignKey("stories.id"), index=True)
+    viewer_id = Column(BigInteger, ForeignKey("users.telegram_id"))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    __table_args__ = (UniqueConstraint("story_id", "viewer_id"),)
