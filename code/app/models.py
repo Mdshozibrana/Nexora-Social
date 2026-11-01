@@ -179,6 +179,14 @@ class AdEvent(Base):
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
 
+class AppSetting(Base):
+    """Tiny key-value store for owner-adjustable settings
+    (Phase 44: the ad-earnings rate behind the Earning Panel)."""
+    __tablename__ = "app_settings"
+    key = Column(String(64), primary_key=True)
+    value = Column(String(256), default="")
+
+
 class Notification(Base):
     """In-app notification (Phase 20). Until now members only heard
     about likes/comments/follows as bot DMs; this table powers the

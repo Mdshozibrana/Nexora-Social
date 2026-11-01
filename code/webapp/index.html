@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Nexora Social</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
-<link rel="stylesheet" href="style.css?v=43">
+<link rel="stylesheet" href="style.css?v=44">
 </head>
 <body>
 <div id="entry-screen">
@@ -266,6 +266,63 @@
   <p class="hint">Only you, the owner, can see this panel. Manage members,
   reports and posts, and send announcements to everyone.</p>
 
+  <h3 class="admin-sec">💰 Earning Panel</h3>
+  <div class="earn-panel">
+    <div class="earn-head">
+      <div class="earn-title">💰 Earnings</div>
+      <span class="earn-note">AdsGram ads · Videos page</span>
+    </div>
+    <div class="earn-kpis">
+      <div class="earn-kpi">
+        <div class="earn-kpi-lab">📺 Ads today</div>
+        <div class="earn-kpi-num" id="earn-ads-today">–</div>
+        <div class="earn-kpi-sub">impressions shown today</div>
+      </div>
+      <div class="earn-kpi">
+        <div class="earn-kpi-lab">💵 Income today (est.)</div>
+        <div class="earn-kpi-num" id="earn-est-today">–</div>
+        <div class="earn-kpi-sub">from today's ads</div>
+      </div>
+      <div class="earn-kpi">
+        <div class="earn-kpi-lab">📺 Ads this month</div>
+        <div class="earn-kpi-num" id="earn-ads-month">–</div>
+        <div class="earn-kpi-sub" id="earn-ads-total">–</div>
+      </div>
+      <div class="earn-kpi">
+        <div class="earn-kpi-lab">💰 Income this month (est.)</div>
+        <div class="earn-kpi-num" id="earn-est-month">–</div>
+        <div class="earn-kpi-sub">from this month's ads</div>
+      </div>
+    </div>
+    <div class="earn-rate">
+      <div class="earn-rate-line">Per ad you earn about
+        <b id="earn-per-ad">–</b> · per 1,000 ads
+        <b id="earn-per-1000">–</b></div>
+      <div class="earn-rate-form">
+        <input id="earn-rate-in" type="number" min="0" step="0.01"
+          placeholder="Rate per 1,000 ads (৳)">
+        <button id="earn-rate-save" type="button">Save rate</button>
+      </div>
+      <p class="earn-fine">টাকার অঙ্কগুলো আনুমানিক — এডের আসল আয় থাকে
+      AdsGram প্যানেলে। সেখানকার গড় আয় দেখে উপরে rate বসালেই হিসাব
+      মিলবে। এডের সংখ্যা আর পয়েন্টের হিসাব আসল ডেটা।</p>
+    </div>
+    <div class="earn-card">
+      <div class="earn-card-title">📊 Ads — last 14 days</div>
+      <div id="earn-chart" class="earn-chart"></div>
+    </div>
+    <div class="earn-cols">
+      <div class="earn-card">
+        <div class="earn-card-title">🏆 Top points</div>
+        <div id="earn-top-points"></div>
+      </div>
+      <div class="earn-card">
+        <div class="earn-card-title">📈 Earned today</div>
+        <div id="earn-top-today"></div>
+      </div>
+    </div>
+  </div>
+
   <h3 class="admin-sec">📊 Dashboard</h3>
   <div id="dash-tiles" class="admin-stats"></div>
   <div class="card dash-card">
@@ -435,7 +492,7 @@
   <button id="nav-me">👤<span>Me</span></button>
 </nav>
 
-<script src="app.js?v=43"></script>
-<script src="games.js?v=43"></script>
+<script src="app.js?v=44"></script>
+<script src="games.js?v=44"></script>
 </body>
 </html>

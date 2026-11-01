@@ -1526,3 +1526,83 @@ button.liked { animation: heartPop .32s cubic-bezier(.22,.9,.3,1); }
   .live-dot { animation: none; }
   .bar-fill { transition: none; }
 }
+
+/* ================================================================
+   Phase 44 — the Earning Panel: a dark glass dashboard inside
+   the Admin Panel, structured after the owner's reference
+   video (KPI cards, column chart, ranked lists) in midnight
+   plum with a rose-red glow. Owner-only data.
+   ================================================================ */
+.earn-panel { border-radius: 26px; padding: 16px 14px;
+  margin-bottom: 6px; color: #F5EDF3;
+  background: linear-gradient(150deg, #221226 0%, #170D1E 55%,
+    #2A0F22 100%);
+  box-shadow: 0 18px 38px rgba(40, 8, 34, .45),
+    inset 0 1px 0 rgba(255, 255, 255, .09); }
+.earn-head { display: flex; align-items: center;
+  justify-content: space-between; margin-bottom: 12px; }
+.earn-title { font-size: 18px; font-weight: 900; }
+.earn-note { font-size: 10.5px; font-weight: 700;
+  letter-spacing: .05em; color: #FF9FB6;
+  background: rgba(255, 92, 122, .14); padding: 5px 9px;
+  border-radius: 999px; border: 1px solid rgba(255, 92, 122, .3); }
+.earn-kpis { display: grid; grid-template-columns: 1fr 1fr;
+  gap: 9px; margin-bottom: 10px; }
+.earn-kpi { border-radius: 18px; padding: 12px;
+  background: rgba(255, 255, 255, .05);
+  border: 1px solid rgba(255, 255, 255, .09);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .08); }
+.earn-kpi-lab { font-size: 11px; font-weight: 700;
+  color: #CBB3C9; letter-spacing: .03em; }
+.earn-kpi-num { font-size: 23px; font-weight: 900; margin: 3px 0 1px;
+  background: linear-gradient(90deg, #FF8FBE, #FF5C7A);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: #FF7D9C; }
+.earn-kpi-sub { font-size: 10.5px; color: #9C7E99; }
+.earn-rate { border-radius: 18px; padding: 12px;
+  margin-bottom: 10px; background: rgba(255, 92, 122, .07);
+  border: 1px solid rgba(255, 92, 122, .22); }
+.earn-rate-line { font-size: 13.5px; margin-bottom: 9px; }
+.earn-rate-line b { color: #FF9FB6; }
+.earn-rate-form { display: flex; gap: 8px; }
+.earn-rate-form input { flex: 1; min-width: 0; border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, .18);
+  background: rgba(0, 0, 0, .35); color: #fff;
+  padding: 10px 12px; font-size: 14px; outline: none; }
+.earn-rate-form input:focus { border-color: #FF5C7A; }
+.earn-rate-form button { flex: none; border: none; cursor: pointer;
+  border-radius: 12px; padding: 10px 14px; font-weight: 800;
+  color: #fff; background: linear-gradient(135deg, #FF5C7A, #E84393);
+  box-shadow: 0 6px 14px rgba(255, 92, 122, .35); }
+.earn-fine { font-size: 11px; line-height: 1.55; color: #B99BB5;
+  margin: 9px 0 0; }
+.earn-card { border-radius: 18px; padding: 12px;
+  margin-bottom: 10px; background: rgba(255, 255, 255, .04);
+  border: 1px solid rgba(255, 255, 255, .08); }
+.earn-card-title { font-size: 13px; font-weight: 800;
+  margin-bottom: 10px; color: #F0DCEC; }
+.earn-chart { display: flex; align-items: flex-end; gap: 4px;
+  height: 108px; }
+.earn-col { flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: flex-end;
+  height: 100%; gap: 3px; }
+.earn-col-val { font-size: 9.5px; font-weight: 800; color: #FF9FB6; }
+.earn-col-bar { width: 100%; max-width: 18px; border-radius: 5px 5px 2px 2px;
+  background: linear-gradient(180deg, #FF5C7A, #8E24AA);
+  box-shadow: 0 0 10px rgba(255, 92, 122, .45); min-height: 3px; }
+.earn-col-lab { font-size: 9px; color: #9C7E99; }
+.earn-cols { display: grid; grid-template-columns: 1fr; gap: 0; }
+.earn-row { display: flex; align-items: center; gap: 9px;
+  padding: 7px 2px; border-bottom: 1px solid rgba(255, 255, 255, .06); }
+.earn-row:last-child { border-bottom: none; }
+.earn-rank { flex: none; width: 22px; height: 22px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 900; color: #fff;
+  background: linear-gradient(135deg, #FF5C7A, #E84393); }
+.earn-row:nth-child(2) .earn-rank { background: linear-gradient(135deg, #B06AB3, #8E24AA); }
+.earn-row:nth-child(3) .earn-rank { background: linear-gradient(135deg, #7A5CA8, #5B2A86); }
+.earn-name { flex: 1; min-width: 0; font-size: 13px; font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.earn-val { flex: none; font-size: 12.5px; font-weight: 800;
+  color: #FFD166; }
+.earn-empty { font-size: 12px; color: #9C7E99; margin: 2px 0; }

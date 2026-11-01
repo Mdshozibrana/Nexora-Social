@@ -2093,6 +2093,79 @@ async function loadDashboard() {
   } catch (e) { tiles.textContent = "Could not load the dashboard."; }
 }
 
+// ------------------------------------------------- Phase 44: earnings --
+// The Earning Panel (owner's spec, structured after his reference
+// video — dark glass KPI cards, a column chart, ranked lists).
+// Impressions and points are real platform data; money figures
+// are impressions × the owner-set rate — an estimate, since the
+// actual ad revenue lives in the AdsGram partner panel.
+const fmtTk = n => "৳" + Number(n || 0).toLocaleString(undefined,
+  { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+function earnRows(boxId, rows, valText) {
+  const box = $(boxId);
+  box.innerHTML = "";
+  if (!rows.length) {
+    box.innerHTML = '<p class="earn-empty">No data yet.</p>';
+    return;
+  }
+  rows.forEach((u, i) => {
+    const row = document.createElement("div");
+    row.className = "earn-row";
+    const rank = document.createElement("span");
+    rank.className = "earn-rank";
+    rank.textContent = i + 1;
+    const nm = document.createElement("span");
+    nm.className = "earn-name";
+    nm.textContent = u.first_name +
+      (u.username ? " @" + u.username : "");
+    const val = document.createElement("span");
+    val.className = "earn-val";
+    val.textContent = valText(u);
+    row.append(rank, nm, val);
+    box.appendChild(row);
+  });
+}
+
+async function loadEarnings() {
+  try {
+    const e = await api("/admin/earnings");
+    $("earn-ads-today").textContent = e.ads_today;
+    $("earn-est-today").textContent = fmtTk(e.est_today);
+    $("earn-ads-month").textContent = e.ads_month;
+    $("earn-ads-total").textContent = e.ads_total + " all time";
+    $("earn-est-month").textContent = fmtTk(e.est_month);
+    $("earn-per-ad").textContent =
+      "৳" + parseFloat(e.rate_per_ad.toFixed(4));
+    $("earn-per-1000").textContent = fmtTk(e.rate_per_1000);
+    if (document.activeElement !== $("earn-rate-in"))
+      $("earn-rate-in").value = e.rate_per_1000 || "";
+    const chart = $("earn-chart");
+    chart.innerHTML = "";
+    const max = Math.max(...e.daily_14d.map(d => d.ads), 1);
+    e.daily_14d.forEach(d => {
+      const col = document.createElement("div");
+      col.className = "earn-col";
+      const v = document.createElement("div");
+      v.className = "earn-col-val";
+      v.textContent = d.ads || "";
+      const bar = document.createElement("div");
+      bar.className = "earn-col-bar";
+      bar.style.height = Math.max(3, d.ads / max * 100) + "%";
+      bar.title = d.day + ": " + d.ads + " ads";
+      const lab = document.createElement("div");
+      lab.className = "earn-col-lab";
+      const dt = new Date(d.day + "T00:00:00");
+      lab.textContent = dt.getDate() + "/" + (dt.getMonth() + 1);
+      col.append(v, bar, lab);
+      chart.appendChild(col);
+    });
+    earnRows("earn-top-points", e.top_points, u => u.points + " pts");
+    earnRows("earn-top-today", e.top_earners_today,
+             u => "+" + u.earned + " pts");
+  } catch (err) { /* the panel keeps its dashes */ }
+}
+
 async function openUserDetail(telegramId) {
   const box = $("admin-user-detail");
   box.hidden = false;
@@ -2221,6 +2294,7 @@ async function loadAdminStats() {
 
 function loadAdmin() {
   if (!me || !me.is_admin) return;
+  loadEarnings();
   loadDashboard();
   loadAdminStats();
   loadAdminReports();
@@ -2664,6 +2738,16 @@ $("admin-user-go").onclick = () =>
 $("admin-user-q").addEventListener("keydown", e => {
   if (e.key === "Enter") loadAdminUsers(e.target.value.trim());
 });
+$("earn-rate-save").onclick = async () => {
+  const v = parseFloat($("earn-rate-in").value);
+  if (isNaN(v) || v < 0) { setStatus("Enter a valid rate."); return; }
+  try {
+    await api("/admin/earnings/rate", { method: "POST",
+      body: JSON.stringify({ rate_per_1000: v }) });
+    setStatus("Earnings rate saved.");
+    loadEarnings();
+  } catch (e) { setStatus("Could not save the rate."); }
+};
 $("admin-bc-send").onclick = async () => {
   const text = $("admin-bc-text").value.trim();
   if (!text) return;

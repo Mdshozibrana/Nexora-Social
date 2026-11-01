@@ -1836,6 +1836,99 @@ def admin_dashboard(admin: models.User = Depends(admin_user),
     }
 
 
+def _ad_rate(db: Session) -> float:
+    """The owner-set earnings rate (BDT per 1000 ad impressions),
+    0 until the owner sets it in the Earning Panel."""
+    row = db.get(models.AppSetting, "ad_rate_per_1000")
+    try:
+        return float(row.value) if row and row.value else 0.0
+    except (TypeError, ValueError):
+        return 0.0
+
+
+@app.get("/admin/earnings")
+def admin_earnings(admin: models.User = Depends(admin_user),
+                   db: Session = Depends(get_db)):
+    """Phase 44 — the Earning Panel (owner's spec): today's and
+    this month's ad impressions, member points (top balances and
+    today's top earners). The impression and points figures are
+    REAL platform data. The money figures are ESTIMATES —
+    impressions × the owner-set rate — because the actual ad
+    revenue lives only in the owner's AdsGram partner panel; this
+    app never sees it."""
+    now = datetime.utcnow()
+    today = now.date()
+    today_start = datetime(today.year, today.month, today.day)
+    month_start = datetime(today.year, today.month, 1)
+    rate = _ad_rate(db)
+    ads_q = db.query(models.AdEvent)
+    ads_today = ads_q.filter(models.AdEvent.created_at >= today_start).count()
+    ads_month = ads_q.filter(models.AdEvent.created_at >= month_start).count()
+    ads_total = ads_q.count()
+    recent = ads_q.filter(
+        models.AdEvent.created_at >= today_start - timedelta(days=13)).all()
+    by_day = {}
+    for r in recent:
+        k = r.created_at.date().isoformat()
+        by_day[k] = by_day.get(k, 0) + 1
+    daily = [{"day": (today - timedelta(days=i)).isoformat(),
+              "ads": by_day.get((today - timedelta(days=i)).isoformat(), 0)}
+             for i in range(13, -1, -1)]
+    top_points = [{
+        "telegram_id": u.telegram_id, "first_name": u.first_name,
+        "username": u.username, "points": u.points_balance,
+    } for u in db.query(models.User).filter(
+        models.User.telegram_id != OFFICIAL_ID)
+        .order_by(models.User.points_balance.desc()).limit(10).all()]
+    earn_rows = db.query(
+        models.PointsLedger.user_id,
+        func.coalesce(func.sum(models.PointsLedger.amount), 0)) \
+        .filter(models.PointsLedger.amount > 0,
+                models.PointsLedger.created_at >= today_start) \
+        .group_by(models.PointsLedger.user_id) \
+        .order_by(func.sum(models.PointsLedger.amount).desc()) \
+        .limit(10).all()
+    names = {u.telegram_id: u for u in db.query(models.User).filter(
+        models.User.telegram_id.in_([uid for uid, _ in earn_rows])).all()} \
+        if earn_rows else {}
+    top_earners = [{
+        "telegram_id": uid,
+        "first_name": names[uid].first_name if uid in names else "Member",
+        "username": names[uid].username if uid in names else None,
+        "earned": int(total),
+    } for uid, total in earn_rows]
+    return {
+        "ads_today": ads_today, "ads_month": ads_month,
+        "ads_total": ads_total,
+        "rate_per_1000": rate, "rate_per_ad": rate / 1000.0,
+        "est_today": round(ads_today * rate / 1000.0, 2),
+        "est_month": round(ads_month * rate / 1000.0, 2),
+        "daily_14d": daily,
+        "top_points": top_points,
+        "top_earners_today": top_earners,
+    }
+
+
+class RateIn(BaseModel):
+    rate_per_1000: float = Field(ge=0, le=1000000)
+
+
+@app.post("/admin/earnings/rate")
+def set_earnings_rate(body: RateIn,
+                      admin: models.User = Depends(admin_user),
+                      db: Session = Depends(get_db)):
+    """Save the owner-set rate the Earning Panel estimates with."""
+    row = db.get(models.AppSetting, "ad_rate_per_1000")
+    if row is None:
+        row = models.AppSetting(key="ad_rate_per_1000")
+        db.add(row)
+    row.value = str(body.rate_per_1000)
+    _audit(db, admin, "earnings_rate",
+           detail=f"rate_per_1000={body.rate_per_1000}")
+    db.commit()
+    return {"rate_per_1000": body.rate_per_1000}
+
+
 @app.get("/admin/stats")
 def admin_stats(admin: models.User = Depends(admin_user),
                 db: Session = Depends(get_db)):
