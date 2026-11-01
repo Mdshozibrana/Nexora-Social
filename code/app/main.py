@@ -288,7 +288,14 @@ def current_user(x_init_data: str = Header(default=""),
     if user.last_seen_at is None or (now - user.last_seen_at).total_seconds() >= 60:
         user.last_seen_at = now
         db.commit()
+    real_id = user.telegram_id
     user = _resolve_act_as(db, user, x_act_as)
+    # Phase 32: remember the REAL caller on the resolved identity.
+    # Managed accounts and the official account have no Telegram
+    # chat of their own (chat 1 can never press Start), so uploads
+    # and bot DMs must travel via the real caller's chat — see
+    # _send_chat_id. Without act-as this is simply the member's id.
+    user._real_id = real_id
     if user.last_seen_at is None or (now - user.last_seen_at).total_seconds() >= 60:
         user.last_seen_at = now
         db.commit()
@@ -464,10 +471,22 @@ def create_post(body: PostIn, user: models.User = Depends(current_user),
     return post_dict(db, post)
 
 
+def _send_chat_id(user):
+    """The Telegram chat an upload is sent through (Phase 32).
+    Normally the member's own bot chat. While the owner acts as a
+    managed or the official account, that identity has no bot chat
+    (the official id 1 can never press Start — every upload died
+    with the misleading 'press Start' message), so the file travels
+    via the REAL caller's chat instead. Telegram file_ids are
+    bot-scoped, not chat-scoped: the post still belongs entirely
+    to the acting identity."""
+    return getattr(user, "_real_id", None) or user.telegram_id
+
+
 async def _send_to_telegram(user, filename, data, content_type):
     try:
         return await tgupload.upload_media(
-            user.telegram_id, filename, data, content_type)
+            _send_chat_id(user), filename, data, content_type)
     except tgupload.TelegramUploadError as e:
         if e.kind == "not_started":
             raise HTTPException(
@@ -494,7 +513,13 @@ def _schedule_video_job(coro):
     return task
 
 
-async def _finish_video_post(user_id, src_path, caption):
+async def _finish_video_post(author_id, send_chat_id, src_path,
+                             caption):
+    """Phase 32: author and send-chat are separate ids. Normally
+    they are the same member; while acting as Official/managed,
+    the post belongs to the acting identity (author_id) but the
+    Telegram send and the result DM use the real caller's chat
+    (send_chat_id) — the acting identity has no chat of its own."""
     dst = src_path + ".mp4"
     try:
         async with _transcode_sem:
@@ -503,32 +528,33 @@ async def _finish_video_post(user_id, src_path, caption):
         with open(dst, "rb") as f:
             mp4 = f.read()
         _, file_id = await tgupload.upload_media(
-            user_id, "video.mp4", mp4, "video/mp4")
+            send_chat_id, "video.mp4", mp4, "video/mp4")
         db = SessionLocal()
         try:
-            user = db.get(models.User, user_id)
+            user = db.get(models.User, author_id)
             if user is not None and not user.is_banned:
                 post, _, _ = register_post(db, user, "video", file_id,
                                            caption)
-                notify.record(db, user_id, "post_live", post_id=post.id,
+                notify.record(db, author_id, "post_live",
+                              post_id=post.id,
                               text="Your video is now live on "
                                    "Nexora Social!")
         finally:
             db.close()
         await notify.send_message(
-            user_id, "✅ Your video is now live on Nexora Social!")
+            send_chat_id, "✅ Your video is now live on Nexora Social!")
     except tgupload.TelegramUploadError as e:
         msg = ("Open @NexoraSocial_bot once and press Start, then try "
                "uploading your video again"
                if e.kind == "not_started" else
                "Your video could not be posted — please try again")
-        await notify.send_message(user_id, "⚠️ " + msg)
+        await notify.send_message(send_chat_id, "⚠️ " + msg)
     except videoutil.VideoError as e:
         await notify.send_message(
-            user_id, "⚠️ Your video could not be posted: " + str(e))
+            send_chat_id, "⚠️ Your video could not be posted: " + str(e))
     except Exception:
         await notify.send_message(
-            user_id, "⚠️ Your video could not be posted — please try again")
+            send_chat_id, "⚠️ Your video could not be posted — please try again")
     finally:
         for p in (src_path, dst):
             try:
@@ -614,7 +640,7 @@ async def _telegram_upload_or_400(user, file: UploadFile, caption=""):
         f.write(data)
         src = f.name
     _schedule_video_job(_finish_video_post(
-        user.telegram_id, src, caption))
+        user.telegram_id, _send_chat_id(user), src, caption))
     return "processing", None
 
 

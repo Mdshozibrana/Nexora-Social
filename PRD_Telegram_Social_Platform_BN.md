@@ -334,3 +334,13 @@ LOGOUT (owner: লগআউটের পর পুরোপুরি নিজ�
 - **ইউনিক ভিউ (নতুন টেবিল post_views / design_views, UniqueConstraint):** POST /posts/{id}/view ও POST /designs/{id}/view; এক মেম্বার এক আইটেমে একবারই গণনা হয় — রিপ্লে/রি-ওপেনে সংখ্যা বাড়ে না। রেট বাজেট "view" 300/ঘণ্টা। post_dict ও _design_dict-তে "views" ফিল্ড; _remove_design ও _wipe_member ভিউ-রো পরিষ্কার করে।
 - **ক্লায়েন্ট কখন ভিউ ফায়ার করে:** Reel স্ক্রিনে এলেই (observer, dataset.pid), ফিড ভিডিও play হলেই (onplay), ডিজাইন শিট খুললেই — সেশন-প্রতি একবার (viewedItems Set), সার্ভার চিরদিনের জন্য dedupe করে। Reels-এর ডান রেলে 💬-এর নিচে 👁 কাউন্ট; ভিউ রেজিস্টার হলে সংখ্যা লাইভ আপডেট হয়।
 - টেস্ট: test_phase31 নতুন (ইউনিক ভিউ dedupe, feed/designs-এ views ফিল্ড, wipe পরিচ্ছন্নতা, ক্লায়েন্ট wiring); মোট ২৯/২৯ স্যুট সবুজ।
+
+---
+
+## সংযোজন — Phase 32 (১ নভেম্বর ২০২৬): Official হিসেবে আপলোড ব্যর্থতার ফিক্স
+
+মালিক স্ক্রিনশট পাঠালেন: Official (Nexora Social) হিসেবে acting অবস্থায় ছবি পোস্ট করতে গিয়ে "Open @NexoraSocial_bot once and press Start, then try uploading again" — দুবার।
+
+- **মূল কারণ (কোডে নির্ণীত):** আপলোডের ফাইল Telegram-এ পাঠানো হতো পোস্টিং-পরিচয়ের নিজের bot chat-এ। Official অ্যাকাউন্টের id 1 — সিস্টেম অ্যাকাউন্ট, যার কোনোদিন bot chat হতেই পারে না (Start চাপার কেউ নেই)। ফলে Official/managed হিসেবে প্রতিটা আপলোড (ফিড পোস্ট, ডিজাইন, প্রোফাইল ফটো) নির্ধারিতভাবে ব্যর্থ হতো, আর বার্তাটা ছিল বিভ্রান্তিকর। এটি ফোন-নেটওয়ার্কের shelved সমস্যা থেকে আলাদা — এটি deterministic সার্ভার-সাইড বাগ।
+- **ফিক্স:** current_user আসল কলারের id resolved identity-র গায়ে মনে রাখে (`_real_id`); নতুন `_send_chat_id(user)` — acting অবস্থায় ফাইল যায় আসল কলারের (মালিকের) নিজের bot chat দিয়ে। Telegram file_id bot-scoped (chat-scoped নয়), তাই পোস্ট/ডিজাইনের মালিকানা পুরোপুরি Official-ই থাকে। ব্যাকগ্রাউন্ড ভিডিও জবও আলাদা author_id ও send_chat_id নেয় — পোস্ট Official-এর, send ও ফলাফলের bot DM মালিকের আসল chat-এ। সাধারণ মেম্বারের আপলোড হুবহু আগের মতো; সত্যিকারের Start-না-চাপা মেম্বার আগের friendly বার্তাটাই পায়।
+- টেস্ট: test_phase32 নতুন (chat 1 refuse-করা fake Telegram-সহ: মেম্বার আপলোড অপরিবর্তিত, Official ফটো পোস্ট ও ডিজাইন আপলোড owner-chat দিয়ে সফল ও author=1, ghost মেম্বারের Start বার্তা অক্ষত, ভিডিও জবে author/DM বিভাজন); মোট ৩০/৩০ স্যুট সবুজ।
