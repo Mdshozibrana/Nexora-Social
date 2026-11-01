@@ -37,6 +37,7 @@
   </div>
 </div>
 
+<div id="app-scroll">
 <header class="hero">
   <div class="hero-top">
     <button id="hero-menu" class="icon-btn" title="Menu">☰</button>
@@ -53,6 +54,8 @@
   </div>
 </header>
 
+<p id="status"></p>
+
 <div id="actas-banner" hidden>
   <span id="actas-text">🎭 Acting as a managed user</span>
   <button id="actas-stop">Stop &amp; back to admin</button>
@@ -60,6 +63,10 @@
 
 <section id="view-feed">
   <div class="composer card">
+    <div id="composer-as" class="composer-as" hidden>
+      <span id="composer-as-label">Posting as you</span>
+      <button id="composer-as-btn" type="button">Post as Official 📣</button>
+    </div>
     <textarea id="composer-text" rows="2" maxlength="2000"
       placeholder="Share something… use #tags"></textarea>
     <div class="composer-row">
@@ -246,6 +253,7 @@
     <p id="admin-bc-result" class="hint"></p>
   </div>
 </section>
+</div><!-- /#app-scroll -->
 
 <div id="drawer-wrap" hidden>
   <div id="drawer-backdrop"></div>
@@ -275,11 +283,10 @@
     <button class="drawer-item" data-go="profile"><span class="di-ic">👤</span>My Profile</button>
     <button class="drawer-item" data-go="search"><span class="di-ic">🔍</span>Search</button>
     <button class="drawer-item" id="drawer-admin" data-go="admin" hidden><span class="di-ic">🛡️</span>Admin Panel</button>
+    <button class="drawer-item" id="drawer-official" hidden><span class="di-ic">📣</span>Act as Official</button>
     <button class="drawer-item" id="drawer-logout"><span class="di-ic">🚪</span>Log out</button>
   </aside>
 </div>
-
-<p id="status"></p>
 
 <nav class="bottom-nav">
   <span id="nav-pill"></span>

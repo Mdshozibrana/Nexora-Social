@@ -4,6 +4,9 @@
 const tg = window.Telegram.WebApp;
 tg.ready();
 tg.expand();
+// Phase 23: stop Telegram's sheet gestures from fighting the page's
+// own scrolling (Bot API 7.7+; older clients simply ignore this).
+if (tg.disableVerticalSwipes) tg.disableVerticalSwipes();
 
 const initData = tg.initData || "";
 let me = null;
@@ -76,6 +79,9 @@ function showView(name) {
   // non-admins even if triggered programmatically (the API is guarded
   // too; this keeps the shell itself private as the owner expects).
   if (name === "admin" && !(me && me.is_admin)) name = "feed";
+  // Phase 23: each view starts at the top of the app shell.
+  const sc = $("app-scroll");
+  if (sc) sc.scrollTop = 0;
   const navFor = { feed: "nav-feed", videos: "nav-videos", games: "nav-games",
                    game: "nav-games", tasks: "nav-tasks",
                    leaderboard: "nav-ranks", profile: "nav-me" };
@@ -1330,10 +1336,19 @@ document.querySelectorAll(".drawer-item[data-go]").forEach(b => {
     if (go === "profile") loadMe();
   };
 });
+$("drawer-official").onclick = () => {
+  closeDrawer();
+  startActAs(1, "Nexora Social (Official)");
+};
 $("drawer-logout").onclick = () => {
   closeDrawer();
   localStorage.removeItem("nx_remember");
   sessionStorage.removeItem("nx_entered");
+  // Phase 23: logging out FULLY returns to the owner's own ID — any
+  // act-as session ends here, so the next login is purely his own
+  // account (with the Admin Panel), never a leftover identity.
+  sessionStorage.removeItem("nx_actas");
+  sessionStorage.removeItem("nx_actas_name");
   entryMode = "login";
   paintEntry();
   $("entry-screen").hidden = false;
@@ -1347,6 +1362,9 @@ moveNavPill();
 function applyAdminVisibility() {
   const it = $("drawer-admin");
   if (it) it.hidden = !(me && me.is_admin);
+  const off = $("drawer-official");
+  if (off) off.hidden = !(me && me.is_admin);
+  paintComposerAs();
 }
 
 function statCard(label, val) {
@@ -1445,12 +1463,9 @@ function paintActAs() {
       (sessionStorage.getItem("nx_actas_name") || "a managed user") +
       " — posts, likes, comments and follows are theirs.";
   }
+  paintComposerAs();
 }
-$("actas-stop").onclick = () => {
-  sessionStorage.removeItem("nx_actas");
-  sessionStorage.removeItem("nx_actas_name");
-  location.reload();
-};
+$("actas-stop").onclick = () => stopActAs();
 paintActAs();
 
 // ------------------------------------------------------- Phase 19: dashboard
@@ -1767,12 +1782,47 @@ async function loadManaged() {
   } catch (e) { box.textContent = "Could not load managed users."; }
 }
 
-// Phase 21: the official system account (telegram id 1) — the owner
-// posts and manages the platform's own page by acting as it.
-$("official-actas").onclick = () => {
-  sessionStorage.setItem("nx_actas", "1");
-  sessionStorage.setItem("nx_actas_name", "Nexora Social (Official)");
+// Phase 21/23: act-as entry points share one helper pair, so every
+// door (Admin Panel button, drawer item, composer switch) behaves
+// identically — and every exit fully returns to the owner's own ID.
+function startActAs(id, name) {
+  sessionStorage.setItem("nx_actas", String(id));
+  sessionStorage.setItem("nx_actas_name", name);
   location.reload();
+}
+function stopActAs() {
+  sessionStorage.removeItem("nx_actas");
+  sessionStorage.removeItem("nx_actas_name");
+  location.reload();
+}
+
+// The official system account (telegram id 1) — the owner posts and
+// manages the platform's own page by acting as it.
+$("official-actas").onclick = () =>
+  startActAs(1, "Nexora Social (Official)");
+
+// Phase 23: the composer shows who you are posting as. Admins get a
+// one-tap switch to the Official account; while acting as anyone,
+// the same row offers the way back to their own account.
+function paintComposerAs() {
+  const row = $("composer-as");
+  if (!row) return;
+  if (actAsId()) {
+    row.hidden = false;
+    $("composer-as-label").textContent = "Posting as " +
+      (sessionStorage.getItem("nx_actas_name") || "another account");
+    $("composer-as-btn").textContent = "Back to my account";
+  } else if (me && me.is_admin) {
+    row.hidden = false;
+    $("composer-as-label").textContent = "Posting as you";
+    $("composer-as-btn").textContent = "Post as Official 📣";
+  } else {
+    row.hidden = true;
+  }
+}
+$("composer-as-btn").onclick = () => {
+  if (actAsId()) stopActAs();
+  else startActAs(1, "Nexora Social (Official)");
 };
 
 $("mu-create").onclick = async () => {

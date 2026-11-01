@@ -45,6 +45,18 @@ def _migrate():
 _migrate()
 
 app = FastAPI(title=settings.APP_NAME)
+
+
+@app.middleware("http")
+async def webapp_no_cache(request, call_next):
+    """Phase 23: the Mini App shell must never be served stale from a
+    webview cache — the owner repeatedly missed new features because
+    Telegram kept the old app.js. no-cache forces revalidation on
+    every open while keeping etags, so loads stay fast."""
+    response = await call_next(request)
+    if request.url.path.startswith("/webapp"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
 WEBAPP_DIR = Path(__file__).resolve().parent.parent / "webapp"
 
 _bot_app = None

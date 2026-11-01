@@ -978,3 +978,37 @@ button.wide { background: #FFFBFC; -webkit-backdrop-filter: none;
 .bottom-nav { z-index: 65; }
 .reel-shade { padding-bottom: 96px; }
 .reel .comments { padding-bottom: 96px; }
+
+/* ==========================================================================
+   Phase 23: APP-SHELL SCROLLING (owner: the nav bar vanished while
+   scrolling). The document itself no longer scrolls: an inner shell
+   (#app-scroll) owns all scrolling, so the fixed bottom nav can never
+   be dragged, resized or composited away by the webview — it stays
+   glued to the same spot on every screen, while scrolling anything.
+   The shell also carries the page padding the body used to have.
+   ========================================================================== */
+html, body { height: 100%; }
+body { padding: 0; overflow: hidden; }
+#app-scroll { position: fixed; inset: 0; overflow-y: auto;
+  -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+  padding: 0 12px 110px; scrollbar-width: none; }
+#app-scroll::-webkit-scrollbar { display: none; }
+
+/* Phase 23: ALL SIX TABS FIT ONE SCREEN (owner: the Me tab was cut
+   off). Buttons become compact icon-over-label columns with
+   min-width 0, so 6 equal slots fit any phone width; the sliding
+   pill geometry follows the tighter capsule padding. */
+.bottom-nav { left: 8px; right: 8px; bottom: 8px; padding: 5px; }
+#nav-pill { top: 5px; bottom: 5px; left: 5px;
+  width: calc((100% - 10px) / 6); }
+.bottom-nav button { display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 1px;
+  min-width: 0; padding: 5px 0; font-size: 16px; line-height: 1.1; }
+.bottom-nav button span { font-size: 10px; white-space: nowrap;
+  letter-spacing: 0; }
+
+/* Phase 23: composer posting-as switch row (admins). */
+.composer-as { display: flex; align-items: center; gap: 8px;
+  font-size: 12.5px; color: var(--ink-dim); margin-bottom: 8px; }
+.composer-as button { margin-left: auto; flex: none; font-size: 12px;
+  padding: 6px 10px; }
