@@ -45,7 +45,8 @@ def _migrate():
     existing = {c["name"] for c in inspect(engine).get_columns("users")}
     wanted = {"country": "VARCHAR(64)", "language_code": "VARCHAR(16)",
               "last_seen_at": "TIMESTAMP", "is_managed": "BOOLEAN",
-              "auth_revoked_at": "TIMESTAMP"}
+              "auth_revoked_at": "TIMESTAMP",
+              "cover_file_id": "VARCHAR(256)"}
     with engine.begin() as conn:
         for name, ddl in wanted.items():
             if name not in existing:
@@ -1058,6 +1059,7 @@ def public_profile(telegram_id: int, user: models.User = Depends(current_user),
         "username": target.username,
         "bio": target.bio,
         "photo_file_id": target.photo_file_id,
+        "cover_file_id": target.cover_file_id,
         "points": target.points_balance,
         "is_verified": bool(target.is_verified),
         "is_official": telegram_id == OFFICIAL_ID,
@@ -1197,6 +1199,46 @@ async def upload_my_photo(file: UploadFile = File(...),
     user.photo_file_id = file_id
     db.commit()
     return {"photo_file_id": file_id}
+
+
+@app.post("/me/cover/upload")
+async def upload_my_cover(file: UploadFile = File(...),
+                          user: models.User = Depends(current_user),
+                          db: Session = Depends(get_db)):
+    """Phase 40 (owner: a cover photo option on the profile).
+    Mirrors the profile-photo upload: the image goes to Telegram
+    for its file_id and shows as the banner atop the profile."""
+    if tgupload.classify(file.content_type or "",
+                         file.filename or "") != "photo":
+        raise HTTPException(400, "Please choose a photo (JPG, PNG, WebP or HEIC)")
+    _enforce_rate("upload", f"u{user.telegram_id}")
+    _, file_id = await _telegram_upload_or_400(user, file)
+    user.cover_file_id = file_id
+    db.commit()
+    return {"cover_file_id": file_id}
+
+
+class MyProfileIn(BaseModel):
+    first_name: Optional[str] = Field(default=None, max_length=128)
+    bio: Optional[str] = Field(default=None, max_length=500)
+
+
+@app.post("/me/profile")
+def edit_my_profile(body: MyProfileIn,
+                    user: models.User = Depends(current_user),
+                    db: Session = Depends(get_db)):
+    """Phase 40 (owner: the bio must be writable by the member).
+    Self-service name + bio editing — until now only an admin
+    could change a bio (Phase 24)."""
+    if body.first_name is not None:
+        name = body.first_name.strip()
+        if not name:
+            raise HTTPException(400, "Name can't be empty")
+        user.first_name = name
+    if body.bio is not None:
+        user.bio = body.bio.strip()
+    db.commit()
+    return {"first_name": user.first_name, "bio": user.bio or ""}
 
 
 @app.get("/me/referrals")

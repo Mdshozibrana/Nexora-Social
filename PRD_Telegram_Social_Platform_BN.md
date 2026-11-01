@@ -409,3 +409,18 @@ LOGOUT (owner: লগআউটের পর পুরোপুরি নিজ�
 - বাম ধারে ভাসমান পাতলা **frosted-glass রেল** (58px): গোলাপি N লোগো, ছোট গোল chevron, আইকন তালিকা, নিচে নিজের অ্যাভাটার + সবুজ online ডট। ব্যাজগুলো ছোট অবস্থায় আইকনের কোণে লাল ডট হয়ে থাকে।
 - chevron বা hero-র ☰ চাপলেই spring অ্যানিমেশনে (0.45s cubic-bezier) রেলটা চওড়া কাচের প্যানেলে (min(302px, 84vw)) খুলে যায়: ব্র্যান্ড হেডার, Search pages সারি, MAIN / LIBRARY / ACCOUNT সেকশন, লেবেল + ব্যাজসহ সব আইটেম (আগের ড্রয়ারের সব গন্তব্য + Design ও Notifications), সক্রিয় আইটেমে সাদা glass-pill হাইলাইট (ভিডিওর Wallet-এর মতো), নিচে প্রোফাইল ফুটার। পেছনে হালকা dim + blur backdrop; যেকোনো আইটেমে গেলে নিজে নিজে বন্ধ হয়।
 - Admin Panel / Act as Official / Log out / Saved-Shared ব্যাজ / bell ও message ব্যাজ — সব আগের মতোই, শুধু এখন সাইডবারে। অ্যাসেট ভার্সন ?v=39।
+
+## সংযোজন — Phase 40 (১ নভেম্বর ২০২৬): প্রোফাইল কভার ফটো + বায়ো লেখা
+
+মালিকের নির্দেশ: ইউজার প্রোফাইলে কভার ফটো add অপশন, আর বায়ো লেখা যায় এমন।
+
+- users টেবিলে cover_file_id কলাম (model + _migrate ALTER); public profile-এ cover_file_id যায়।
+- POST /me/cover/upload — profile photo-র মতোই Telegram file_id পথে (photo-only গার্ড); প্রোফাইলে উপরে 128px কভার ব্যানার (না থাকলে গোলাপি-বেগুনি গ্রেডিয়েন্ট placeholder)।
+- POST /me/profile {first_name?, bio?} — নিজের নাম ও বায়ো (সর্বোচ্চ ৫০০ অক্ষর) নিজে বদলানো যায়; আগে বায়ো শুধু admin বদলাতে পারত (Phase 24)। নিজের প্রোফাইলে "🖼️ Change cover photo" ও "✏️ Edit name & bio" ফর্ম।
+
+## সংযোজন — Phase 41 (১ নভেম্বর ২০২৬): সাইডবার স্ক্রিন-ঢাকা ফিক্স
+
+মালিক স্ক্রিনশটসহ জানালেন: collapsed রেলটা প্রায় পুরো স্ক্রিনের উচ্চতা জুড়ে থেকে hero-র লেখা ও হেডিং ঢেকে দিচ্ছে — ফিক্স করতে হবে।
+
+- Collapsed অবস্থায় সাইডবার এখন শুধু ছোট্ট ভাসমান glass pill: N লোগো + chevron — সব আইকন/লেবেল/ফুটার শুধু expanded প্যানেলের ভিতরে (CSS: #glassbar:not(.open) .gb-item/.gb-sec/.gb-foot লুকানো)।
+- না-পড়া মেসেজ/নোটিফিকেশনের ইঙ্গিত হিসেবে লোগোর কোণে একটা গোলাপি ডট (#gb-dot; paintBell/paintMsgBadge কাউন্ট থেকে paintGbDot)। অ্যাসেট ভার্সন ?v=41।

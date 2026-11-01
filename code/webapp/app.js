@@ -975,6 +975,17 @@ async function openProfile(userId) {
   try {
     const u = await api("/users/" + userId);
     box.innerHTML = "";
+    // Phase 40: the cover banner tops every profile (a soft
+    // gradient placeholder until the member sets one).
+    const cover = document.createElement("div");
+    cover.className = "profile-cover";
+    if (u.cover_file_id) {
+      const ci = document.createElement("img");
+      ci.src = mediaUrl(u.cover_file_id);
+      ci.alt = "";
+      cover.appendChild(ci);
+    }
+    box.appendChild(cover);
     const headWrap = document.createElement("div");
     headWrap.className = "profile-head";
     const col = document.createElement("div");
@@ -1061,6 +1072,44 @@ async function openProfile(userId) {
       pBtn.textContent = "📷 Change profile photo";
       pBtn.onclick = () => $("profile-file").click();
       box.appendChild(pBtn);
+      const cBtn = document.createElement("button");
+      cBtn.className = "wide photo-change";
+      cBtn.textContent = "🖼️ Change cover photo";
+      cBtn.onclick = () => $("cover-file").click();
+      box.appendChild(cBtn);
+      // Phase 40: write your own name + bio.
+      const eBtn = document.createElement("button");
+      eBtn.className = "wide";
+      eBtn.textContent = "✏️ Edit name & bio";
+      const form = document.createElement("div");
+      form.className = "card profile-edit";
+      form.hidden = true;
+      const nameIn = document.createElement("input");
+      nameIn.type = "text";
+      nameIn.maxLength = 128;
+      nameIn.placeholder = "Your name";
+      nameIn.value = u.first_name || "";
+      const bioIn = document.createElement("textarea");
+      bioIn.maxLength = 500;
+      bioIn.rows = 3;
+      bioIn.placeholder = "Write something about yourself…";
+      bioIn.value = u.bio || "";
+      const saveBtn = document.createElement("button");
+      saveBtn.className = "wide";
+      saveBtn.textContent = "Save profile";
+      saveBtn.onclick = async () => {
+        try {
+          const r = await api("/me/profile", { method: "POST",
+            body: JSON.stringify({ first_name: nameIn.value,
+                                   bio: bioIn.value }) });
+          if (me) { me.first_name = r.first_name; }
+          setStatus("Profile updated.");
+          openProfile(userId);
+        } catch (e) { setStatus("Could not save the profile."); }
+      };
+      form.append(nameIn, bioIn, saveBtn);
+      eBtn.onclick = () => { form.hidden = !form.hidden; };
+      box.append(eBtn, form);
     }
 
     if (me && userId === me.telegram_id) box.appendChild(await myExtras());
@@ -1446,6 +1495,18 @@ $("profile-file").onchange = async () => {
     if (me) openProfile(me.telegram_id);
   } catch (e) { setStatus(e.message || "Could not update the photo."); }
 };
+$("cover-file").onchange = async () => {
+  const f = $("cover-file").files[0];
+  $("cover-file").value = "";
+  if (!f) return;
+  const form = new FormData();
+  form.append("file", await shrinkForUpload(f));
+  try {
+    await apiForm("/me/cover/upload", form);
+    setStatus("Cover photo updated.");
+    if (me) openProfile(me.telegram_id);
+  } catch (e) { setStatus(e.message || "Could not update the cover."); }
+};
 $("tab-explore").onclick = () => setTab("explore");
 $("tab-following").onclick = () => setTab("following");
 $("feed-more").onclick = () => loadFeed(false);
@@ -1640,6 +1701,8 @@ function paintBell(count) {
     g.hidden = !count;
     g.textContent = count > 99 ? "99+" : String(count || "");
   }
+  gbBellCount = count || 0;
+  paintGbDot();
 }
 async function refreshBell() {
   try {
@@ -2634,12 +2697,22 @@ function maybeShowAd() {
 // Owner: a Facebook-style messenger in the top corner (💬 in the
 // hero) — stories strip on top, conversation list, chat threads,
 // and a start-a-chat list of the people you follow.
+// Phase 41: while the sidebar is collapsed to its small pill,
+// one pink dot on the logo stands in for both unread badges.
+let gbBellCount = 0;
+let gbMsgCount = 0;
+function paintGbDot() {
+  const d = $("gb-dot");
+  if (d) d.hidden = !(gbBellCount > 0 || gbMsgCount > 0);
+}
 function paintMsgBadge(count) {
   const label = count > 99 ? "99+" : String(count || "");
   const b = $("msg-badge");
   if (b) { b.hidden = !count; b.textContent = label; }
   const d = $("gb-msg-badge");
   if (d) { d.hidden = !count; d.textContent = label; }
+  gbMsgCount = count || 0;
+  paintGbDot();
 }
 async function refreshMsgBadge() {
   try {

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Nexora Social</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
-<link rel="stylesheet" href="style.css?v=39">
+<link rel="stylesheet" href="style.css?v=41">
 </head>
 <body>
 <div id="entry-screen">
@@ -241,6 +241,7 @@
 <section id="view-profile" hidden>
   <div id="profile-box"></div>
   <input type="file" id="profile-file" accept="image/*" hidden>
+  <input type="file" id="cover-file" accept="image/*" hidden>
   <div id="profile-posts"></div>
   <button id="profile-more" class="wide" hidden>Load more</button>
 </section>
@@ -373,7 +374,7 @@
 <div id="gb-backdrop" hidden></div>
 <aside id="glassbar">
   <div class="gb-head">
-    <div class="gb-logo">N</div>
+    <div class="gb-logo">N<span id="gb-dot" hidden></span></div>
     <div class="gb-brand">
       <div class="gb-name">Nexora Social</div>
       <div class="gb-tag">CONNECT ANYWHERE</div>
@@ -419,7 +420,7 @@
   <button id="nav-me">👤<span>Me</span></button>
 </nav>
 
-<script src="app.js?v=39"></script>
-<script src="games.js?v=39"></script>
+<script src="app.js?v=41"></script>
+<script src="games.js?v=41"></script>
 </body>
 </html>

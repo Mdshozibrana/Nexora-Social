@@ -1408,3 +1408,44 @@ button.liked { animation: heartPop .32s cubic-bezier(.22,.9,.3,1); }
 @media (prefers-reduced-motion: reduce) {
   #glassbar, #gb-toggle, .gb-label { transition: none; }
 }
+
+/* ================================================================
+   Phase 40 — profile cover + self-service name & bio editing
+   ================================================================ */
+.profile-cover { height: 128px; border-radius: 20px;
+  overflow: hidden; margin-bottom: 12px;
+  background: linear-gradient(120deg, #FF8FBE, #C86DD7 55%, #8E24AA);
+  box-shadow: 0 8px 20px rgba(160, 60, 110, .22); }
+.profile-cover img { width: 100%; height: 100%;
+  object-fit: cover; display: block; }
+.profile-edit { display: flex; flex-direction: column; gap: 9px;
+  padding: 14px; margin-top: 10px; }
+.profile-edit input, .profile-edit textarea {
+  border: 2px solid #F3C6DA; border-radius: 14px;
+  padding: 10px 12px; font-size: 15px; color: #472A3E;
+  background: #fff; outline: none; font-family: inherit;
+  resize: vertical; }
+.profile-edit input:focus, .profile-edit textarea:focus {
+  border-color: #E84393; }
+
+/* ================================================================
+   Phase 41 — sidebar coverage fix (owner, with a screenshot:
+   the collapsed rail ran nearly the full height of the screen
+   and covered the hero and page headings). Collapsed, the
+   sidebar is now just a small floating glass pill — the logo
+   and the expand chevron, nothing else. Every icon, label and
+   the profile footer exist only inside the expanded panel.
+   A single pink dot on the logo stands in for the unread
+   message/notification badges while collapsed.
+   ================================================================ */
+#glassbar:not(.open) .gb-item,
+#glassbar:not(.open) .gb-sec,
+#glassbar:not(.open) .gb-foot { display: none; }
+#glassbar:not(.open) { padding: 10px 7px; }
+#glassbar:not(.open) .gb-head { margin-bottom: 0; }
+.gb-logo { position: relative; }
+#gb-dot { position: absolute; top: -3px; right: -3px;
+  width: 11px; height: 11px; border-radius: 50%;
+  background: linear-gradient(135deg, #FF8FBE, #E84393);
+  border: 2px solid #fff; }
+#glassbar.open #gb-dot { display: none; }

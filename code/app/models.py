@@ -16,6 +16,7 @@ class User(Base):
     username = Column(String(64), nullable=True, index=True)
     first_name = Column(String(128), default="")
     photo_file_id = Column(String(256), nullable=True)
+    cover_file_id = Column(String(256), nullable=True)
     bio = Column(Text, default="")
     points_balance = Column(Integer, default=0)
     referrer_id = Column(BigInteger, ForeignKey("users.telegram_id"), nullable=True)
