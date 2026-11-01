@@ -1901,6 +1901,12 @@ function openDesignSheet(d) {
   $("ds-like").textContent =
     (d.liked ? "❤️ " : "🤍 ") + d.like_count;
   $("ds-remove").hidden = !(me && (me.telegram_id === 1 || me.is_admin));
+  // Phase 46: only the admin, on his own account (never while
+  // acting as someone), may edit a design — the Phase 34 rule.
+  $("ds-edit").hidden = !(me && me.is_admin && !actAsId());
+  $("ds-edit-box").hidden = true;
+  $("ds-edit-status").textContent = "";
+  dsEditFile = null;
   $("ds-copy").textContent = "📋 Copy Prompt";
   $("design-sheet-wrap").hidden = false;
   // "See more" only earns its place when the prompt truly overflows.
@@ -1963,6 +1969,46 @@ $("ds-remove").onclick = async () => {
     closeDesignSheet();
     loadDesigns(true);
   } catch (e) { setStatus("Could not remove the design."); }
+};
+
+// Phase 46: edit a posted design — prompt text and/or a
+// replacement image, from the detail sheet (admin only).
+let dsEditFile = null;
+$("ds-edit").onclick = () => {
+  if (!currentDesign) return;
+  const box = $("ds-edit-box");
+  box.hidden = !box.hidden;
+  if (!box.hidden) {
+    $("ds-edit-prompt").value = currentDesign.prompt || "";
+    $("ds-edit-status").textContent = "";
+  }
+};
+$("ds-edit-img").onclick = () => $("ds-edit-file").click();
+$("ds-edit-file").onchange = () => {
+  dsEditFile = $("ds-edit-file").files[0] || null;
+  $("ds-edit-file").value = "";
+  $("ds-edit-status").textContent = dsEditFile
+    ? "New image picked: " + dsEditFile.name : "";
+};
+$("ds-edit-save").onclick = async () => {
+  if (!currentDesign) return;
+  const st = $("ds-edit-status");
+  const form = new FormData();
+  form.append("prompt", $("ds-edit-prompt").value);
+  if (dsEditFile) {
+    st.textContent = "Uploading…";
+    form.append("file", await shrinkForUpload(dsEditFile));
+  }
+  try {
+    const updated = await apiForm(
+      "/designs/" + currentDesign.id + "/edit", form);
+    dsEditFile = null;
+    setStatus("Design updated.");
+    openDesignSheet(updated);
+    loadDesigns(true);
+  } catch (e) {
+    st.textContent = e.message || "Could not save the changes.";
+  }
 };
 
 $("design-pick").onclick = () => $("design-file").click();

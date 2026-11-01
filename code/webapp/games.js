@@ -444,6 +444,379 @@ registerGame({
   },
 });
 
+// ------------------------------------------------------------------ Pong --
+// Phase 47 (owner: more old-time games): the 1972 arcade original.
+registerGame({
+  id: "pong", icon: "🎾", name: "Pong", title: "🎾 Pong",
+  desc: "The 1972 arcade original — you vs the machine, first to 7.",
+  help: "Drag on the board, use ▲ ▼, or the arrow keys to move your paddle.",
+  start(stage, setScore) {
+    const W = 300, H = 300, PH = 56, PW = 8;
+    const cv = document.createElement("canvas");
+    cv.width = W; cv.height = H;
+    stage.appendChild(cv);
+    const ctx = cv.getContext("2d");
+    let py = H / 2 - PH / 2, ay = py, ball, you = 0, cpu = 0,
+        timer = null, over = false;
+    const serve = dir => {
+      ball = { x: W / 2, y: H / 2, vx: 3.2 * dir,
+               vy: (Math.random() * 2 - 1) * 2.2 };
+    };
+    serve(1);
+    const draw = () => {
+      ctx.fillStyle = "#101408";
+      ctx.fillRect(0, 0, W, H);
+      ctx.strokeStyle = "rgba(238,242,200,.35)";
+      ctx.setLineDash([6, 8]);
+      ctx.beginPath(); ctx.moveTo(W / 2, 0); ctx.lineTo(W / 2, H); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = "#eef2c8";
+      ctx.fillRect(8, py, PW, PH);
+      ctx.fillRect(W - 8 - PW, ay, PW, PH);
+      ctx.beginPath(); ctx.arc(ball.x, ball.y, 5, 0, 7); ctx.fill();
+      ctx.font = "bold 22px monospace"; ctx.textAlign = "center";
+      ctx.fillText(you, W / 2 - 26, 30);
+      ctx.fillText(cpu, W / 2 + 26, 30);
+      if (over) {
+        ctx.fillStyle = "rgba(16,20,8,.85)";
+        ctx.fillRect(0, H / 2 - 26, W, 52);
+        ctx.fillStyle = "#eef2c8"; ctx.font = "bold 17px monospace";
+        ctx.fillText(you > cpu ? "YOU WIN! 🏆" : "CPU WINS",
+                     W / 2, H / 2 + 6);
+      }
+    };
+    const score = () => setScore("You " + you + " — " + cpu + " CPU");
+    const step = () => {
+      ball.x += ball.vx; ball.y += ball.vy;
+      if (ball.y < 6 || ball.y > H - 6) ball.vy *= -1;
+      // the machine: tracks the ball with a human-ish lag
+      const target = ball.y - PH / 2;
+      ay += Math.max(-2.7, Math.min(2.7, target - ay));
+      ay = Math.max(0, Math.min(H - PH, ay));
+      if (ball.vx < 0 && ball.x - 5 <= 8 + PW && ball.x > 8 &&
+          ball.y >= py && ball.y <= py + PH) {
+        ball.vx = Math.min(7, -ball.vx * 1.06);
+        ball.vy += (ball.y - (py + PH / 2)) / PH * 2.4;
+      }
+      if (ball.vx > 0 && ball.x + 5 >= W - 8 - PW && ball.x < W - 8 &&
+          ball.y >= ay && ball.y <= ay + PH) {
+        ball.vx = -Math.min(7, ball.vx * 1.06);
+        ball.vy += (ball.y - (ay + PH / 2)) / PH * 2.4;
+      }
+      if (ball.x < -8 || ball.x > W + 8) {
+        if (ball.x < 0) cpu++; else you++;
+        score();
+        if (you >= 7 || cpu >= 7) {
+          over = true; draw();
+          clearInterval(timer); timer = null;
+          toggleBtn.textContent = "▶ Start";
+          return;
+        }
+        serve(ball.x < 0 ? -1 : 1);
+      }
+      draw();
+    };
+    const move = dy => {
+      py = Math.max(0, Math.min(H - PH, py + dy * 14));
+      if (!timer && !over) draw();
+    };
+    const toggle = () => {
+      if (over) { you = 0; cpu = 0; over = false; serve(1); score(); }
+      if (timer) { clearInterval(timer); timer = null; toggleBtn.textContent = "▶ Start"; }
+      else { timer = setInterval(step, 20); toggleBtn.textContent = "⏸ Pause"; }
+    };
+    dpad(stage, (dx, dy) => move(dy), []);
+    const toggleBtn = document.createElement("button");
+    toggleBtn.textContent = "▶ Start";
+    toggleBtn.onclick = toggle;
+    toggleBtn.style.cssText = "padding:10px 22px;border-radius:12px;font-size:15px;background:#EC4899;color:#121212;font-weight:700;";
+    const wrap = document.createElement("div");
+    wrap.className = "grow";
+    wrap.appendChild(toggleBtn);
+    stage.appendChild(wrap);
+    let dragY = null;
+    cv.addEventListener("touchstart", e => {
+      dragY = e.touches[0].clientY;
+    }, { passive: true });
+    cv.addEventListener("touchmove", e => {
+      const y = e.touches[0].clientY;
+      if (dragY !== null) {
+        py = Math.max(0, Math.min(H - PH, py + (y - dragY) * 1.6));
+        if (!timer && !over) draw();
+      }
+      dragY = y;
+    }, { passive: true });
+    const keys = e => {
+      if (e.key === "ArrowUp") { move(-1); e.preventDefault(); }
+      if (e.key === "ArrowDown") { move(1); e.preventDefault(); }
+    };
+    document.addEventListener("keydown", keys);
+    score(); draw();
+    return () => {
+      if (timer) clearInterval(timer);
+      document.removeEventListener("keydown", keys);
+    };
+  },
+});
+
+// ---------------------------------------------------------- Space Invaders --
+// Phase 47: the 1978 arcade legend — emoji invaders, auto-fire.
+registerGame({
+  id: "invaders", icon: "👾", name: "Invaders", title: "👾 Space Invaders",
+  desc: "The 1978 arcade legend. Blast the invaders before they land.",
+  help: "Drag left/right to steer — your cannon fires on its own. 3 lives.",
+  start(stage, setScore) {
+    const W = 300, H = 330;
+    const cv = document.createElement("canvas");
+    cv.width = W; cv.height = H;
+    stage.appendChild(cv);
+    const ctx = cv.getContext("2d");
+    let shipX, aliens, dirX, offY, shots, enemyShots, lives, score,
+        wave, tick, timer = null, over = false;
+    const reset = full => {
+      shipX = W / 2;
+      aliens = [];
+      for (let r = 0; r < 4; r++)
+        for (let c = 0; c < 5; c++)
+          aliens.push({ x: 45 + c * 42, y: 38 + r * 30, alive: true });
+      dirX = 0.55 + wave * 0.12; offY = 0;
+      shots = []; enemyShots = []; tick = 0;
+      if (full) { lives = 3; score = 0; wave = 1; over = false; }
+      paint();
+    };
+    const paint = () => setScore(
+      "Score: " + score + " · Lives: " + "❤️".repeat(Math.max(0, lives)) +
+      " · Wave " + wave);
+    const draw = () => {
+      ctx.fillStyle = "#070714";
+      ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = "#fff";
+      for (let i = 0; i < 40; i++)
+        ctx.fillRect((i * 67) % W, (i * 41) % H, 1.4, 1.4);
+      ctx.font = "19px serif"; ctx.textAlign = "center";
+      aliens.forEach(a => { if (a.alive) ctx.fillText("👾", a.x, a.y + offY); });
+      ctx.fillStyle = "#4ADE80";
+      ctx.beginPath();
+      ctx.moveTo(shipX, H - 26); ctx.lineTo(shipX - 11, H - 8);
+      ctx.lineTo(shipX + 11, H - 8); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = "#FFD166";
+      shots.forEach(s => ctx.fillRect(s.x - 1.5, s.y, 3, 9));
+      ctx.fillStyle = "#FF5C7A";
+      enemyShots.forEach(s => ctx.fillRect(s.x - 1.5, s.y, 3, 9));
+      if (over) {
+        ctx.fillStyle = "rgba(7,7,20,.85)";
+        ctx.fillRect(0, H / 2 - 26, W, 52);
+        ctx.fillStyle = "#eef2c8"; ctx.font = "bold 17px monospace";
+        ctx.fillText("GAME OVER", W / 2, H / 2 + 6);
+      }
+    };
+    const step = () => {
+      tick++;
+      let edge = false;
+      aliens.forEach(a => {
+        if (!a.alive) return;
+        a.x += dirX;
+        if (a.x > W - 18 || a.x < 18) edge = true;
+      });
+      if (edge) { dirX *= -1; offY += 11; }
+      if (tick % 16 === 0)
+        shots.push({ x: shipX, y: H - 30 });
+      shots = shots.filter(s => s.y > -10);
+      shots.forEach(s => { s.y -= 6; });
+      if (tick % 34 === 0) {
+        const alive = aliens.filter(a => a.alive);
+        if (alive.length) {
+          const a = alive[(Math.random() * alive.length) | 0];
+          enemyShots.push({ x: a.x, y: a.y + offY + 8 });
+        }
+      }
+      enemyShots = enemyShots.filter(s => s.y < H);
+      enemyShots.forEach(s => { s.y += 3.4; });
+      // hits on invaders
+      shots.forEach(s => {
+        aliens.forEach(a => {
+          if (a.alive && Math.abs(s.x - a.x) < 12 &&
+              Math.abs(s.y - (a.y + offY)) < 11) {
+            a.alive = false; s.y = -99; score += 10; paint();
+          }
+        });
+      });
+      // hits on the ship
+      enemyShots.forEach(s => {
+        if (Math.abs(s.x - shipX) < 11 && s.y > H - 28 && s.y < H - 4) {
+          s.y = H + 99; lives--; paint();
+          if (lives <= 0) { over = true; }
+        }
+      });
+      const landed = aliens.some(a => a.alive && a.y + offY > H - 40);
+      if (landed) over = true;
+      if (aliens.every(a => !a.alive)) {
+        wave++; reset(false); paint();
+      }
+      draw();
+      if (over) {
+        clearInterval(timer); timer = null;
+        toggleBtn.textContent = "▶ Start";
+        setScore("Game over — Score: " + score);
+      }
+    };
+    const steer = dx => {
+      shipX = Math.max(14, Math.min(W - 14, shipX + dx));
+      if (!timer && !over) draw();
+    };
+    const toggle = () => {
+      if (over) reset(true);
+      if (timer) { clearInterval(timer); timer = null; toggleBtn.textContent = "▶ Start"; }
+      else { timer = setInterval(step, 30); toggleBtn.textContent = "⏸ Pause"; }
+    };
+    dpad(stage, dx => steer(dx * 12), []);
+    const toggleBtn = document.createElement("button");
+    toggleBtn.textContent = "▶ Start";
+    toggleBtn.onclick = toggle;
+    toggleBtn.style.cssText = "padding:10px 22px;border-radius:12px;font-size:15px;background:#EC4899;color:#121212;font-weight:700;";
+    const wrap = document.createElement("div");
+    wrap.className = "grow";
+    wrap.appendChild(toggleBtn);
+    stage.appendChild(wrap);
+    let lastX = null;
+    cv.addEventListener("touchstart", e => {
+      lastX = e.touches[0].clientX;
+    }, { passive: true });
+    cv.addEventListener("touchmove", e => {
+      const x = e.touches[0].clientX;
+      if (lastX !== null) steer((x - lastX) * 1.4);
+      lastX = x;
+    }, { passive: true });
+    const keys = e => {
+      if (e.key === "ArrowLeft") steer(-12);
+      if (e.key === "ArrowRight") steer(12);
+    };
+    document.addEventListener("keydown", keys);
+    wave = 1; reset(true);
+    return () => {
+      if (timer) clearInterval(timer);
+      document.removeEventListener("keydown", keys);
+    };
+  },
+});
+
+// ------------------------------------------------------------ Minesweeper --
+// Phase 47: the classic desktop mine-hunt.
+registerGame({
+  id: "mines", icon: "💣", name: "Minesweeper", title: "💣 Minesweeper",
+  desc: "The classic desktop mine-hunt. Clear the field, dodge the bombs.",
+  help: "Tap to dig. Turn flag mode on to mark a mine with 🚩. First tap is always safe.",
+  start(stage, setScore) {
+    const N = 9, MINES = 10;
+    const COLORS = ["", "#2563EB", "#16A34A", "#DC2626", "#7C3AED",
+                    "#B45309", "#0891B2", "#111827", "#4B5563"];
+    const grid = document.createElement("div");
+    grid.className = "mine-grid";
+    stage.appendChild(grid);
+    let mines, open, flags, started, dead, won, flagMode = false;
+    const cells = [];
+    const idx = (x, y) => y * N + x;
+    const around = (x, y) => {
+      const out = [];
+      for (let dy = -1; dy <= 1; dy++)
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = x + dx, ny = y + dy;
+          if ((dx || dy) && nx >= 0 && ny >= 0 && nx < N && ny < N)
+            out.push([nx, ny]);
+        }
+      return out;
+    };
+    const count = (x, y) =>
+      around(x, y).filter(([nx, ny]) => mines.has(idx(nx, ny))).length;
+    function status() {
+      if (won) setScore("You cleared the field! 🏆");
+      else if (dead) setScore("Boom! 💥 Game over.");
+      else setScore("🚩 " + (MINES - flags.size) + " mines left to mark");
+    }
+    function plant(safeIdx) {
+      mines = new Set();
+      while (mines.size < MINES) {
+        const m = (Math.random() * N * N) | 0;
+        if (m !== safeIdx) mines.add(m);
+      }
+    }
+    function reveal(x, y) {
+      const i = idx(x, y);
+      if (open.has(i) || flags.has(i) || dead || won) return;
+      if (!started) { plant(i); started = true; }
+      if (mines.has(i)) {
+        dead = true;
+        mines.forEach(m => {
+          cells[m].textContent = "💣";
+          cells[m].classList.add("mine-hit");
+        });
+        cells[i].textContent = "💥";
+        status();
+        return;
+      }
+      const stack = [[x, y]];
+      while (stack.length) {
+        const [cx, cy] = stack.pop();
+        const ci = idx(cx, cy);
+        if (open.has(ci) || flags.has(ci)) continue;
+        open.add(ci);
+        const n = count(cx, cy);
+        const cell = cells[ci];
+        cell.classList.add("mine-open");
+        if (n) {
+          cell.textContent = n;
+          cell.style.color = COLORS[n];
+        } else {
+          around(cx, cy).forEach(([nx, ny]) => {
+            if (!open.has(idx(nx, ny))) stack.push([nx, ny]);
+          });
+        }
+      }
+      if (open.size === N * N - MINES) { won = true; }
+      status();
+    }
+    function build() {
+      grid.innerHTML = "";
+      cells.length = 0;
+      mines = new Set(); open = new Set(); flags = new Set();
+      started = false; dead = false; won = false;
+      for (let y = 0; y < N; y++)
+        for (let x = 0; x < N; x++) {
+          const b = document.createElement("button");
+          b.className = "mine-cell";
+          b.onclick = () => {
+            const i = idx(x, y);
+            if (dead || won) return;
+            if (flagMode) {
+              if (open.has(i)) return;
+              if (flags.has(i)) { flags.delete(i); b.textContent = ""; }
+              else { flags.add(i); b.textContent = "🚩"; }
+              status();
+            } else reveal(x, y);
+          };
+          cells.push(b);
+          grid.appendChild(b);
+        }
+      status();
+    }
+    const row = document.createElement("div");
+    row.className = "grow";
+    const flagBtn = document.createElement("button");
+    flagBtn.textContent = "🚩 Flag: Off";
+    flagBtn.onclick = () => {
+      flagMode = !flagMode;
+      flagBtn.textContent = "🚩 Flag: " + (flagMode ? "On" : "Off");
+    };
+    const again = document.createElement("button");
+    again.textContent = "↻ New game";
+    again.onclick = build;
+    row.append(flagBtn, again);
+    stage.appendChild(row);
+    build();
+    return () => {};
+  },
+});
+
 // ------------------------------------------------------------- game grid --
 // Built last: every game above must be registered first.
 (function buildGrid() {

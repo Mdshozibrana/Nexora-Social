@@ -2585,6 +2585,41 @@ async def upload_design(prompt: str = Form(""),
     return body
 
 
+@app.post("/designs/{design_id}/edit")
+async def edit_design(design_id: int,
+                      prompt: str = Form(None),
+                      file: UploadFile = File(None),
+                      user: models.User = Depends(current_user),
+                      db: Session = Depends(get_db)):
+    """Phase 46 (owner: designs must be editable as needed).
+    The admin — from his own account only, the same Phase 34
+    rule as posting — can fix a design's prompt text and/or
+    replace its image after posting. Likes and views stay."""
+    real_id = getattr(user, "_real_id", user.telegram_id)
+    if user.telegram_id not in settings.ADMIN_IDS \
+            or real_id != user.telegram_id:
+        raise HTTPException(
+            403, "Designs can be edited only from the admin account")
+    design = db.get(models.Design, design_id)
+    if design is None:
+        raise HTTPException(404, "Design not found")
+    if prompt is None and file is None:
+        raise HTTPException(400, "Nothing to change")
+    if file is not None:
+        _enforce_rate("upload", f"u{user.telegram_id}")
+        kind, file_id = await _telegram_upload_or_400(
+            user, file, (prompt or design.prompt or "")[:1024])
+        if kind != "photo":
+            raise HTTPException(400, "Designs must be images only")
+        design.image_file_id = file_id
+    if prompt is not None:
+        design.prompt = prompt.strip()[:2000]
+    _audit(db, user, "design_edit", detail=f"design {design_id}")
+    db.commit()
+    db.refresh(design)
+    return _design_dict(db, design, user)
+
+
 @app.post("/designs/{design_id}/like")
 def like_design(design_id: int,
                 user: models.User = Depends(current_user),

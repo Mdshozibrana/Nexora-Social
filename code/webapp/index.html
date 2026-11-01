@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Nexora Social</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
-<link rel="stylesheet" href="style.css?v=45">
+<link rel="stylesheet" href="style.css?v=47">
 </head>
 <body>
 <div id="entry-screen">
@@ -435,8 +435,19 @@
       <div class="ds-actions">
         <button id="ds-copy" type="button">📋 Copy Prompt</button>
         <button id="ds-like" type="button">🤍 Like</button>
+        <button id="ds-edit" type="button" hidden>✏️ Edit</button>
         <button id="ds-remove" class="danger-btn" type="button" hidden>Remove</button>
       </div>
+      <div id="ds-edit-box" hidden>
+        <textarea id="ds-edit-prompt" rows="4" maxlength="2000"
+          placeholder="Prompt for this design"></textarea>
+        <div class="ds-edit-row">
+          <button id="ds-edit-img" type="button">🖼️ Replace image</button>
+          <button id="ds-edit-save" type="button">Save changes</button>
+        </div>
+        <p id="ds-edit-status" class="hint"></p>
+      </div>
+      <input type="file" id="ds-edit-file" accept="image/*" hidden>
       <button id="ds-close" class="wide" type="button">Close</button>
     </div>
   </div>
@@ -491,7 +502,7 @@
   <button id="nav-me">👤<span>Me</span></button>
 </nav>
 
-<script src="app.js?v=45"></script>
-<script src="games.js?v=45"></script>
+<script src="app.js?v=47"></script>
+<script src="games.js?v=47"></script>
 </body>
 </html>

@@ -1606,3 +1606,26 @@ button.liked { animation: heartPop .32s cubic-bezier(.22,.9,.3,1); }
 .earn-val { flex: none; font-size: 12.5px; font-weight: 800;
   color: #FFD166; }
 .earn-empty { font-size: 12px; color: #9C7E99; margin: 2px 0; }
+
+/* Phase 46: design edit box inside the detail sheet */
+#ds-edit-box { margin-top: 10px; }
+#ds-edit-prompt { width: 100%; box-sizing: border-box;
+  border: 2px solid #F3C6DA; border-radius: 14px;
+  padding: 10px 12px; font-size: 14px; color: #472A3E;
+  background: #fff; outline: none; font-family: inherit;
+  resize: vertical; }
+#ds-edit-prompt:focus { border-color: #E84393; }
+.ds-edit-row { display: flex; gap: 8px; margin-top: 8px; }
+.ds-edit-row button { flex: 1; }
+
+/* Phase 47: Minesweeper board */
+.mine-grid { display: grid; grid-template-columns: repeat(9, 1fr);
+  gap: 3px; max-width: 306px; margin: 0 auto; }
+.mine-cell { aspect-ratio: 1; border: none; border-radius: 6px;
+  background: linear-gradient(145deg, #FFD3E6, #F7A8C4);
+  box-shadow: 0 2px 5px rgba(160, 60, 110, .25);
+  font-size: 14px; font-weight: 800; color: #472A3E;
+  cursor: pointer; padding: 0; }
+.mine-cell.mine-open { background: #FDF3F8;
+  box-shadow: inset 1px 1px 3px rgba(160, 60, 110, .18); }
+.mine-cell.mine-hit { background: #FFE0E6; }
