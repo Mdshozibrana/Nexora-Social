@@ -58,6 +58,7 @@
 
 <div id="actas-banner" hidden>
   <span id="actas-text">🎭 Acting as a managed user</span>
+  <button id="actas-admin">🛡️ Admin Panel</button>
   <button id="actas-stop">Stop &amp; back to admin</button>
 </div>
 
@@ -229,6 +230,13 @@
       account. For an announcement to everyone, use Broadcast
       below: it reaches every member's bot DM and 🔔 list.</p>
     <button id="official-actas" type="button">🎭 Act as Official</button>
+    <p class="hint">Edit the official profile (shown to everyone):</p>
+    <input id="off-name" type="text" maxlength="128"
+      placeholder="Official name">
+    <textarea id="off-bio" rows="2" maxlength="1000"
+      placeholder="Official bio"></textarea>
+    <button id="off-save" type="button">Save official profile</button>
+    <p id="off-result" class="hint"></p>
   </div>
   <h3 class="admin-sec">🤖 Managed users</h3>
   <p class="hint">Accounts you create and operate yourself — they post,
@@ -246,6 +254,8 @@
   <h3 class="admin-sec">📝 Recent posts</h3>
   <div id="admin-posts"></div>
 
+  <h3 class="admin-sec">💬 Recent comments</h3>
+  <div id="admin-comments"></div>
   <h3 class="admin-sec">📣 Broadcast</h3>
   <div class="card bc-card">
     <textarea id="admin-bc-text" rows="3" placeholder="Announcement for all members (the bot sends it as a message)"></textarea>

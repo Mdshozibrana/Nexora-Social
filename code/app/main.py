@@ -1352,21 +1352,13 @@ def admin_create_fake_users(body: FakeUserIn,
 def admin_delete_fake_user(telegram_id: int,
                            admin: models.User = Depends(admin_user),
                            db: Session = Depends(get_db)):
-    """Remove a managed account. Only possible while it has no posts
-    (its content would orphan); ban it instead once it has posted."""
+    """Remove a managed account completely. Since Phase 24 (full
+    admin control) this wipes its posts and every other trace too —
+    see _wipe_member."""
     u = db.get(models.User, telegram_id)
     if u is None or not u.is_managed:
         raise HTTPException(404, "Managed user not found")
-    posts = db.query(models.Post).filter_by(user_id=telegram_id).count()
-    if posts:
-        raise HTTPException(
-            400, "This managed user has posts — ban it instead of deleting")
-    db.query(models.Follow).filter(
-        or_(models.Follow.follower_id == telegram_id,
-            models.Follow.following_id == telegram_id)).delete()
-    db.query(models.Notification).filter_by(user_id=telegram_id).delete()
-    db.query(models.UserActivity).filter_by(user_id=telegram_id).delete()
-    db.delete(u)
+    _wipe_member(db, u)
     db.commit()
     return {"deleted": telegram_id}
 
@@ -1538,6 +1530,195 @@ async def admin_verification_decide(
                                  "verification", "🛡️ Nexora Social\n" + text)
     return {"ok": True, "status": req.status,
             "is_verified": bool(applicant.is_verified) if applicant else False}
+
+
+# ---------------------------------------------------------------------------
+# Phase 24: FULL admin control (owner: "Admin Panel-এ সবকিছুর
+# পারমিশন দাও"). The Admin Panel can now adjust any member's points,
+# grant or revoke verification directly, edit any profile (including
+# the official account's name/bio), moderate comments, and delete a
+# member completely. Two safety rails stay: the official system
+# account can never be deleted or unverified, and an admin cannot
+# delete his own account (he would lock himself out for good).
+# ---------------------------------------------------------------------------
+
+def _wipe_member(db, target):
+    """Delete every trace of a member: their posts (with all likes,
+    comments, saves, shares, reports and notifications on them),
+    their engagement on other posts (denormalized counters repaired
+    first), follows, referrals, points, claims, activity and the
+    user row itself."""
+    tid = target.telegram_id
+    post_ids = [p.id for p in
+                db.query(models.Post).filter_by(user_id=tid).all()]
+    if post_ids:
+        for model in (models.Like, models.Comment, models.SavedPost,
+                      models.PostShare, models.Report,
+                      models.Notification):
+            db.query(model).filter(model.post_id.in_(post_ids)) \
+                .delete(synchronize_session=False)
+        db.query(models.Post).filter(models.Post.id.in_(post_ids)) \
+            .delete(synchronize_session=False)
+    for like in db.query(models.Like).filter_by(user_id=tid).all():
+        post = db.get(models.Post, like.post_id)
+        if post is not None and post.like_count > 0:
+            post.like_count -= 1
+    db.query(models.Like).filter_by(user_id=tid) \
+        .delete(synchronize_session=False)
+    for cm in db.query(models.Comment).filter_by(user_id=tid).all():
+        post = db.get(models.Post, cm.post_id)
+        if post is not None and post.comment_count > 0:
+            post.comment_count -= 1
+    db.query(models.Comment).filter_by(user_id=tid) \
+        .delete(synchronize_session=False)
+    db.query(models.Follow).filter(or_(
+        models.Follow.follower_id == tid,
+        models.Follow.following_id == tid)) \
+        .delete(synchronize_session=False)
+    db.query(models.Referral).filter(or_(
+        models.Referral.referrer_id == tid,
+        models.Referral.new_user_id == tid)) \
+        .delete(synchronize_session=False)
+    db.query(models.User).filter_by(referrer_id=tid) \
+        .update({"referrer_id": None}, synchronize_session=False)
+    db.query(models.Report).filter_by(reporter_id=tid) \
+        .delete(synchronize_session=False)
+    db.query(models.Notification).filter(or_(
+        models.Notification.user_id == tid,
+        models.Notification.actor_id == tid)) \
+        .delete(synchronize_session=False)
+    db.query(models.PostShare).filter(or_(
+        models.PostShare.from_user_id == tid,
+        models.PostShare.to_user_id == tid)) \
+        .delete(synchronize_session=False)
+    for model in (models.PointsLedger, models.NotificationLog,
+                  models.SavedPost, models.DailyClaim,
+                  models.UserActivity, models.AdEvent,
+                  models.VerificationRequest):
+        db.query(model).filter_by(user_id=tid) \
+            .delete(synchronize_session=False)
+    db.delete(target)
+
+
+class PointsAdjustIn(BaseModel):
+    delta: int
+
+
+class VerifyToggleIn(BaseModel):
+    verified: bool
+
+
+class ProfileEditIn(BaseModel):
+    first_name: Optional[str] = None
+    bio: Optional[str] = None
+
+
+@app.post("/admin/users/{telegram_id}/points")
+def admin_adjust_points(telegram_id: int, body: PointsAdjustIn,
+                        admin: models.User = Depends(admin_user),
+                        db: Session = Depends(get_db)):
+    u = db.get(models.User, telegram_id)
+    if u is None:
+        raise HTTPException(404, "Member not found")
+    if body.delta == 0:
+        raise HTTPException(400, "Delta must not be zero")
+    new_balance = max(0, u.points_balance + body.delta)
+    applied = new_balance - u.points_balance
+    u.points_balance = new_balance
+    if applied:
+        db.add(models.PointsLedger(user_id=telegram_id,
+                                   amount=applied,
+                                   reason="admin_adjust"))
+    db.commit()
+    return {"telegram_id": telegram_id, "points": new_balance,
+            "applied": applied}
+
+
+@app.post("/admin/users/{telegram_id}/verify")
+def admin_verify_toggle(telegram_id: int, body: VerifyToggleIn,
+                        admin: models.User = Depends(admin_user),
+                        db: Session = Depends(get_db)):
+    if telegram_id == OFFICIAL_ID:
+        raise HTTPException(
+            400, "The official account is always verified")
+    u = db.get(models.User, telegram_id)
+    if u is None:
+        raise HTTPException(404, "Member not found")
+    u.is_verified = bool(body.verified)
+    db.commit()
+    return {"telegram_id": telegram_id,
+            "is_verified": bool(u.is_verified)}
+
+
+@app.post("/admin/users/{telegram_id}/profile")
+def admin_edit_profile(telegram_id: int, body: ProfileEditIn,
+                       admin: models.User = Depends(admin_user),
+                       db: Session = Depends(get_db)):
+    u = db.get(models.User, telegram_id)
+    if u is None:
+        raise HTTPException(404, "Member not found")
+    if body.first_name is not None:
+        name = body.first_name.strip()
+        if not name:
+            raise HTTPException(400, "Name cannot be empty")
+        u.first_name = name[:128]
+    if body.bio is not None:
+        u.bio = body.bio.strip()[:1000]
+    db.commit()
+    return {"telegram_id": telegram_id, "first_name": u.first_name,
+            "bio": u.bio}
+
+
+@app.delete("/admin/users/{telegram_id}")
+def admin_delete_member(telegram_id: int,
+                        admin: models.User = Depends(admin_user),
+                        db: Session = Depends(get_db)):
+    if telegram_id == OFFICIAL_ID:
+        raise HTTPException(
+            400, "The official account cannot be deleted")
+    if telegram_id == admin.telegram_id:
+        raise HTTPException(
+            400, "You cannot delete your own admin account")
+    u = db.get(models.User, telegram_id)
+    if u is None:
+        raise HTTPException(404, "Member not found")
+    _wipe_member(db, u)
+    db.commit()
+    return {"deleted": telegram_id}
+
+
+@app.get("/admin/comments")
+def admin_comments(admin: models.User = Depends(admin_user),
+                   db: Session = Depends(get_db)):
+    rows = db.query(models.Comment) \
+        .order_by(models.Comment.id.desc()).limit(50).all()
+    out = []
+    for cm in rows:
+        author = db.get(models.User, cm.user_id)
+        out.append({
+            "id": cm.id, "post_id": cm.post_id, "text": cm.text,
+            "created_at": cm.created_at.isoformat()
+            if cm.created_at else None,
+            "author_id": cm.user_id,
+            "author_name": author.first_name if author else "?",
+            "author_photo": author.photo_file_id if author else None,
+        })
+    return {"comments": out}
+
+
+@app.post("/admin/comments/{comment_id}/remove")
+def admin_comment_remove(comment_id: int,
+                         admin: models.User = Depends(admin_user),
+                         db: Session = Depends(get_db)):
+    cm = db.get(models.Comment, comment_id)
+    if cm is None:
+        raise HTTPException(404, "Comment not found")
+    post = db.get(models.Post, cm.post_id)
+    if post is not None and post.comment_count > 0:
+        post.comment_count -= 1
+    db.delete(cm)
+    db.commit()
+    return {"ok": True, "removed": comment_id}
 
 
 @app.get("/media/{file_id}")

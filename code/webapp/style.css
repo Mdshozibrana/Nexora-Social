@@ -1012,3 +1012,16 @@ body { padding: 0; overflow: hidden; }
   font-size: 12.5px; color: var(--ink-dim); margin-bottom: 8px; }
 .composer-as button { margin-left: auto; flex: none; font-size: 12px;
   padding: 6px 10px; }
+
+/* Phase 24: full-control admin tools. The act-as banner now has two
+   buttons (Admin Panel shortcut + Stop); member-detail controls. */
+#actas-banner button { margin-left: 0; }
+#actas-banner #actas-stop { margin-left: auto; }
+#actas-banner #actas-text { flex: 1; }
+.detail-controls { margin-top: 12px; display: flex;
+  flex-direction: column; gap: 8px; }
+.detail-controls input, .detail-controls textarea { width: 100%; }
+.ctl-row { display: flex; gap: 8px; align-items: center; }
+.ctl-row input { flex: 1; }
+.ctl-row button { flex: none; }
+#view-admin .bc-card textarea { width: 100%; margin-bottom: 8px; }

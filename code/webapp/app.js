@@ -1127,6 +1127,7 @@ async function loadMe() {
   entryMode = me.is_new ? "signup" : "login";
   paintEntry();
   applyAdminVisibility();
+  maybeOpenAdmin();
   refreshBell();
   initAds();
   if (!me.photo_file_id) {
@@ -1614,6 +1615,55 @@ async function openUserDetail(telegramId) {
       bio.className = "hint"; bio.textContent = "“" + u.bio + "”";
       card.appendChild(bio);
     }
+    // Phase 24: full-control tools on every member's detail card.
+    const ctl = document.createElement("div");
+    ctl.className = "detail-controls";
+    const ctlHead = document.createElement("div");
+    ctlHead.className = "admin-sub";
+    ctlHead.textContent = "🛠️ Admin controls";
+    ctl.appendChild(ctlHead);
+    const prow = document.createElement("div");
+    prow.className = "ctl-row";
+    const pin = document.createElement("input");
+    pin.type = "number"; pin.value = "100"; pin.min = "1";
+    pin.placeholder = "Points amount";
+    const pAdd = document.createElement("button");
+    pAdd.textContent = "⭐ Add";
+    pAdd.onclick = () =>
+      adjustPoints(u.telegram_id, Math.abs(parseInt(pin.value || "0", 10)));
+    const pSub = document.createElement("button");
+    pSub.textContent = "⭐ Deduct";
+    pSub.onclick = () =>
+      adjustPoints(u.telegram_id, -Math.abs(parseInt(pin.value || "0", 10)));
+    prow.append(pin, pAdd, pSub);
+    ctl.appendChild(prow);
+    if (u.telegram_id !== 1) {
+      const vBtn = document.createElement("button");
+      vBtn.className = "wide";
+      vBtn.textContent = u.is_verified
+        ? "Remove blue tick ✓" : "Grant blue tick ✓";
+      vBtn.onclick = () => toggleVerify(u.telegram_id, !u.is_verified);
+      ctl.appendChild(vBtn);
+    }
+    const peName = document.createElement("input");
+    peName.id = "pe-name"; peName.type = "text"; peName.maxLength = 128;
+    peName.value = u.first_name; peName.placeholder = "Name";
+    const peBio = document.createElement("textarea");
+    peBio.id = "pe-bio"; peBio.rows = 2; peBio.maxLength = 1000;
+    peBio.value = u.bio || ""; peBio.placeholder = "Bio";
+    const peSave = document.createElement("button");
+    peSave.className = "wide";
+    peSave.textContent = "Save name & bio";
+    peSave.onclick = () => saveMemberProfile(u.telegram_id);
+    ctl.append(peName, peBio, peSave);
+    if (u.telegram_id !== 1 && me && u.telegram_id !== me.telegram_id) {
+      const del = document.createElement("button");
+      del.className = "danger-btn wide";
+      del.textContent = "🗑️ Delete this member completely";
+      del.onclick = () => deleteMember(u.telegram_id, u.first_name);
+      ctl.appendChild(del);
+    }
+    card.appendChild(ctl);
     box.appendChild(card);
   } catch (e) { box.innerHTML = '<p class="hint">Could not load details.</p>'; }
 }
@@ -1638,6 +1688,8 @@ function loadAdmin() {
   loadAdminUsers($("admin-user-q").value.trim());
   loadVerifications();
   loadManaged();
+  loadAdminComments();
+  prefillOfficial();
   loadAdminPosts();
 }
 
@@ -1766,14 +1818,14 @@ async function loadManaged() {
       del.className = "danger-btn";
       del.textContent = "Delete";
       del.onclick = async () => {
-        if (!confirm("Delete managed user " + u.first_name + "?")) return;
+        if (!confirm("Delete managed user " + u.first_name +
+            " completely, including all their posts?")) return;
         try {
           await api("/admin/fake-users/" + u.telegram_id,
                     { method: "DELETE" });
           loadManaged(); loadDashboard();
         } catch (e) {
-          alert("Could not delete — a managed user with posts can be " +
-                "banned instead.");
+          alert("Could not delete this managed user.");
         }
       };
       row.append(info, act, del);
@@ -1800,6 +1852,42 @@ function stopActAs() {
 // manages the platform's own page by acting as it.
 $("official-actas").onclick = () =>
   startActAs(1, "Nexora Social (Official)");
+
+// Phase 24: the act-as banner's Admin Panel button — one tap from
+// any acting session back to the owner's own ID with the Admin
+// Panel open (the flag survives the act-as reload).
+$("actas-admin").onclick = () => {
+  sessionStorage.setItem("nx_open_admin", "1");
+  stopActAs();
+};
+function maybeOpenAdmin() {
+  if (sessionStorage.getItem("nx_open_admin")) {
+    sessionStorage.removeItem("nx_open_admin");
+    if (me && me.is_admin) showView("admin");
+  }
+}
+
+// Phase 24: edit the official account's public name/bio right from
+// its Admin Panel section (photo is changed by acting as it).
+async function prefillOfficial() {
+  try {
+    const off = await api("/users/1");
+    $("off-name").value = off.first_name || "";
+    $("off-bio").value = off.bio || "";
+  } catch (e) { /* prefill is best-effort */ }
+}
+$("off-save").onclick = async () => {
+  try {
+    const r = await api("/admin/users/1/profile", { method: "POST",
+      body: JSON.stringify({ first_name: $("off-name").value,
+                             bio: $("off-bio").value }) });
+    $("off-result").textContent = "Saved — the official profile now " +
+      "shows as “" + r.first_name + "”.";
+  } catch (e) {
+    $("off-result").textContent = "Could not save (the name cannot " +
+      "be empty).";
+  }
+};
 
 // Phase 23: the composer shows who you are posting as. Admins get a
 // one-tap switch to the Official account; while acting as anyone,
@@ -1898,6 +1986,98 @@ async function decideVerification(id, approve) {
                       : "Application rejected.");
     loadVerifications();
   } catch (e) { setStatus("Could not decide that application."); }
+}
+
+// ------------------------------------------------ Phase 24: full control --
+// Comment moderation plus the member-detail power tools (points,
+// verification, profile edit, full delete). Every action re-checks
+// admin rights on the server; these buttons are only a front end.
+async function loadAdminComments() {
+  const box = $("admin-comments");
+  box.innerHTML = "";
+  try {
+    const r = await api("/admin/comments");
+    if (!r.comments.length) {
+      box.innerHTML = '<p class="hint">No comments yet.</p>';
+      return;
+    }
+    r.comments.forEach(cm => {
+      const row = document.createElement("div");
+      row.className = "card admin-row";
+      row.appendChild(avatarEl(cm.author_name, cm.author_id,
+                               false, cm.author_photo));
+      const info = document.createElement("div");
+      info.className = "admin-info";
+      const t = document.createElement("div");
+      t.className = "admin-title";
+      t.textContent = cm.text.length > 90
+        ? cm.text.slice(0, 90) + "…" : cm.text;
+      const s = document.createElement("div");
+      s.className = "admin-sub";
+      s.textContent = cm.author_name + " · post #" + cm.post_id +
+        " · " + relTime(cm.created_at);
+      info.append(t, s);
+      const rm = document.createElement("button");
+      rm.className = "danger-btn";
+      rm.textContent = "Remove";
+      rm.onclick = async () => {
+        if (!confirm("Remove this comment?")) return;
+        try {
+          await api("/admin/comments/" + cm.id + "/remove",
+                    { method: "POST" });
+          loadAdminComments();
+        } catch (e) { setStatus("Could not remove the comment."); }
+      };
+      row.append(info, rm);
+      box.appendChild(row);
+    });
+  } catch (e) { box.textContent = "Could not load comments."; }
+}
+
+async function adjustPoints(tid, delta) {
+  if (!delta) { setStatus("Enter a points amount first."); return; }
+  try {
+    const r = await api("/admin/users/" + tid + "/points",
+      { method: "POST", body: JSON.stringify({ delta }) });
+    setStatus("Points updated — balance is now " + r.points + " ⭐.");
+    openUserDetail(tid);
+  } catch (e) { setStatus("Could not adjust points."); }
+}
+
+async function toggleVerify(tid, verified) {
+  try {
+    await api("/admin/users/" + tid + "/verify",
+      { method: "POST", body: JSON.stringify({ verified }) });
+    setStatus(verified ? "Blue tick granted ✓." : "Blue tick removed.");
+    openUserDetail(tid);
+    loadAdminUsers($("admin-user-q").value.trim());
+  } catch (e) { setStatus("Could not change verification."); }
+}
+
+async function saveMemberProfile(tid) {
+  try {
+    await api("/admin/users/" + tid + "/profile",
+      { method: "POST",
+        body: JSON.stringify({ first_name: $("pe-name").value,
+                               bio: $("pe-bio").value }) });
+    setStatus("Profile saved.");
+    openUserDetail(tid);
+    loadAdminUsers($("admin-user-q").value.trim());
+  } catch (e) { setStatus("Could not save (name cannot be empty)."); }
+}
+
+async function deleteMember(tid, name) {
+  if (!confirm("DELETE " + name + " completely?\n\nTheir posts, " +
+      "comments, likes, points and the account itself will be gone. " +
+      "This cannot be undone.")) return;
+  try {
+    await api("/admin/users/" + tid, { method: "DELETE" });
+    setStatus(name + " has been deleted completely.");
+    const box = $("admin-user-detail");
+    box.hidden = true; box.innerHTML = "";
+    loadAdminUsers($("admin-user-q").value.trim());
+    loadDashboard(); loadAdminStats();
+  } catch (e) { setStatus("Could not delete that member."); }
 }
 
 async function loadAdminPosts() {

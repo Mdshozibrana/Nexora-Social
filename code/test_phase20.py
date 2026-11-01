@@ -177,12 +177,17 @@ with TestClient(app) as c:
     assert r.json()["managed_members"] == 2, r.json()
 
     # --- managed deletion rules ---------------------------------------------
+    # Phase 24 supersedes the original rule (owner ordered full admin
+    # control): a managed user can now be deleted completely, posts
+    # and all — the old "has posts -> ban instead" 400 is gone.
     r = c.delete(f"/admin/fake-users/{fid1}", headers=OWNER)
-    assert r.status_code == 400, r.status_code  # has a post -> ban instead
+    assert r.status_code == 200, r.status_code
+    r = c.get("/admin/users?managed=1", headers=OWNER)
+    assert len(r.json()["users"]) == 1
     r = c.delete(f"/admin/fake-users/{fid2}", headers=OWNER)
     assert r.status_code == 200, r.text
     r = c.get("/admin/users?managed=1", headers=OWNER)
-    assert len(r.json()["users"]) == 1
+    assert len(r.json()["users"]) == 0
     r = c.delete("/admin/fake-users/601", headers=OWNER)
     assert r.status_code == 404, r.status_code  # real members untouchable
     print("managed deletion rules OK")
