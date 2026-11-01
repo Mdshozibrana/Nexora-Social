@@ -245,3 +245,19 @@ class AdminAuditLog(Base):
     target_id = Column(BigInteger, nullable=True)
     detail = Column(String(512), default="")
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
+class UserBlock(Base):
+    """Second-pass audit R5 (security §5/§6): a member blocking
+    another member. The effect is mutual invisibility — neither
+    side sees the other's posts or profile (the blocker keeps a
+    /me/blocked list to undo it), follows are removed both ways,
+    and comments/likes/follows/shares between the two are refused.
+    Muting is the same relation read from the visibility side."""
+    __tablename__ = "user_blocks"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    blocker_id = Column(BigInteger, ForeignKey("users.telegram_id"),
+                        index=True)
+    blocked_id = Column(BigInteger, ForeignKey("users.telegram_id"))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    __table_args__ = (UniqueConstraint("blocker_id", "blocked_id"),)

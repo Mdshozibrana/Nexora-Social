@@ -101,15 +101,24 @@ Status key: ✅ Implemented & tested · 🟡 Partially implemented ·
   recovery = admin unban; sessions revocable (§1).
 - ✅ Self-service **account deletion** (typed confirmation, full
   wipe — the same routine as admin delete). Tested: test_phase28.
-- ✅ Report + moderation workflow; block/mute ❌ not implemented —
-  reports are the current abuse channel (noted as backlog).
+- ✅ Report + moderation workflow; **block implemented**
+  (second-pass R5): blocking a member hides both sides' posts and
+  profiles from each other, removes follows both ways, and refuses
+  new follows/comments/likes/shares between the pair; the blocker
+  manages it from the profile or `GET /me/blocked`. Mute is the
+  same relation's visibility effect. Tested: test_phase29.
 - ✅ Security events logged (§13) without private content.
 - 🟡 Account enumeration: profiles are public by design in a
   social app; existence of a Telegram id is not treated as secret.
 
 ## 6. Spam & abuse protection
 - ✅ Per-action rate limits (§3) cover posts, comments, likes,
-  follows, reports, uploads, shares.
+  follows, reports, uploads, shares — and, since the second-pass
+  audit, the analytics reporters too (`/ads/shown` 60/h on top of
+  its 5-second dedupe, `/me/heartbeat` 240/h), and every list
+  endpoint is response-capped (comments return the latest 500,
+  referrals the newest 200 with a true total). Tested:
+  test_phase29.
 - ✅ Duplicate protection: upload dedupe, unique constraints on
   likes/follows/saves/claims, referral pays only after the new
   member's first post, likes earn no points (anti-farming).
@@ -255,7 +264,17 @@ Status key: ✅ Implemented & tested · 🟡 Partially implemented ·
    (§12) and removes free-tier limits; then test a restore.
 2. Enable Telegram two-step verification + Render/GitHub 2FA
    (admin MFA equivalent, §10/§14).
-3. Block/mute between members (§5) and a public privacy page (§11).
+3. A public privacy page (§11).
 4. External pen test before any money/withdrawal features (§15).
 5. If the service ever scales beyond one instance: move rate
    limiting and upload dedupe to a shared store (§3).
+
+## Second-pass addendum (1 Nov 2026)
+A read-only re-audit of the post-Phase-28 code (owner's request)
+confirmed every Phase 28 control in place and fixed five more
+items (R1–R5, detailed in SECURITY_AUDIT.md): comment/referral
+list caps, analytics rate budgets, in-memory store pruning, and
+member blocking (§5/§6). Evidence: test_phase29 + the full
+27-suite run, all green; live checks after deploy repeated the
+Phase 28 probes (headers, /media 401, /feed 401) plus the new
+client block wiring in the served app.js.

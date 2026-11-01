@@ -903,6 +903,30 @@ async function openProfile(userId) {
         } catch (e) { setStatus("Could not update follow."); }
       };
       box.appendChild(fBtn);
+      // R5 (security §5): Block/Unblock — the member's self-help
+      // control. While blocked, the follow button hides (the server
+      // refuses follows between blocked pairs anyway).
+      const bBtn = document.createElement("button");
+      bBtn.className = "wide block-btn";
+      const paintBlock = () => {
+        bBtn.textContent = u.blocked_by_me
+          ? "🚫 Blocked — tap to unblock" : "🚫 Block this member";
+        fBtn.hidden = !!u.blocked_by_me;
+      };
+      paintBlock();
+      bBtn.onclick = async () => {
+        try {
+          const r = await api("/users/" + userId + "/block",
+                              { method: "POST" });
+          u.blocked_by_me = r.blocked;
+          if (r.blocked) { u.following = false; paint(); }
+          paintBlock();
+          setStatus(r.blocked
+            ? "Member blocked — you will no longer see each other's posts."
+            : "Member unblocked.");
+        } catch (e) { setStatus("Could not update block."); }
+      };
+      box.appendChild(bBtn);
     }
 
     if (me && userId === me.telegram_id) {

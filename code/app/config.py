@@ -51,6 +51,10 @@ RATE_LIMITS = {
     "design_like": (600, 3600),
     "search": (240, 3600),
     "auth_ip": (120, 60),
+    # Second-pass audit (R3): analytics reporters get budgets too —
+    # the real client beats ~every 30s and sees a handful of ads.
+    "heartbeat": (240, 3600),
+    "ad_shown": (60, 3600),
 }
 
 # Points economy (PRD section 5). PLACEHOLDER defaults — these are product

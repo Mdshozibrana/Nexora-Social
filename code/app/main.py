@@ -355,6 +355,9 @@ async def auth(body: AuthIn, request: Request,
 def feed(tab: str = "explore", type: str = "", cursor: int = 0,
          user: models.User = Depends(current_user), db: Session = Depends(get_db)):
     q = db.query(models.Post).filter_by(is_deleted=False)
+    hidden = _block_related_ids(db, user.telegram_id)
+    if hidden:
+        q = q.filter(~models.Post.user_id.in_(hidden))
     if type in ("photo", "video", "text"):
         q = q.filter_by(type=type)
     if tab == "following":
@@ -419,6 +422,26 @@ def get_live_post(db, post_id):
     if p is None or p.is_deleted:
         raise HTTPException(404, "Post not found")
     return p
+
+
+def _block_related_ids(db, user_id):
+    """Everyone in a block relation with user_id, in either
+    direction (second-pass audit R5, security §5/§6)."""
+    rows = db.query(models.UserBlock).filter(or_(
+        models.UserBlock.blocker_id == user_id,
+        models.UserBlock.blocked_id == user_id)).all()
+    out = set()
+    for r in rows:
+        out.add(r.blocker_id)
+        out.add(r.blocked_id)
+    out.discard(user_id)
+    return out
+
+
+def _blocked_by(db, blocker_id, user_id):
+    """True when blocker_id has blocked user_id."""
+    return db.query(models.UserBlock).filter_by(
+        blocker_id=blocker_id, blocked_id=user_id).first() is not None
 
 
 class PostIn(BaseModel):
@@ -612,6 +635,14 @@ def _dedupe_get(user_id, upload_id):
 
 def _dedupe_put(user_id, upload_id, status_code, body):
     if upload_id:
+        # Second-pass audit (R4): expired entries used to keep their
+        # keys forever in this long-lived process — sweep them when
+        # the store grows past a few hundred entries.
+        if len(_upload_results) > 500:
+            now = time.time()
+            for k in [k for k, v in _upload_results.items()
+                      if now - v[0] >= _UPLOAD_TTL]:
+                _upload_results.pop(k, None)
         _upload_results[(user_id, upload_id)] = (
             time.time(), status_code, body)
 
@@ -662,6 +693,10 @@ async def toggle_like(post_id: int, user: models.User = Depends(current_user),
                       db: Session = Depends(get_db)):
     _enforce_rate("like", f"u{user.telegram_id}")
     p = get_live_post(db, post_id)
+    if p.user_id != user.telegram_id and (
+            _blocked_by(db, p.user_id, user.telegram_id)
+            or _blocked_by(db, user.telegram_id, p.user_id)):
+        raise HTTPException(403, "This member is not available")
     existing = db.query(models.Like).filter_by(
         post_id=p.id, user_id=user.telegram_id).first()
     if existing:
@@ -746,6 +781,9 @@ async def share_post(post_id: int, body: ShareIn,
     target = db.get(models.User, body.to_user_id)
     if target is None:
         raise HTTPException(404, "User not found")
+    if _blocked_by(db, body.to_user_id, user.telegram_id) \
+            or _blocked_by(db, user.telegram_id, body.to_user_id):
+        raise HTTPException(403, "This member is not available")
     db.add(models.PostShare(post_id=p.id, from_user_id=user.telegram_id,
                             to_user_id=body.to_user_id))
     db.commit()
@@ -803,8 +841,12 @@ def comment_dict(db, cm):
 def list_comments(post_id: int, user: models.User = Depends(current_user),
                   db: Session = Depends(get_db)):
     p = get_live_post(db, post_id)
+    # Second-pass audit (R1): this was the one unbounded list in the
+    # API — a post with tens of thousands of comments returned all
+    # of them at once. Now the LATEST 500, in reading order.
     rows = db.query(models.Comment).filter_by(post_id=p.id) \
-        .order_by(models.Comment.id.asc()).all()
+        .order_by(models.Comment.id.desc()).limit(500).all()
+    rows.reverse()
     return {"comments": [comment_dict(db, cm) for cm in rows]}
 
 
@@ -814,6 +856,10 @@ async def add_comment(post_id: int, body: CommentIn,
                       db: Session = Depends(get_db)):
     _enforce_rate("comment", f"u{user.telegram_id}")
     p = get_live_post(db, post_id)
+    if p.user_id != user.telegram_id and (
+            _blocked_by(db, p.user_id, user.telegram_id)
+            or _blocked_by(db, user.telegram_id, p.user_id)):
+        raise HTTPException(403, "This member is not available")
     text = body.text.strip()
     if not text:
         raise HTTPException(400, "Comment text is empty")
@@ -841,6 +887,10 @@ def public_profile(telegram_id: int, user: models.User = Depends(current_user),
     target = db.get(models.User, telegram_id)
     if target is None:
         raise HTTPException(404, "User not found")
+    # R5: a member who blocked you cannot be viewed by you — the
+    # profile simply does not exist from your side.
+    if _blocked_by(db, telegram_id, user.telegram_id):
+        raise HTTPException(404, "User not found")
     followers = db.query(models.Follow).filter_by(following_id=telegram_id).count()
     if telegram_id == OFFICIAL_ID:
         followers += OFFICIAL_FOLLOWER_BASE  # official account starts at 10k
@@ -863,6 +913,9 @@ def public_profile(telegram_id: int, user: models.User = Depends(current_user),
         "following_count": following_count,
         # "following" is the flag: does the current user follow this profile.
         "following": is_following,
+        # R5: whether the viewer has blocked this member (the
+        # profile offers Block/Unblock from this flag).
+        "blocked_by_me": _blocked_by(db, user.telegram_id, telegram_id),
     }
 
 
@@ -874,6 +927,9 @@ async def toggle_follow(telegram_id: int, user: models.User = Depends(current_us
         raise HTTPException(400, "You cannot follow yourself")
     if db.get(models.User, telegram_id) is None:
         raise HTTPException(404, "User not found")
+    if _blocked_by(db, telegram_id, user.telegram_id) \
+            or _blocked_by(db, user.telegram_id, telegram_id):
+        raise HTTPException(403, "This member is not available")
     existing = db.query(models.Follow).filter_by(
         follower_id=user.telegram_id, following_id=telegram_id).first()
     if telegram_id == OFFICIAL_ID and existing:
@@ -897,6 +953,61 @@ async def toggle_follow(telegram_id: int, user: models.User = Depends(current_us
         notify.record(db, telegram_id, "follow",
                       actor_id=user.telegram_id)
     return {"following": now_following, "followers": followers}
+
+
+# ---------------------------------------------------------------------------
+# Blocking (second-pass audit R5, security §5/§6): a member's
+# self-help control against harassment. Blocking hides both sides'
+# content from each other, removes follows in both directions, and
+# refuses new follows/comments/likes/shares between the two.
+# ---------------------------------------------------------------------------
+
+@app.post("/users/{telegram_id}/block")
+def toggle_block(telegram_id: int,
+                 user: models.User = Depends(current_user),
+                 db: Session = Depends(get_db)):
+    if telegram_id == user.telegram_id:
+        raise HTTPException(400, "You cannot block yourself")
+    if telegram_id == OFFICIAL_ID:
+        raise HTTPException(
+            400, "The official Nexora Social account cannot be blocked")
+    if db.get(models.User, telegram_id) is None:
+        raise HTTPException(404, "User not found")
+    existing = db.query(models.UserBlock).filter_by(
+        blocker_id=user.telegram_id, blocked_id=telegram_id).first()
+    if existing:
+        db.delete(existing)
+        db.commit()
+        return {"blocked": False}
+    db.add(models.UserBlock(blocker_id=user.telegram_id,
+                            blocked_id=telegram_id))
+    # A block ends the follow relationship in both directions.
+    db.query(models.Follow).filter(or_(
+        (models.Follow.follower_id == user.telegram_id)
+        & (models.Follow.following_id == telegram_id),
+        (models.Follow.follower_id == telegram_id)
+        & (models.Follow.following_id == user.telegram_id),
+    )).delete(synchronize_session=False)
+    db.commit()
+    return {"blocked": True}
+
+
+@app.get("/me/blocked")
+def my_blocked(user: models.User = Depends(current_user),
+               db: Session = Depends(get_db)):
+    rows = db.query(models.UserBlock).filter_by(
+        blocker_id=user.telegram_id) \
+        .order_by(models.UserBlock.id.desc()).limit(200).all()
+    out = []
+    for r in rows:
+        bu = db.get(models.User, r.blocked_id)
+        out.append({
+            "telegram_id": r.blocked_id,
+            "first_name": bu.first_name if bu else "",
+            "username": bu.username if bu else None,
+            "photo_file_id": bu.photo_file_id if bu else None,
+        })
+    return {"blocked": out}
 
 
 # ---------------------------------------------------------------------------
@@ -938,8 +1049,14 @@ async def upload_my_photo(file: UploadFile = File(...),
 @app.get("/me/referrals")
 def my_referrals(user: models.User = Depends(current_user),
                  db: Session = Depends(get_db)):
-    rows = db.query(models.Referral).filter_by(referrer_id=user.telegram_id) \
-        .order_by(models.Referral.id.asc()).all()
+    # Second-pass audit (R2): cap the page at the newest 200 and
+    # report the true total from a count, not from the page length.
+    total = db.query(models.Referral).filter_by(
+        referrer_id=user.telegram_id).count()
+    rows = db.query(models.Referral).filter_by(
+        referrer_id=user.telegram_id) \
+        .order_by(models.Referral.id.desc()).limit(200).all()
+    rows.reverse()
     out = []
     for r in rows:
         nu = db.get(models.User, r.new_user_id)
@@ -950,7 +1067,7 @@ def my_referrals(user: models.User = Depends(current_user),
             "qualified": bool(r.qualified),
             "created_at": r.created_at.isoformat() if r.created_at else None,
         })
-    return {"referrals": out, "total": len(out)}
+    return {"referrals": out, "total": total}
 
 
 @app.get("/me/points")
@@ -974,13 +1091,16 @@ def search(q: str = "", user: models.User = Depends(current_user),
            db: Session = Depends(get_db)):
     _enforce_rate("search", f"u{user.telegram_id}")
     q = q.strip()[:100]
+    hidden = _block_related_ids(db, user.telegram_id)
     if q.startswith("#"):
         tag = q[1:].lower()
         if not tag:
             return {"users": [], "posts": []}
         rows = db.query(models.Post).filter_by(is_deleted=False) \
             .order_by(models.Post.id.desc()).limit(100).all()
-        matched = [p for p in rows if tag in (p.hashtags or "").split()][:20]
+        matched = [p for p in rows
+                   if tag in (p.hashtags or "").split()
+                   and p.user_id not in hidden][:20]
         liked = liked_ids(db, user.telegram_id, matched)
         saved = saved_ids(db, user.telegram_id, matched)
         return {"users": [], "posts": [post_dict(db, p, liked=p.id in liked,
@@ -992,6 +1112,8 @@ def search(q: str = "", user: models.User = Depends(current_user),
     users = db.query(models.User).filter(
         (models.User.first_name.ilike(like, escape="\\"))
         | (models.User.username.ilike(like, escape="\\"))).limit(20).all()
+    if hidden:
+        users = [u for u in users if u.telegram_id not in hidden]
     return {
         "users": [{
             "telegram_id": u.telegram_id, "first_name": u.first_name,
@@ -1030,7 +1152,8 @@ def create_report(body: ReportIn, user: models.User = Depends(current_user),
 def user_posts(telegram_id: int, cursor: int = 0,
                user: models.User = Depends(current_user),
                db: Session = Depends(get_db)):
-    if db.get(models.User, telegram_id) is None:
+    if db.get(models.User, telegram_id) is None \
+            or _blocked_by(db, telegram_id, user.telegram_id):
         raise HTTPException(404, "User not found")
     q = db.query(models.Post).filter_by(user_id=telegram_id, is_deleted=False)
     if cursor:
@@ -1169,8 +1292,12 @@ def my_monetization(user: models.User = Depends(current_user),
         user_id=user.telegram_id, is_deleted=False).count()
     age_days = (datetime.utcnow() - user.created_at).days \
         if user.created_at else 0
-    earned = sum(e.amount for e in db.query(models.PointsLedger).filter_by(
-        user_id=user.telegram_id).all() if e.amount > 0)
+    # SQL aggregate instead of loading the member's whole ledger
+    # into Python to sum it (second-pass audit, perf hygiene).
+    earned = db.query(func.coalesce(func.sum(
+        models.PointsLedger.amount), 0)).filter(
+        models.PointsLedger.user_id == user.telegram_id,
+        models.PointsLedger.amount > 0).scalar()
     checks = [
         {"key": "followers", "label": "Followers",
          "current": followers, "required": MONETIZATION["followers"]},
@@ -1254,6 +1381,7 @@ def heartbeat(user: models.User = Depends(current_user),
     seconds since the previous beat (capped at 120s, so a forgotten
     background tab cannot inflate the numbers); a beat after a longer
     gap starts a new session instead of crediting the gap."""
+    _enforce_rate("heartbeat", f"u{user.telegram_id}")
     now = datetime.utcnow()
     user.last_seen_at = now
     day = now.date().isoformat()
@@ -1282,6 +1410,7 @@ def ad_shown(user: models.User = Depends(current_user),
     """The Mini App reports each interstitial that actually finished
     showing. Reports closer than 5s together count once (SDK retries
     and double-fires must not inflate the owner's ad figures)."""
+    _enforce_rate("ad_shown", f"u{user.telegram_id}")
     now = datetime.utcnow()
     last = db.query(models.AdEvent).filter_by(
         user_id=user.telegram_id) \
@@ -1857,6 +1986,10 @@ def _wipe_member(db, target):
     db.query(models.Follow).filter(or_(
         models.Follow.follower_id == tid,
         models.Follow.following_id == tid)) \
+        .delete(synchronize_session=False)
+    db.query(models.UserBlock).filter(or_(
+        models.UserBlock.blocker_id == tid,
+        models.UserBlock.blocked_id == tid)) \
         .delete(synchronize_session=False)
     db.query(models.Referral).filter(or_(
         models.Referral.referrer_id == tid,

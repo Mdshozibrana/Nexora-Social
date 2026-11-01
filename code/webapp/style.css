@@ -1070,3 +1070,7 @@ body { padding: 0; overflow: hidden; }
 .composer-status { font-size: 13px; font-weight: 600;
   color: #B03060; padding: 6px 4px 0; min-height: 18px; }
 .composer-status:empty { padding: 0; min-height: 0; }
+
+/* R5: the profile Block/Unblock button — quiet until it matters. */
+button.block-btn { background: transparent; color: #B0416E;
+  border: 2px solid #F3C6D8; box-shadow: none; font-weight: 600; }

@@ -20,6 +20,13 @@ def hit(bucket: str, key: str, limit: int, window: float) -> bool:
     now = time.time()
     cutoff = now - window
     with _lock:
+        # Second-pass audit (R4): keys of idle buckets used to live
+        # forever in this long-lived process — drop emptied buckets
+        # opportunistically once the map grows large.
+        if len(_buckets) > 5000:
+            for k in [k for k, dq in _buckets.items()
+                      if not dq or dq[-1] < now - 86400]:
+                _buckets.pop(k, None)
         dq = _buckets.get((bucket, key))
         if dq is None:
             dq = _buckets[(bucket, key)] = deque()

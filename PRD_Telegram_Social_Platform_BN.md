@@ -298,3 +298,16 @@ LOGOUT (owner: লগআউটের পর পুরোপুরি নিজ�
 - **Medium যা করা হয়েছে:** M1 moderator tier (MODERATOR_IDS env — শুধু reports/comments/posts moderation + ban; points/verify/delete/broadcast নয়), M3 search LIKE-escape, M4 MAINTENANCE_MODE env (API 503, /health চালু), M5 GET /me/export + POST /me/delete-account (DELETE লিখে নিশ্চিত করতে হয়; act-as অবস্থায় নিষিদ্ধ), M6 security event logging (ব্যর্থ লগইন, admin denial, rate-limit hit — initData/token/কনটেন্ট কখনো লগ হয় না), L4 requirements.txt পিন করা।
 - **যা হয়নি (সৎ হিসাব, SECURITY.md-তে বিস্তারিত):** DB backup — ফ্রি Render প্ল্যানে নেই (৩০ নভেম্বরের পেইড আপগ্রেডেই সমাধান); admin MFA — Telegram অ্যাকাউন্টের 2-step verification-ই এর বিকল্প (মালিকের কাজ); block/mute, malware scan, বাইরের pen-test — ব্যাকলগ। পাসওয়ার্ড হ্যাশিং/CSRF টোকেন — এই আর্কিটেকচারে প্রযোজ্য নয় (পাসওয়ার্ডই নেই; auth কুকি নয়, হেডার)।
 - **টেস্ট:** test_phase28 (নতুন সিকিউরিটি স্যুট) + আগের ২৫টি — মোট ২৬টি স্যুট সবুজ। Phase 16-এর দুটি ফিক্সচার নতুন সিগনেচার-গেট অনুযায়ী হালনাগাদ।
+
+---
+
+## সংযোজন — দ্বিতীয় দফা অডিট (১ নভেম্বর ২০২৬): R1–R5
+
+মালিকের নির্দেশে বর্তমান (Phase 28-পরবর্তী) কোডের read-only পূর্ণাঙ্গ পুনঃঅডিট — Phase 28-এর সব নিয়ন্ত্রণ কোডে উপস্থিত নিশ্চিত করা হয়েছে; নতুন পাওয়া ৫টি সমস্যা ঠিক করা হয়েছে (বিস্তারিত `SECURITY_AUDIT.md`-র second-pass অংশে, অবস্থা `SECURITY.md`-তে):
+
+- **R1:** কমেন্ট লিস্ট ছিল একমাত্র unbounded লিস্ট — এখন সর্বশেষ ৫০০টি (reading order-এ)।
+- **R2:** রেফারেল লিস্টে ক্যাপ (নতুন ২০০) + count থেকে আসল total।
+- **R3:** /ads/shown (60/ঘণ্টা, 5s dedupe-এর ওপরে) ও /me/heartbeat (240/ঘণ্টা)-এ রেট বাজেট।
+- **R4:** upload-dedupe dict ও rate-limiter bucket-এর মেয়াদোত্তীর্ণ key pruning — দীর্ঘজীবী প্রসেসে মেমরি জমবে না।
+- **R5 — Block (§5/§6):** user_blocks টেবিল; POST /users/{id}/block (toggle), GET /me/blocked; ব্লক করলে দুই পক্ষের পোস্ট/প্রোফাইল পরস্পরের কাছে অদৃশ্য, দুই দিকের follow মুছে যায়, follow/comment/like/share 403; official অ্যাকাউন্ট ব্লক করা যায় না; প্রোফাইল পেজে Block/Unblock বাটন (blocked_by_me flag)।
+- টেস্ট: test_phase29 নতুন; মোট ২৭টি স্যুট সবুজ। বাকি থাকল শুধু প্ল্যাটফর্ম/মালিক-পক্ষের বিষয়: DB backup (ফ্রি প্ল্যানে নেই), Telegram 2-step (admin MFA-র বিকল্প), বাইরের pen test।

@@ -115,3 +115,44 @@ status table lives in SECURITY.md.
   auth only); CSRF tokens (auth is a custom header, no cookies, so
   classic CSRF does not apply); SQL/NoSQL injection beyond the ORM
   parameterization already in place.
+
+---
+
+# Second-pass re-audit (1 Nov 2026, post-Phase-28 code)
+
+Read-only re-audit of the CURRENT application against the same
+15-section checklist (owner: "নতুন কোড যোগ না করে বর্তমান অ্যাপের
+সম্পূর্ণ Security Audit কর, তারপর সমস্যাগুলো ঠিক করো"). Phase 28's
+controls were re-verified in the code as it now stands (freshness,
+rate limiting, capped upload read, signature check, headers, media
+token, audit log, revocation, caps) — all present. The full `.all()`
+sweep and endpoint-by-endpoint limit check found:
+
+- **R1 (Medium) — comment list is unbounded.** `GET
+  /posts/{id}/comments` returns EVERY comment on a post in one
+  response. A post with tens of thousands of comments is a
+  memory/bandwidth denial-of-service vector. (§3 request/response
+  limits.) Every other list endpoint was verified capped.
+- **R2 (Low) — referral list is unbounded**, same pattern, and its
+  `total` is derived from the returned rows.
+- **R3 (Low) — `/ads/shown` and `/me/heartbeat` have no rate
+  budget.** Ad reports have only the 5-second dedupe, so one
+  account can mint ~720 counted "impressions" an hour into the
+  owner's dashboard figures. Heartbeat calls are unbounded DB
+  writes (its time credit itself cannot exceed real elapsed time).
+- **R4 (Low) — in-memory stores grow without bound.** The upload
+  dedupe dict and the rate-limiter buckets keep keys forever in a
+  long-lived process (entries expire logically, keys never leave).
+- **R5 (Medium, functional) — block/mute does not exist.**
+  Checklist §5 ("Provide block, mute and report functionality")
+  and §6: only the report leg exists. A member harassed by another
+  has no self-help control.
+- **Confirmed already-safe (no fix needed):** geoip validates IPs
+  with `ipaddress` + `is_global` before any URL is built (no SSRF
+  surface); verification-apply has a one-pending guard; `/me/export`
+  and `_wipe_member` are complete-by-design; dashboard queries are
+  time-windowed.
+- **Unchanged platform items (cannot be fixed in code):** database
+  backups (free Render plan), admin MFA (owner's Telegram 2-step),
+  external penetration test. Each has its exact unblock step in
+  SECURITY.md §12/§10/§15.
