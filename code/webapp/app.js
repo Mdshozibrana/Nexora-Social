@@ -1089,6 +1089,9 @@ async function openProfile(userId) {
       nameIn.maxLength = 128;
       nameIn.placeholder = "Your name";
       nameIn.value = u.first_name || "";
+      // Phase 42: the name changes once every 60 days — while
+      // the lock runs, the field is disabled and says why.
+      if (u.name_locked_days > 0) nameIn.disabled = true;
       const bioIn = document.createElement("textarea");
       bioIn.maxLength = 500;
       bioIn.rows = 3;
@@ -1108,6 +1111,15 @@ async function openProfile(userId) {
         } catch (e) { setStatus("Could not save the profile."); }
       };
       form.append(nameIn, bioIn, saveBtn);
+      if (u.name_locked_days > 0) {
+        const note = document.createElement("div");
+        note.className = "gb-foot-sub";
+        note.textContent = "🔒 Name can be changed once every"
+          + " 60 days — available again in " + u.name_locked_days
+          + " day" + (u.name_locked_days === 1 ? "" : "s")
+          + ". Your bio can still be edited anytime.";
+        form.insertBefore(note, bioIn);
+      }
       eBtn.onclick = () => { form.hidden = !form.hidden; };
       box.append(eBtn, form);
     }
@@ -2045,6 +2057,10 @@ async function loadDashboard() {
      ["⏱️ Time today", fmtDur(d.time_today_seconds)],
      ["⏱️ Avg / member", fmtDur(d.avg_time_today_seconds)]
     ].forEach(([l, v]) => tiles.appendChild(statCard(l, v)));
+    // Phase 43: the hero banner mirrors the headline numbers.
+    const ahM = $("ah-members"); if (ahM) ahM.textContent = d.total_members;
+    const ahA = $("ah-active"); if (ahA) ahA.textContent = d.active_now;
+    const ahP = $("ah-posts"); if (ahP) ahP.textContent = d.posts;
     const dayLabel = iso => {
       const dt = new Date(iso + "T00:00:00");
       return dt.toLocaleDateString(undefined, { day: "numeric", month: "short" });
@@ -2198,6 +2214,8 @@ async function loadAdminStats() {
      ["💬 Comments", s.comments], ["🚩 Reports", s.open_reports],
      ["🚫 Banned", s.banned_users], ["⭐ Points", s.total_points]
     ].forEach(([l, v]) => box.appendChild(statCard(l, v)));
+    const ahR = $("ah-reports");
+    if (ahR) ahR.textContent = s.open_reports;
   } catch (e) { box.textContent = "Could not load stats."; }
 }
 

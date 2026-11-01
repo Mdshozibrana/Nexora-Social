@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Nexora Social</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
-<link rel="stylesheet" href="style.css?v=41">
+<link rel="stylesheet" href="style.css?v=43">
 </head>
 <body>
 <div id="entry-screen">
@@ -247,7 +247,22 @@
 </section>
 
 <section id="view-admin" hidden>
-  <h2 class="view-title">🛡️ Admin Panel</h2>
+  <div class="admin-hero">
+    <div class="admin-hero-top">
+      <div class="admin-hero-badge">🛡️</div>
+      <div class="admin-hero-head">
+        <div class="admin-hero-title">Admin Dashboard</div>
+        <div class="admin-hero-sub">Nexora Social · Owner control room</div>
+      </div>
+      <span class="admin-live"><span class="live-dot"></span>LIVE</span>
+    </div>
+    <div class="admin-hero-stats">
+      <div class="ah-cell"><div class="ah-num" id="ah-members">–</div><div class="ah-lab">Members</div></div>
+      <div class="ah-cell"><div class="ah-num" id="ah-active">–</div><div class="ah-lab">Active now</div></div>
+      <div class="ah-cell"><div class="ah-num" id="ah-posts">–</div><div class="ah-lab">Posts</div></div>
+      <div class="ah-cell"><div class="ah-num" id="ah-reports">–</div><div class="ah-lab">Reports</div></div>
+    </div>
+  </div>
   <p class="hint">Only you, the owner, can see this panel. Manage members,
   reports and posts, and send announcements to everyone.</p>
 
@@ -420,7 +435,7 @@
   <button id="nav-me">👤<span>Me</span></button>
 </nav>
 
-<script src="app.js?v=41"></script>
-<script src="games.js?v=41"></script>
+<script src="app.js?v=43"></script>
+<script src="games.js?v=43"></script>
 </body>
 </html>

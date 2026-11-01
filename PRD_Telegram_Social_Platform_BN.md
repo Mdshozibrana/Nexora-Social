@@ -424,3 +424,18 @@ LOGOUT (owner: লগআউটের পর পুরোপুরি নিজ�
 
 - Collapsed অবস্থায় সাইডবার এখন শুধু ছোট্ট ভাসমান glass pill: N লোগো + chevron — সব আইকন/লেবেল/ফুটার শুধু expanded প্যানেলের ভিতরে (CSS: #glassbar:not(.open) .gb-item/.gb-sec/.gb-foot লুকানো)।
 - না-পড়া মেসেজ/নোটিফিকেশনের ইঙ্গিত হিসেবে লোগোর কোণে একটা গোলাপি ডট (#gb-dot; paintBell/paintMsgBadge কাউন্ট থেকে paintGbDot)। অ্যাসেট ভার্সন ?v=41।
+
+## সংযোজন — Phase 42 (১ নভেম্বর ২০২৬): নাম বদল ৬০ দিনে একবার
+
+মালিকের নিয়ম: ইউজার নেম ৬০ দিনে একবার পরিবর্তন করা যাবে।
+
+- users.name_changed_at কলাম (model + _migrate)। POST /me/profile-এ নাম বদলালেই ঘড়ি শুরু; ৬০ দিনের ভিতরে অন্য নাম → 400 + বাকি দিনসহ বার্তা। একই নাম আবার সেভ করা বা শুধু বায়ো বদলানো লককে ছোঁয় না (সবসময় ফ্রি)। প্রোফাইলে name_locked_days যায় — ফর্মে নামের ঘর disabled + "🔒 … দিন বাকি" নোট।
+- **টেস্টে ধরা পড়া পুরনো বাগ:** Telegram sync প্রতিটি /auth-তে first_name টেলিগ্রাম থেকে overwrite করত, ফলে Phase 40-র নাম-বদল আসলে টিকতই না (response-এ দেখাত, পরের লোডে আগের নাম)। এখন name_changed_at থাকলে sync নাম বদলায় না; admin-এর নাম-বদলও (Phase 24) একই মার্ক সেট করে ও ঘড়ি শুরু করে। @username টেলিগ্রামের নিজের — অ্যাপের ভিতর থেকে বদলানো যায় না, সেটা Telegram-এর নিয়মে চলে।
+
+## সংযোজন — Phase 43 (১ নভেম্বর ২০২৬): Admin Dashboard — Unique & Attractive
+
+মালিকের নির্দেশ: Admin Panel Dashboard-কে unique ও attractive করো। শুধু presentation বদলেছে — সব ডেটা/কন্ট্রোল আগেরই:
+
+- উপরে **gradient hero ব্যানার**: 🛡️ ব্যাজ, "Admin Dashboard · Owner control room", ডানদিকে পালস-করা সবুজ ডটসহ **LIVE** চিপ, আর কাচের সেলে চারটি headline সংখ্যা (Members / Active now / Posts / Reports) — loadDashboard ও loadAdminStats আসল ডেটা দিয়েই ভরে।
+- Stat টাইলগুলো এখন ছয়টি ঘূর্ণায়মান pastel গ্রেডিয়েন্টে (গোলাপি/মিন্ট/ল্যাভেন্ডার/বাটার/আকাশি/পিচ)।
+- সেকশন হেডারগুলো gradient pill; চার্ট কার্ডে গোলাপি টপ-অ্যাকসেন্ট, বারগুলোতে তিন-রঙা গ্রেডিয়েন্ট + গ্লো + width অ্যানিমেশন; view-এর গোড়ায় হালকা গোলাপি আভা। অ্যাসেট ভার্সন ?v=43।

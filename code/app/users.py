@@ -48,7 +48,13 @@ def get_or_create_user(db, tg_user: dict, referrer_id=None):
     user = db.get(models.User, uid)
     if user:
         user.username = tg_user.get("username") or user.username
-        user.first_name = tg_user.get("first_name") or user.first_name
+        # Phase 42: an in-app name edit (by the member or an
+        # admin) wins over this Telegram sync — name_changed_at
+        # marks the name as app-managed; without the guard, an
+        # edited name snapped back to the Telegram name at the
+        # next /auth and the 60-day rule could never hold.
+        if user.name_changed_at is None:
+            user.first_name = tg_user.get("first_name") or user.first_name
         if tg_user.get("language_code"):
             user.language_code = tg_user["language_code"]
         # Admins (the owner) always carry the verified mark.

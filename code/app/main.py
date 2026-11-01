@@ -46,7 +46,8 @@ def _migrate():
     wanted = {"country": "VARCHAR(64)", "language_code": "VARCHAR(16)",
               "last_seen_at": "TIMESTAMP", "is_managed": "BOOLEAN",
               "auth_revoked_at": "TIMESTAMP",
-              "cover_file_id": "VARCHAR(256)"}
+              "cover_file_id": "VARCHAR(256)",
+              "name_changed_at": "TIMESTAMP"}
     with engine.begin() as conn:
         for name, ddl in wanted.items():
             if name not in existing:
@@ -1053,6 +1054,14 @@ def public_profile(telegram_id: int, user: models.User = Depends(current_user),
         user_id=telegram_id, is_deleted=False).count()
     is_following = db.query(models.Follow).filter_by(
         follower_id=user.telegram_id, following_id=telegram_id).first() is not None
+    # Phase 42: for your own profile, the days left on the
+    # 60-day name-change lock (0 = the name can change now).
+    name_locked_days = 0
+    if telegram_id == user.telegram_id and target.name_changed_at:
+        left = 60 * 86400 - (datetime.utcnow()
+                             - target.name_changed_at).total_seconds()
+        if left > 0:
+            name_locked_days = int(left // 86400) + 1
     return {
         "telegram_id": target.telegram_id,
         "first_name": target.first_name,
@@ -1071,6 +1080,7 @@ def public_profile(telegram_id: int, user: models.User = Depends(current_user),
         # R5: whether the viewer has blocked this member (the
         # profile offers Block/Unblock from this flag).
         "blocked_by_me": _blocked_by(db, user.telegram_id, telegram_id),
+        "name_locked_days": name_locked_days,
     }
 
 
@@ -1229,12 +1239,29 @@ def edit_my_profile(body: MyProfileIn,
                     db: Session = Depends(get_db)):
     """Phase 40 (owner: the bio must be writable by the member).
     Self-service name + bio editing — until now only an admin
-    could change a bio (Phase 24)."""
+    could change a bio (Phase 24).
+
+    Phase 42 (owner): the name may change only ONCE every 60
+    days. An unchanged name never trips (or consumes) the rule,
+    so bio-only edits stay free at all times; the admin panel
+    keeps its unrestricted override."""
     if body.first_name is not None:
         name = body.first_name.strip()
         if not name:
             raise HTTPException(400, "Name can't be empty")
-        user.first_name = name
+        if name != (user.first_name or ""):
+            if user.name_changed_at is not None:
+                elapsed = (datetime.utcnow()
+                           - user.name_changed_at).total_seconds()
+                wait = 60 * 86400 - elapsed
+                if wait > 0:
+                    days = int(wait // 86400) + 1
+                    raise HTTPException(
+                        400, "Name can be changed once every 60 days"
+                             f" — try again in {days} day"
+                             f"{'s' if days != 1 else ''}")
+            user.first_name = name
+            user.name_changed_at = datetime.utcnow()
     if body.bio is not None:
         user.bio = body.bio.strip()
     db.commit()
@@ -2298,7 +2325,12 @@ def admin_edit_profile(telegram_id: int, body: ProfileEditIn,
         name = body.first_name.strip()
         if not name:
             raise HTTPException(400, "Name cannot be empty")
-        u.first_name = name[:128]
+        if name[:128] != (u.first_name or ""):
+            u.first_name = name[:128]
+            # Phase 42: mark the name app-managed so the Telegram
+            # sync stops overwriting it; the member's 60-day
+            # clock starts from this change too.
+            u.name_changed_at = datetime.utcnow()
     if body.bio is not None:
         u.bio = body.bio.strip()[:1000]
     _audit(db, admin, "profile_edit", target_id=telegram_id)
