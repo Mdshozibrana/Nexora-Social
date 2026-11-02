@@ -393,30 +393,16 @@ function postCard(p) {
   spacer.className = "spacer";
   actions.appendChild(spacer);
 
-  if (me && p.author_id === me.telegram_id) {
-    const del = document.createElement("button");
-    del.textContent = "🗑";
-    del.title = "Delete post";
-    del.onclick = async () => {
-      try {
-        await api("/posts/" + p.id, { method: "DELETE" });
-        el.remove();
-      } catch (e) { setStatus("Could not delete the post."); }
-    };
-    actions.appendChild(del);
-  } else {
-    const rep = document.createElement("button");
-    rep.textContent = "⚑";
-    rep.title = "Report post";
-    rep.onclick = async () => {
-      try {
-        await api("/reports", { method: "POST",
-          body: JSON.stringify({ post_id: p.id, reason: "user report" }) });
-        setStatus("Thanks, the post was reported.");
-      } catch (e) { setStatus("Could not report the post."); }
-    };
-    actions.appendChild(rep);
-  }
+  // Phase 54 (owner): every post gets a Facebook-style ⋮
+  // options button — the old lone 🗑/⚑ icons were all a feed
+  // post had. The sheet (built for reels, fully generic) has
+  // Save, Share, Copy link, Download, View profile, Follow,
+  // Not interested, Report and Delete.
+  const menuBtn = document.createElement("button");
+  menuBtn.textContent = "⋮";
+  menuBtn.title = "Options";
+  menuBtn.onclick = () => openReelMenu(p, el);
+  actions.appendChild(menuBtn);
   el.appendChild(actions);
 
   const cBox = document.createElement("div");
@@ -715,13 +701,13 @@ async function openReelMenu(p, reelEl) {
     } catch (e) { /* keep the generic row */ }
     row("🚫", "Not interested", () => {
       reelEl.remove();
-      setStatus("Got it — this video was hidden.");
+      setStatus("Got it — this post was hidden.");
     });
     row("⚑", "Report", async () => {
       try {
         await api("/reports", { method: "POST",
           body: JSON.stringify({ post_id: p.id, reason: "user report" }) });
-        setStatus("Thanks, the video was reported.");
+        setStatus("Thanks, the post was reported.");
       } catch (e) { setStatus("Could not report."); }
     }, true);
   }
