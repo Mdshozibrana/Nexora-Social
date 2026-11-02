@@ -1715,6 +1715,16 @@ $("tab-following").onclick = () => setTab("following");
 $("feed-more").onclick = () => loadFeed(false);
 $("profile-more").onclick = () => loadProfilePosts(false);
 $("search-go").onclick = () => runSearch($("search-input").value.trim());
+// Phase 63 (owner): pressing Enter in the search bar must search
+// too — the button was the only trigger, and the input sits in no
+// form, so Enter did nothing at all.
+$("search-input").addEventListener("keydown", e => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    runSearch($("search-input").value.trim());
+    $("search-input").blur();
+  }
+});
 $("nav-feed").onclick = () => showView("feed");
 $("nav-videos").onclick = () => showView("videos");
 $("nav-design").onclick = () => showView("designs");
