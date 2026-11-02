@@ -1769,12 +1769,14 @@ button.liked { animation: heartPop .32s cubic-bezier(.22,.9,.3,1); }
 #design-pop { position: fixed; z-index: 85; display: flex;
   flex-direction: column; gap: 10px; }
 #design-pop[hidden] { display: none; }
-.dp-btn { width: 48px; height: 48px; border-radius: 50%; border: none;
+.dp-btn { width: 48px; height: 48px; flex: none; padding: 0;
+  border-radius: 50%; border: 2px solid rgba(255, 255, 255, .9);
   background: rgba(26, 13, 21, .78); color: #fff; font-size: 21px;
   display: flex; align-items: center; justify-content: center;
   box-shadow: 0 8px 20px rgba(30, 5, 20, .4);
   -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
   cursor: pointer; }
+.dp-btn svg { width: 24px; height: 24px; display: block; }
 .dp-btn:active { transform: scale(.9); }
 .dp-btn.dp-wa { background: #25D366; }
 .dp-btn.on { background: #E84393; }
