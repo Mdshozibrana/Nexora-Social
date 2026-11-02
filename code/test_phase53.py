@@ -19,7 +19,7 @@ print("strip fully removed OK")
 for kept in ('id="app-name"', 'id="hero-bell"', 'id="hero-msg"',
              'id="hero-search"', 'id="bell-badge"', 'id="msg-badge"'):
     assert kept in HTML, kept
-assert '"⭐ My points: "' in JS      # points still shown in Tasks
+assert "points-card" in JS           # Phase 55: points in the decorated card
 assert "u.points" in JS             # and on profiles / admin detail
 print("hero essentials + points homes kept OK")
 

@@ -980,6 +980,17 @@ async function openProfile(userId) {
       ci.alt = "";
       cover.appendChild(ci);
     }
+    const ownProfile = me && userId === me.telegram_id;
+    if (ownProfile) {
+      // Phase 55 (owner): no wide "Change cover photo" button —
+      // a camera badge ON the cover does the job.
+      const cam = document.createElement("button");
+      cam.className = "cam-badge cover-cam";
+      cam.textContent = "📷";
+      cam.title = "Change cover photo";
+      cam.onclick = () => $("cover-file").click();
+      cover.appendChild(cam);
+    }
     box.appendChild(cover);
     const headWrap = document.createElement("div");
     headWrap.className = "profile-head";
@@ -992,7 +1003,23 @@ async function openProfile(userId) {
     sub.className = "profile-sub";
     sub.textContent = u.username ? "@" + u.username : "";
     col.append(name, sub);
-    headWrap.append(avatarEl(u.first_name, u.telegram_id, true, u.photo_file_id), col);
+    const avEl = avatarEl(u.first_name, u.telegram_id, true,
+                          u.photo_file_id);
+    if (ownProfile) {
+      // Phase 55: same for the profile photo — camera badge on
+      // the avatar itself opens the photo picker.
+      const avWrap = document.createElement("div");
+      avWrap.className = "avatar-wrap";
+      const cam = document.createElement("button");
+      cam.className = "cam-badge avatar-cam";
+      cam.textContent = "📷";
+      cam.title = "Change profile photo";
+      cam.onclick = () => $("profile-file").click();
+      avWrap.append(avEl, cam);
+      headWrap.append(avWrap, col);
+    } else {
+      headWrap.append(avEl, col);
+    }
     const bio = document.createElement("p");
     bio.textContent = u.bio || "";
     const stats = document.createElement("div");
@@ -1062,16 +1089,9 @@ async function openProfile(userId) {
     }
 
     if (me && userId === me.telegram_id) {
-      const pBtn = document.createElement("button");
-      pBtn.className = "wide photo-change";
-      pBtn.textContent = "📷 Change profile photo";
-      pBtn.onclick = () => $("profile-file").click();
-      box.appendChild(pBtn);
-      const cBtn = document.createElement("button");
-      cBtn.className = "wide photo-change";
-      cBtn.textContent = "🖼️ Change cover photo";
-      cBtn.onclick = () => $("cover-file").click();
-      box.appendChild(cBtn);
+      // Phase 55: the wide Change-photo / Change-cover buttons
+      // are gone — camera badges on the photo and cover above
+      // open the same pickers.
       // Phase 40: write your own name + bio.
       const eBtn = document.createElement("button");
       eBtn.className = "wide";
@@ -1142,19 +1162,74 @@ async function myExtras() {
   try {
     const pts = await api("/me/points");
     const refs = await api("/me/referrals");
-    const h = document.createElement("h3");
-    h.textContent = "⭐ My points: " + pts.balance;
-    wrap.appendChild(h);
-    if (pts.entries.length) {
-      const ul = document.createElement("ul");
-      ul.className = "ledger";
-      pts.entries.forEach(e => {
-        const li = document.createElement("li");
-        li.textContent = (e.amount >= 0 ? "+" : "") + e.amount + " — " + e.reason;
-        ul.appendChild(li);
-      });
-      wrap.appendChild(ul);
+    // Phase 55 (owner): the points section was a plain bullet
+    // list of raw ledger codes — now a proper card: gradient
+    // balance header (+ today's earnings chip) and friendly
+    // labelled history rows with icons and amount pills.
+    const REASON_META = {
+      "task:checkin": ["📅", "Daily check-in"],
+      "task:follow2": ["👥", "Follow task"],
+      "task:comment5": ["💬", "Comment task"],
+      "referral": ["🔗", "Referral bonus"],
+      "post": ["📝", "New post"],
+      "admin_adjust": ["🛡️", "Admin adjustment"],
+    };
+    const card = document.createElement("div");
+    card.className = "points-card";
+    const pHead = document.createElement("div");
+    pHead.className = "points-head";
+    const star = document.createElement("div");
+    star.className = "points-star";
+    star.textContent = "⭐";
+    const pCol = document.createElement("div");
+    const pLabel = document.createElement("div");
+    pLabel.className = "points-label";
+    pLabel.textContent = "My Points";
+    const pBal = document.createElement("div");
+    pBal.className = "points-balance";
+    pBal.textContent = pts.balance;
+    pCol.append(pLabel, pBal);
+    pHead.append(star, pCol);
+    const todayStr = new Date().toDateString();
+    const todaySum = pts.entries
+      .filter(e => e.created_at &&
+              new Date(e.created_at).toDateString() === todayStr)
+      .reduce((s, e) => s + e.amount, 0);
+    if (todaySum > 0) {
+      const chip = document.createElement("div");
+      chip.className = "points-today";
+      chip.textContent = "+" + todaySum + " today";
+      pHead.appendChild(chip);
     }
+    card.appendChild(pHead);
+    pts.entries.forEach(e => {
+      const meta = REASON_META[e.reason] || ["⭐", e.reason];
+      const rowEl = document.createElement("div");
+      rowEl.className = "ph-row";
+      const ic = document.createElement("span");
+      ic.className = "ph-ic";
+      ic.textContent = meta[0];
+      const main = document.createElement("div");
+      main.className = "ph-main";
+      const lb = document.createElement("div");
+      lb.className = "ph-label";
+      lb.textContent = meta[1];
+      main.appendChild(lb);
+      if (e.created_at) {
+        const dt = document.createElement("div");
+        dt.className = "ph-date";
+        dt.textContent = new Date(e.created_at)
+          .toLocaleDateString(undefined,
+            { day: "numeric", month: "short" });
+        main.appendChild(dt);
+      }
+      const amt = document.createElement("span");
+      amt.className = "ph-amt " + (e.amount >= 0 ? "plus" : "minus");
+      amt.textContent = (e.amount >= 0 ? "+" : "") + e.amount;
+      rowEl.append(ic, main, amt);
+      card.appendChild(rowEl);
+    });
+    wrap.appendChild(card);
     if (me.bot_username) {
       const link = "https://t.me/" + me.bot_username + "?start=ref_" + me.telegram_id;
       const rh = document.createElement("h3");

@@ -20,7 +20,7 @@
 <meta name="twitter:description" content="Share photos, watch reels, discover designs and play classic games — all inside Telegram.">
 <meta name="twitter:image" content="https://nexora-9pip.onrender.com/webapp/og-image.png">
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
-<link rel="stylesheet" href="style.css?v=54">
+<link rel="stylesheet" href="style.css?v=56">
 </head>
 <body>
 <div id="entry-screen">
@@ -142,10 +142,6 @@
   <p id="video-empty" class="empty" hidden>No videos yet. Send a video to the
   bot with a caption to post the first one!</p>
   <button id="video-more" class="wide" hidden>Load more</button>
-  <div id="reel-sheet-wrap" hidden>
-    <div id="reel-sheet-backdrop"></div>
-    <div id="reel-sheet"></div>
-  </div>
 </section>
 
 <section id="view-saved" hidden>
@@ -510,7 +506,16 @@
   <button id="nav-me">👤<span>Me</span></button>
 </nav>
 
-<script src="app.js?v=54"></script>
-<script src="games.js?v=54"></script>
+<!-- Phase 56 fix: the options sheet must live at body level.
+     It used to sit INSIDE #view-videos, so on every other view
+     (Feed, profiles, Saved…) the section's display:none hid the
+     sheet too and the post ⋮ button looked dead. -->
+<div id="reel-sheet-wrap" hidden>
+  <div id="reel-sheet-backdrop"></div>
+  <div id="reel-sheet"></div>
+</div>
+
+<script src="app.js?v=56"></script>
+<script src="games.js?v=56"></script>
 </body>
 </html>

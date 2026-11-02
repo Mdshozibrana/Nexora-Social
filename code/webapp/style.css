@@ -1409,7 +1409,7 @@ button.liked { animation: heartPop .32s cubic-bezier(.22,.9,.3,1); }
 /* ================================================================
    Phase 40 — profile cover + self-service name & bio editing
    ================================================================ */
-.profile-cover { height: 128px; border-radius: 20px;
+.profile-cover { height: 128px; border-radius: 20px; position: relative;
   overflow: hidden; margin-bottom: 12px;
   background: linear-gradient(120deg, #FF8FBE, #C86DD7 55%, #8E24AA);
   box-shadow: 0 8px 20px rgba(160, 60, 110, .22); }
@@ -1645,3 +1645,52 @@ button.liked { animation: heartPop .32s cubic-bezier(.22,.9,.3,1); }
 .g2048-cell { aspect-ratio: 1; border-radius: 10px;
   display: flex; align-items: center; justify-content: center;
   font-weight: 800; background: #EFE3EC; color: #472A3E; }
+
+/* ================================================================
+   Phase 55 — camera badges on profile photo + cover; points card
+   ================================================================ */
+.avatar-wrap { position: relative; flex: none; }
+.cam-badge { position: absolute; width: 30px; height: 30px;
+  border-radius: 50%; border: 2px solid #FFFBFC; padding: 0;
+  background: linear-gradient(135deg, #FF8FBE, #E84393);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; line-height: 1; cursor: pointer; z-index: 2;
+  box-shadow: 0 4px 10px rgba(160, 60, 110, .35); }
+.cam-badge:active { transform: scale(.88); }
+.avatar-cam { right: -3px; bottom: -3px; }
+.cover-cam { right: 10px; bottom: 10px; }
+
+.points-card { background: #FFFBFC; border-radius: 24px;
+  padding: 12px; margin: 14px 0;
+  box-shadow: 8px 8px 18px rgba(190, 110, 150, .22),
+              -6px -6px 14px rgba(255, 255, 255, .85); }
+.points-head { display: flex; align-items: center; gap: 12px;
+  background: linear-gradient(135deg, #FF8FBE, #E84393);
+  border-radius: 18px; padding: 14px 16px; color: #fff;
+  box-shadow: 0 8px 18px rgba(220, 60, 130, .30); }
+.points-star { width: 52px; height: 52px; flex: none;
+  border-radius: 16px; background: rgba(255, 255, 255, .25);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 28px; }
+.points-label { font-size: 11px; font-weight: 700;
+  letter-spacing: .14em; text-transform: uppercase;
+  opacity: .88; }
+.points-balance { font-size: 31px; font-weight: 800;
+  line-height: 1.05; }
+.points-today { margin-left: auto; background: #fff;
+  color: #E84393; font-weight: 800; font-size: 13px;
+  border-radius: 999px; padding: 6px 12px; flex: none;
+  box-shadow: 0 3px 8px rgba(120, 30, 70, .20); }
+.ph-row { display: flex; align-items: center; gap: 10px;
+  padding: 10px 4px; border-bottom: 1px solid #F7DCE9; }
+.ph-row:last-child { border-bottom: none; }
+.ph-ic { width: 36px; height: 36px; flex: none;
+  border-radius: 12px; background: #FDE7F1; font-size: 17px;
+  display: flex; align-items: center; justify-content: center; }
+.ph-main { flex: 1; min-width: 0; }
+.ph-label { font-weight: 700; font-size: 14px; color: #472A3E; }
+.ph-date { font-size: 11px; color: #BC90A6; }
+.ph-amt { font-weight: 800; font-size: 14px; flex: none;
+  border-radius: 999px; padding: 4px 11px; }
+.ph-amt.plus { background: #FDE7F1; color: #E84393; }
+.ph-amt.minus { background: #FDECEC; color: #D64545; }
