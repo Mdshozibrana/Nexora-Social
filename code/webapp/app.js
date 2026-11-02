@@ -2347,8 +2347,10 @@ $("design-similar-clear").onclick = () => {
 };
 $("app-scroll").addEventListener("scroll",
   () => clearTimeout(lpTimer), { passive: true });
-attachLongPress($("ds-img"), () => {
-  if (currentDesign) showDesignPop(currentDesign, $("ds-img"));
+// Phase 67: the sheet's hold target is the media WRAPPER (the
+// shield over the image takes the touch, never the <img> itself).
+attachLongPress($("ds-media"), () => {
+  if (currentDesign) showDesignPop(currentDesign, $("ds-media"));
 });
 
 function designCard(d) {
@@ -2358,6 +2360,15 @@ function designCard(d) {
   img.src = mediaUrl(d.image_file_id);
   img.loading = "lazy";
   img.alt = "Design";
+  img.draggable = false;
+  // Phase 67: a transparent shield over the image takes the touch,
+  // so Telegram's WebView never treats a hold as an IMAGE hold and
+  // pops its own Open in…/Download/Copy Link menu (owner report).
+  const media = document.createElement("div");
+  media.className = "design-media";
+  const shield = document.createElement("div");
+  shield.className = "img-shield";
+  media.append(img, shield);
   const body = document.createElement("div");
   body.className = "design-card-body";
   const p = document.createElement("p");
@@ -2379,7 +2390,7 @@ function designCard(d) {
   views.textContent = "👁 " + (d.views || 0);
   stats.append(like, views);
   body.append(p, stats);
-  el.append(img, body);
+  el.append(media, body);
   // Phase 66 (owner): HOLD a design and the icon popup appears
   // (Pinterest-style). A fired long-press swallows the tap that
   // would otherwise open the sheet.

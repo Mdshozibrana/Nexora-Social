@@ -20,7 +20,7 @@
 <meta name="twitter:description" content="Share photos, watch reels, discover designs and play classic games — all inside Telegram.">
 <meta name="twitter:image" content="https://nexora-9pip.onrender.com/webapp/og-image.png">
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
-<link rel="stylesheet" href="style.css?v=65">
+<link rel="stylesheet" href="style.css?v=66">
 </head>
 <body>
 <div id="entry-screen">
@@ -451,7 +451,10 @@
 <div id="design-sheet-wrap" hidden>
   <div id="design-sheet-backdrop"></div>
   <div id="design-sheet">
-    <img id="ds-img" alt="Design">
+    <div class="design-media" id="ds-media">
+      <img id="ds-img" alt="Design">
+      <div class="img-shield"></div>
+    </div>
     <div class="ds-body">
       <div class="ds-label">✨ PROMPT</div>
       <p id="ds-prompt"></p>
@@ -536,7 +539,7 @@
   <div id="reel-sheet"></div>
 </div>
 
-<script src="app.js?v=65"></script>
-<script src="games.js?v=65"></script>
+<script src="app.js?v=66"></script>
+<script src="games.js?v=66"></script>
 </body>
 </html>

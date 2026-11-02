@@ -1790,3 +1790,11 @@ button.liked { animation: heartPop .32s cubic-bezier(.22,.9,.3,1); }
 .similar-bar button { flex: none; font-size: 12px; padding: 6px 10px; }
 .view-subtitle { margin: 16px 0 8px; font-size: 16px; }
 #shared-designs > div { break-inside: avoid; }
+
+/* Phase 67: the image shield — touches land on a plain overlay div,
+   never on the <img>, so the WebView's native image menu (Open
+   in… / Download / Copy Link with the raw media URL) cannot fire
+   on a hold. */
+.design-media { position: relative; }
+.img-shield { position: absolute; inset: 0; z-index: 2; }
+.design-media img { -webkit-user-drag: none; }
