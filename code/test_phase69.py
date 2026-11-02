@@ -78,6 +78,7 @@ for bit in ('id="nexa-img"', 'src="nexa/wave.webp"', 'id="nexa-log"',
     assert bit in seg, bit
 assert seg.count('class="nexa-chip"') == 4
 for bit in ("openAssistant()", "sendNexa", "nexaSpeak",
+            "nexaUnlockAudio", "nexaPlayer", "NEXA_SILENT_WAV",
             '"/assistant/chat"', '"/assistant/speak"',
             '"chat", "assistant"]', 'localStorage.getItem("nx_nexa_voice")'):
     assert bit in JS, bit
@@ -86,7 +87,7 @@ for bit in (".gb-nexa-img", ".nexa-stage", "@keyframes nexaTalk",
     assert bit in CSS, bit
 for pose in ("idle", "talk", "wave", "think"):
     assert os.path.exists(f"webapp/nexa/{pose}.webp"), pose
-assert "style.css?v=68" in HTML and "app.js?v=68" in HTML
+assert "style.css?v=70" in HTML and "app.js?v=70" in HTML
 print("client markers OK")
 
 # --- auth + fallback brain (no key) ------------------------------------

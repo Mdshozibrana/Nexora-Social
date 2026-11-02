@@ -3754,8 +3754,25 @@ $("story-del").onclick = async () => {
 // pose.
 let nexaHist = [];
 let nexaGreeted = false;
-let nexaAudio = null;
+let nexaPlayer = null;
 let nexaVoiceOn = localStorage.getItem("nx_nexa_voice") !== "0";
+
+const NEXA_SILENT_WAV = "data:audio/wav;base64,"
+  + "UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
+
+// Telegram's WebView only lets audio play when it grows out of a
+// real tap. So the Send button (and her sidebar card) first plays
+// a silent clip on ONE shared player element; later, when her
+// spoken reply arrives from the server, that same blessed element
+// is allowed to play it — she always answers in voice AND text.
+function nexaUnlockAudio() {
+  try {
+    if (!nexaPlayer) nexaPlayer = new Audio();
+    nexaPlayer.src = NEXA_SILENT_WAV;
+    const pr = nexaPlayer.play();
+    if (pr && pr.catch) pr.catch(() => {});
+  } catch (e) { /* audio stays text-only this time */ }
+}
 
 function nexaPose(p) {
   const im = $("nexa-img");
@@ -3791,13 +3808,13 @@ function openAssistant() {
       + "or just chat with me!";
     nexaBubble(hello, "bot");
     nexaHist.push({ role: "nexa", text: hello });
+    nexaSpeak(hello);
   }
 }
 
 function nexaStop() {
-  if (nexaAudio) {
-    try { nexaAudio.pause(); } catch (e) { /* already stopped */ }
-    nexaAudio = null;
+  if (nexaPlayer) {
+    try { nexaPlayer.pause(); } catch (e) { /* already stopped */ }
   }
   if (window.speechSynthesis) {
     try { speechSynthesis.cancel(); } catch (e) { /* noop */ }
@@ -3805,8 +3822,8 @@ function nexaStop() {
   nexaTalking(false);
 }
 
-function nexaDeviceSpeak(text) {
-  if (!window.speechSynthesis) { nexaTalking(false); return; }
+function nexaDeviceSpeak(text, done) {
+  if (!window.speechSynthesis) { done(); return; }
   const u = new SpeechSynthesisUtterance(text);
   u.pitch = 1.35;
   u.rate = 1.03;
@@ -3814,8 +3831,8 @@ function nexaDeviceSpeak(text) {
   const f = vs.find(v => /female|zira|samantha/i.test(v.name))
     || vs.find(v => v.lang && v.lang.indexOf("en") === 0);
   if (f) u.voice = f;
-  u.onend = () => nexaTalking(false);
-  u.onerror = () => nexaTalking(false);
+  u.onend = done;
+  u.onerror = done;
   speechSynthesis.speak(u);
 }
 
@@ -3823,19 +3840,23 @@ async function nexaSpeak(text) {
   if (!nexaVoiceOn || !text) return;
   nexaPose("talk");
   nexaTalking(true);
+  let guard = setTimeout(() => nexaTalking(false),
+    Math.min(30000, 4000 + text.length * 90));
+  const done = () => { clearTimeout(guard); nexaTalking(false); };
   try {
     const r = await api("/assistant/speak", {
       method: "POST", body: JSON.stringify({ text: text }) });
     if (r && r.audio) {
-      nexaAudio = new Audio("data:" + (r.mime || "audio/wav")
-        + ";base64," + r.audio);
-      nexaAudio.onended = () => nexaTalking(false);
-      nexaAudio.onerror = () => nexaTalking(false);
-      await nexaAudio.play();
+      if (!nexaPlayer) nexaPlayer = new Audio();
+      nexaPlayer.src = "data:" + (r.mime || "audio/wav")
+        + ";base64," + r.audio;
+      nexaPlayer.onended = done;
+      nexaPlayer.onerror = done;
+      await nexaPlayer.play();
       return;
     }
   } catch (e) { /* fall through to the device voice */ }
-  nexaDeviceSpeak(text);
+  nexaDeviceSpeak(text, done);
 }
 
 async function sendNexa(prefill) {
@@ -3872,10 +3893,11 @@ async function sendNexa(prefill) {
   }
 }
 
-$("nexa-send").onclick = () => sendNexa();
+$("nexa-send").onclick = () => { nexaUnlockAudio(); sendNexa(); };
 $("nexa-input").addEventListener("keydown", (e) => {
   if (e.key === "Enter") {
     e.preventDefault();
+    nexaUnlockAudio();
     sendNexa();
     $("nexa-input").blur();
   }
@@ -3887,4 +3909,19 @@ $("nexa-voice").onclick = () => {
   if (!nexaVoiceOn) nexaStop();
 };
 document.querySelectorAll(".nexa-chip").forEach(c =>
-  c.onclick = () => sendNexa(c.dataset.q));
+  c.onclick = () => { nexaUnlockAudio(); sendNexa(c.dataset.q); });
+const nexaCard = document.querySelector(".gb-nexa");
+if (nexaCard) nexaCard.addEventListener("click", nexaUnlockAudio);
+
+// ---------- Phase 70: no long-press menus anywhere ----------
+// A long-press on anything (image, video, button, text) must
+// never pop the WebView's native menu — it shows the hosting
+// (Render) URL. Text fields keep their menu: paste must work.
+document.addEventListener("contextmenu", (e) => {
+  const t = e.target;
+  if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
+  e.preventDefault();
+}, true);
+document.addEventListener("dragstart", (e) => {
+  if (e.target && e.target.tagName === "IMG") e.preventDefault();
+}, true);

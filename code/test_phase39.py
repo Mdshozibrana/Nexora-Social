@@ -15,7 +15,7 @@ for marker in ('id="glassbar"', 'id="gb-backdrop"', 'id="gb-toggle"',
                'id="gb-bell-badge"', 'id="gb-admin"',
                'id="gb-official"', 'id="gb-logout"',
                'id="gb-foot"', 'id="gb-foot-name"',
-               'class="gb-online"', "?v=68"):
+               'class="gb-online"', "?v=70"):
     assert marker in HTML, marker
 assert 'id="drawer-wrap"' not in HTML
 assert 'class="drawer-item"' not in HTML
