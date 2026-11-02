@@ -81,9 +81,11 @@ DAILY_TASKS = [
 # Monetization gate (owner request, Oct 31): ALL targets must be met
 # before a creator's monetization unlocks. Numbers set by the owner:
 # followers 500, lifetime points 5000, and a 30-day UNBROKEN check-in
-# streak (one missed day resets the streak to zero).
+# streak (one missed day resets the streak to zero). Owner added a
+# 6th target on Nov 2: 12 qualified referrals.
 MONETIZATION = {
     "followers": 500,        # at least this many followers
+    "referrals": 12,         # at least this many QUALIFIED referrals
     "posts": 25,             # at least this many live posts
     "account_days": 14,      # account at least this many days old
     "lifetime_points": 5000,  # at least this many points earned in total

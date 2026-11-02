@@ -1733,3 +1733,11 @@ button.liked { animation: heartPop .32s cubic-bezier(.22,.9,.3,1); }
 .mc-count { font-weight: 800; font-size: 13.5px; flex: none;
   color: #472A3E; }
 .mc-count.done { color: #1E9E57; }
+
+/* Phase 59 — post caption editor inside the options sheet */
+.sheet-edit-ta { width: 100%; box-sizing: border-box;
+  border: 2px solid #F3C6DA; border-radius: 14px;
+  padding: 10px 12px; font: inherit; font-size: 15px;
+  color: #472A3E; background: #fff; margin: 2px 0 10px;
+  resize: vertical; }
+.sheet-edit-ta:focus { outline: none; border-color: #EC4899; }

@@ -711,6 +711,7 @@ async function openReelMenu(p, reelEl) {
       } catch (e) { setStatus("Could not report."); }
     }, true);
   }
+  if (mine) row("✏️", "Edit", () => openPostEditor(p, reelEl));
   if (mine) row("🗑", "Delete", async () => {
     try {
       await api("/posts/" + p.id, { method: "DELETE" });
@@ -720,6 +721,76 @@ async function openReelMenu(p, reelEl) {
   }, true);
   row("✕", "Cancel", () => {});
   $("reel-sheet-wrap").hidden = false;
+}
+
+// Phase 59: caption editor for your own post, inside the
+// same sheet. On save the card's caption + hashtag chips
+// repaint in place (feed/profile cards); reels just keep
+// the updated data.
+function openPostEditor(p, cardEl) {
+  const sheet = $("reel-sheet");
+  sheet.innerHTML = "";
+  const title = document.createElement("div");
+  title.className = "sheet-title";
+  title.textContent = "Edit post";
+  const ta = document.createElement("textarea");
+  ta.className = "sheet-edit-ta";
+  ta.maxLength = 2000;
+  ta.rows = 4;
+  ta.value = p.caption || "";
+  const save = document.createElement("button");
+  save.className = "sheet-row";
+  const sic = document.createElement("span");
+  sic.className = "ic";
+  sic.textContent = "💾";
+  save.append(sic, document.createTextNode("Save changes"));
+  save.onclick = async () => {
+    try {
+      const r = await api("/posts/" + p.id + "/edit", {
+        method: "POST",
+        body: JSON.stringify({ caption: ta.value }) });
+      p.caption = r.caption;
+      p.hashtags = r.hashtags;
+      const actions = cardEl.querySelector(".actions");
+      if (actions) {
+        let cap = cardEl.querySelector(".caption");
+        if (r.caption) {
+          if (!cap) {
+            cap = document.createElement("p");
+            cap.className = "caption";
+            actions.before(cap);
+          }
+          cap.textContent = r.caption;
+        } else if (cap) cap.remove();
+        const oldTags = cardEl.querySelector(".tags");
+        if (oldTags) oldTags.remove();
+        if (r.hashtags) {
+          const tags = document.createElement("div");
+          tags.className = "tags";
+          r.hashtags.split(" ").filter(Boolean).forEach(t => {
+            const chip = document.createElement("button");
+            chip.className = "chip";
+            chip.textContent = "#" + t;
+            chip.onclick = () => searchTag(t);
+            tags.appendChild(chip);
+          });
+          actions.before(tags);
+        }
+      }
+      closeReelMenu();
+      setStatus("Post updated.");
+    } catch (e) { setStatus("Could not update the post."); }
+  };
+  const cancel = document.createElement("button");
+  cancel.className = "sheet-row";
+  const cic = document.createElement("span");
+  cic.className = "ic";
+  cic.textContent = "✕";
+  cancel.append(cic, document.createTextNode("Cancel"));
+  cancel.onclick = () => closeReelMenu();
+  sheet.append(title, ta, save, cancel);
+  $("reel-sheet-wrap").hidden = false;
+  ta.focus();
 }
 
 // ------------------------------------------------------------- sharing ---
@@ -1302,6 +1373,7 @@ async function myExtras() {
     ovBar.appendChild(ovFill);
     card.append(ov, ovBar);
     const MON_ICONS = [
+      ["Referral", "🔗"],
       ["Follower", "👥"], ["Posts", "📝"], ["age", "📅"],
       ["points", "⭐"], ["streak", "🔥"],
     ];

@@ -79,6 +79,8 @@ with TestClient(app) as c:
     assert mon["unlocked"] is False
     checks = {x["key"]: x for x in mon["checks"]}
     assert checks["followers"]["required"] == 500
+    assert checks["referrals"]["required"] == 12
+    assert checks["referrals"]["current"] == 0
     assert checks["lifetime_points"]["required"] == 5000
     assert checks["lifetime_points"]["current"] == 30
     assert checks["checkin_streak"]["required"] == 30
@@ -109,6 +111,9 @@ with TestClient(app) as c:
     for i in range(25):
         db.add(models.Post(user_id=333, type="text", caption=f"bulk {i}"))
     db.add(models.PointsLedger(user_id=333, amount=4970, reason="bonus"))
+    for i in range(12):  # Phase 58: 12 qualified referrals for the gate
+        db.add(models.Referral(referrer_id=333, new_user_id=700000 + i,
+                               qualified=True))
     for back in range(1, 30):  # today already claimed -> streak 30 total
         db.add(models.DailyClaim(user_id=333, task_key="checkin",
                                  day=(TODAY - timedelta(days=back)).isoformat()))

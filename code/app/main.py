@@ -27,7 +27,7 @@ from .config import (DAILY_TASKS, MONETIZATION, OFFICIAL_FOLLOWER_BASE,
                      VERIFICATION_MIN_FOLLOWERS, settings)
 from .db import Base, SessionLocal, engine, get_db
 from .security import init_data_auth_date, validate_init_data
-from .services import award_points, register_post
+from .services import award_points, extract_hashtags, register_post
 from .users import get_or_create_user
 
 # Phase 28 (security §13): security events go to the service log —
@@ -819,6 +819,29 @@ def delete_post(post_id: int, user: models.User = Depends(current_user),
     return {"ok": True, "id": p.id}
 
 
+class PostEditIn(BaseModel):
+    caption: str = Field(default="", max_length=2000)
+
+
+@app.post("/posts/{post_id}/edit")
+def edit_post(post_id: int, body: PostEditIn,
+              user: models.User = Depends(current_user),
+              db: Session = Depends(get_db)):
+    """Phase 59 (owner: the post ⋮ menu has no Edit). The
+    author can fix the caption after posting; hashtags are
+    re-extracted from the new text. Media, likes, comments,
+    views and points stay untouched. Same ownership rule as
+    delete: anyone else's post reads as not found."""
+    p = db.get(models.Post, post_id)
+    if p is None or p.is_deleted or p.user_id != user.telegram_id:
+        raise HTTPException(404, "Post not found")
+    p.caption = body.caption.strip()[:2000]
+    p.hashtags = extract_hashtags(p.caption or "")
+    db.commit()
+    db.refresh(p)
+    return post_dict(db, p)
+
+
 @app.post("/posts/{post_id}/like")
 async def toggle_like(post_id: int, user: models.User = Depends(current_user),
                       db: Session = Depends(get_db)):
@@ -1523,6 +1546,11 @@ def my_monetization(user: models.User = Depends(current_user),
                     db: Session = Depends(get_db)):
     followers = db.query(models.Follow).filter_by(
         following_id=user.telegram_id).count()
+    # Phase 58 (owner): a 6th gate target — QUALIFIED referrals
+    # only (a referral qualifies when the new member posts,
+    # the same rule that pays the referral points).
+    referrals = db.query(models.Referral).filter_by(
+        referrer_id=user.telegram_id, qualified=True).count()
     posts = db.query(models.Post).filter_by(
         user_id=user.telegram_id, is_deleted=False).count()
     age_days = (datetime.utcnow() - user.created_at).days \
@@ -1536,6 +1564,8 @@ def my_monetization(user: models.User = Depends(current_user),
     checks = [
         {"key": "followers", "label": "Followers",
          "current": followers, "required": MONETIZATION["followers"]},
+        {"key": "referrals", "label": "Referrals",
+         "current": referrals, "required": MONETIZATION["referrals"]},
         {"key": "posts", "label": "Posts published",
          "current": posts, "required": MONETIZATION["posts"]},
         {"key": "account_days", "label": "Account age (days)",
