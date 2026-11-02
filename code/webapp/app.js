@@ -1870,12 +1870,13 @@ gbBar.addEventListener("pointerdown", e => {
   const r = gbBar.getBoundingClientRect();
   gbDrag = { id: e.pointerId, sx: e.clientX, sy: e.clientY,
              cx: r.left + r.width / 2, cy: r.top + r.height / 2,
-             nx: null, ny: null, moved: false };
+             nx: null, ny: null, moved: false,
+             onItem: !!e.target.closest(".gb-item, #gb-foot") };
 });
 window.addEventListener("pointermove", e => {
   if (!gbDrag || e.pointerId !== gbDrag.id) return;
   const dx = e.clientX - gbDrag.sx, dy = e.clientY - gbDrag.sy;
-  if (!gbDrag.moved && Math.hypot(dx, dy) < 7) return;
+  if (!gbDrag.moved && Math.hypot(dx, dy) < 12) return;
   gbDrag.moved = true;
   gbBar.classList.add("gb-drag");
   gbDrag.nx = gbDrag.cx + dx;
@@ -1889,7 +1890,18 @@ function gbEndDrag(e) {
   const d = gbDrag;
   gbDrag = null;
   gbBar.classList.remove("gb-drag");
-  if (!d.moved) return;
+  if (!d.moved) {
+    // Phase 62 (owner: the sidebar often ignores the first tap):
+    // a tap anywhere on the collapsed pill now opens it — before,
+    // only the small chevron button did, and a slightly wobbly tap
+    // counted as a drag and ate the click. Taps that land on rail
+    // items keep their own click actions (navigation).
+    if (e.type === "pointerup" && !d.onItem) {
+      gbSuppressClick = true;
+      toggleSidebar();
+    }
+    return;
+  }
   gbSuppressClick = true;
   const side = d.nx < window.innerWidth / 2 ? "left" : "right";
   const y = Math.max(44, Math.min(window.innerHeight - 44, d.ny));
