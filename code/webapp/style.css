@@ -1028,6 +1028,9 @@ body { padding: 0; overflow: hidden; }
    ratios do the masonry), generous radii and soft clay shadows,
    with a bottom sheet for the full design + its prompt. */
 .design-head { margin: 4px 2px 10px; }
+.ptr-indicator { text-align: center; font-size: 13px; font-weight: 600;
+  color: #E84393; overflow: hidden; height: 0; line-height: 40px;
+  transition: height .18s ease; }
 #design-grid { columns: 2; column-gap: 10px; }
 .design-card { break-inside: avoid; margin: 0 0 10px;
   background: #FFFBFC; border-radius: 18px; overflow: hidden;

@@ -2152,6 +2152,59 @@ async function loadDesigns(reset) {
 }
 $("design-more").onclick = () => loadDesigns(false);
 
+// Phase 61 (owner): pull-to-refresh on the Design gallery — pull
+// down from the very top and the gallery reloads fresh; the server
+// orders the fresh page by the member's interests (Phase 61 API).
+(() => {
+  const sc = $("app-scroll");
+  const ind = $("design-ptr");
+  if (!sc || !ind) return;
+  let startY = null, pull = 0, busy = false;
+  const THRESH = 70;
+  sc.addEventListener("touchstart", e => {
+    if (busy || $("view-designs").hidden || sc.scrollTop > 0) return;
+    startY = e.touches[0].clientY;
+    pull = 0;
+  }, { passive: true });
+  sc.addEventListener("touchmove", e => {
+    if (startY === null || busy) return;
+    const dy = e.touches[0].clientY - startY;
+    if (dy <= 0 || sc.scrollTop > 0) {
+      startY = null;
+      ind.hidden = true;
+      ind.style.height = "0px";
+      return;
+    }
+    e.preventDefault();
+    pull = dy;
+    ind.hidden = false;
+    ind.style.height = Math.min(dy * 0.6, 84) + "px";
+    ind.textContent = dy >= THRESH ? "↑ Release to refresh"
+                                   : "↓ Pull to refresh";
+  }, { passive: false });
+  const finish = async () => {
+    if (startY === null) return;
+    const go = pull >= THRESH && !busy;
+    startY = null;
+    pull = 0;
+    if (!go) {
+      ind.hidden = true;
+      ind.style.height = "0px";
+      return;
+    }
+    busy = true;
+    ind.hidden = false;
+    ind.style.height = "40px";
+    ind.textContent = "⟳ Refreshing…";
+    await loadDesigns(true);
+    ind.hidden = true;
+    ind.style.height = "0px";
+    busy = false;
+  };
+  sc.addEventListener("touchend", finish);
+  sc.addEventListener("touchcancel", finish);
+})();
+
 function openDesignSheet(d) {
   currentDesign = d;
   $("ds-img").src = mediaUrl(d.image_file_id);

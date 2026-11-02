@@ -2574,15 +2574,69 @@ def _remove_design(db, design):
     db.delete(design)
 
 
+# Phase 61 (owner: pull-to-refresh must surface NEW results, ordered
+# by interest): the member's taste profile is built from the prompts
+# of designs they LIKED (weight 2) and OPENED (weight 1). Generic
+# filler words carry no taste signal and are dropped.
+_INTEREST_STOPWORDS = {
+    "the", "and", "for", "with", "this", "that", "from", "into",
+    "over", "under", "a", "an", "of", "in", "on", "at", "to", "by",
+    "is", "are", "was", "were", "be", "it", "its", "as", "or",
+    "style", "design", "image", "photo", "picture", "art", "prompt",
+}
+
+
+def _interest_words(text):
+    import re
+    return {w for w in re.findall(r"[a-z0-9]{3,}", (text or "").lower())
+            if w not in _INTEREST_STOPWORDS}
+
+
 @app.get("/designs")
 def list_designs(cursor: int = 0, limit: int = 20,
                  user: models.User = Depends(current_user),
                  db: Session = Depends(get_db)):
-    q = db.query(models.Design)
-    if cursor:
-        q = q.filter(models.Design.id < cursor)
-    rows = q.order_by(models.Design.id.desc()) \
-        .limit(max(1, min(limit, 40))).all()
+    limit = max(1, min(limit, 40))
+    liked_ids = {l.design_id for l in db.query(models.DesignLike)
+                 .filter_by(user_id=user.telegram_id).all()}
+    viewed_ids = {v.design_id for v in db.query(models.DesignView)
+                  .filter_by(user_id=user.telegram_id).all()}
+    if not liked_ids and not viewed_ids:
+        # No taste signals yet — the exact legacy behaviour:
+        # newest first, keyset pagination on the design id.
+        q = db.query(models.Design)
+        if cursor:
+            q = q.filter(models.Design.id < cursor)
+        rows = q.order_by(models.Design.id.desc()).limit(limit).all()
+        next_cursor = rows[-1].id if len(rows) == limit else None
+    else:
+        # Personalised order: unseen designs whose prompts match the
+        # member's taste rank first; already-seen designs stay in the
+        # list but sink, so a refresh surfaces fresh picks. The
+        # cursor is an offset into this ranked list.
+        weights = {}
+        seeds = db.query(models.Design).filter(
+            models.Design.id.in_(liked_ids | viewed_ids)).all()
+        for d in seeds:
+            w = 2 if d.id in liked_ids else 1
+            for word in _interest_words(d.prompt):
+                weights[word] = weights.get(word, 0) + w
+
+        def rank_key(d):
+            # Unseen designs first (a refresh surfaces fresh picks),
+            # within each tier by taste match, then popularity, then
+            # newest. Seen designs stay listed — they just sink.
+            match = sum(weights.get(w, 0)
+                        for w in _interest_words(d.prompt))
+            unseen = 0 if (d.id in liked_ids or d.id in viewed_ids) \
+                else 1
+            return (unseen, match, min(d.like_count or 0, 20), d.id)
+
+        ranked = sorted(db.query(models.Design).all(),
+                        key=rank_key, reverse=True)
+        rows = ranked[cursor:cursor + limit]
+        next_cursor = cursor + limit \
+            if cursor + limit < len(ranked) else None
     # Phase 38: batched view counts + liked set for the whole page.
     counts = {}
     liked_set = set()
@@ -2600,7 +2654,7 @@ def list_designs(cursor: int = 0, limit: int = 20,
                                      views=counts.get(d.id, 0),
                                      liked=d.id in liked_set)
                         for d in rows],
-            "next_cursor": rows[-1].id if len(rows) == limit else None}
+            "next_cursor": next_cursor}
 
 
 @app.post("/designs/upload")
