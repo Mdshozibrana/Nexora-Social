@@ -967,11 +967,20 @@ async function loadRanks() {
       num.textContent = medals[r.rank] || r.rank;
       const nm = document.createElement("span");
       nm.className = "rank-name";
-      nm.textContent = r.first_name + (isMe ? " (You)" : "");
+      // Phase 65 (owner): the name must stay on ONE line — a long
+      // name plus " (You)" used to wrap under itself. The name gets
+      // its own ellipsis span and " (You)" moves to the muted
+      // username line, where there is room.
+      const title = document.createElement("span");
+      title.className = "rank-title";
+      title.textContent = r.first_name;
+      nm.appendChild(title);
       if (r.is_verified) nm.appendChild(verifiedBadge());
-      if (r.username) {
+      if (r.username || isMe) {
         const small = document.createElement("small");
-        small.textContent = "@" + r.username;
+        small.textContent = [
+          r.username ? "@" + r.username : "",
+          isMe ? "(You)" : ""].filter(Boolean).join(" ");
         nm.appendChild(small);
       }
       const pts = document.createElement("span");

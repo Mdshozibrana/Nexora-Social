@@ -7,7 +7,7 @@ JS = open("webapp/app.js").read()
 
 assert 'id="hero-menu"' not in HTML
 assert "hero-menu" not in JS
-assert 'id="glassbar"' in HTML and "?v=63" in HTML
+assert 'id="glassbar"' in HTML and "?v=64" in HTML
 for marker in ('$("gb-toggle").onclick = toggleSidebar',
                "function toggleSidebar", "function openSidebar"):
     assert marker in JS, marker
