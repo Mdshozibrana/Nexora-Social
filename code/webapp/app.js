@@ -1381,12 +1381,10 @@ async function loadMe() {
   me = await api("/auth", { method: "POST", body: JSON.stringify({ initData }) });
   if (me.media_token) mediaToken = me.media_token;
   startHeartbeat();
-  $("profile-line").textContent =
-    me.first_name + (me.username ? " @" + me.username : "");
-  if (me.is_verified) $("profile-line").appendChild(verifiedBadge());
-  $("stats").textContent = me.posts + " posts · " + me.followers +
-    " followers · " + me.following + " following";
-  $("points-chip").textContent = "⭐ " + me.points;
+  // Phase 53 (owner): the hero identity strip (name, counts,
+  // points chip) is gone — it sat on every user's screen and
+  // looked cluttered; all of it still lives on the profile
+  // and in Tasks.
   $("entry-name").textContent = me.first_name || "Full name";
   $("entry-user").textContent = me.username ? "@" + me.username : "Username";
   entryMode = me.is_new ? "signup" : "login";
@@ -1555,7 +1553,7 @@ $("reel-sound").onclick = () => {
 };
 
 loadMe().then(() => loadFeed(true)).catch(() => {
-  $("profile-line").textContent = "Please open this app from inside Telegram.";
+  $("status").textContent = "Please open this app from inside Telegram.";
   $("entry-go").disabled = true;
   $("entry-note").textContent =
     "Please open Nexora Social from inside Telegram to continue.";
