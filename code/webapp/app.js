@@ -1024,8 +1024,11 @@ async function openProfile(userId) {
     bio.textContent = u.bio || "";
     const stats = document.createElement("div");
     stats.className = "stats";
-    stats.textContent = u.posts + " posts · " + u.followers + " followers · " +
-      u.following_count + " following · ⭐ " + u.points + " points";
+    // Phase 57 (owner): no posts count and no points in this
+    // line — posts are listed below and points have their own
+    // card. Followers / following only.
+    stats.textContent = u.followers + " followers · " +
+      u.following_count + " following";
     box.append(headWrap, bio, stats);
 
     if (u.is_official) {
@@ -1049,9 +1052,8 @@ async function openProfile(userId) {
           const r = await api("/users/" + userId + "/follow", { method: "POST" });
           u.following = r.following;
           u.followers = r.followers;
-          stats.textContent = u.posts + " posts · " + u.followers +
-            " followers · " + u.following_count + " following · ⭐ " +
-            u.points + " points";
+          stats.textContent = u.followers + " followers · " +
+            u.following_count + " following";
           paint();
         } catch (e) { setStatus("Could not update follow."); }
       };
@@ -1260,25 +1262,73 @@ async function myExtras() {
   try {
     const mon = await api("/me/monetization");
     const card = document.createElement("div");
-    card.className = "mon-card";
-    const mh = document.createElement("div");
-    mh.className = "mon-head";
-    const mt = document.createElement("b");
-    mt.textContent = "💰 Monetization";
+    card.className = "mon-card fancy";
+    // Phase 57 (owner): decorate the monetization section —
+    // gold hero header, an overall progress bar, and one
+    // icon + progress-bar row per target.
+    const hero = document.createElement("div");
+    hero.className = "mon-hero";
+    const blob = document.createElement("div");
+    blob.className = "mon-blob";
+    blob.textContent = "💰";
+    const hCol = document.createElement("div");
+    const hSub = document.createElement("div");
+    hSub.className = "mon-sub";
+    hSub.textContent = "Creator earnings";
+    const hTitle = document.createElement("div");
+    hTitle.className = "mon-title";
+    hTitle.textContent = "Monetization";
+    hCol.append(hSub, hTitle);
     const badge = document.createElement("span");
     badge.className = "mon-badge" + (mon.unlocked ? " open" : "");
-    badge.textContent = mon.unlocked ? "Unlocked ✓" : "Locked";
-    mh.append(mt, badge);
-    card.appendChild(mh);
+    badge.textContent = mon.unlocked ? "Unlocked ✓" : "🔒 Locked";
+    hero.append(blob, hCol, badge);
+    card.appendChild(hero);
+    const doneCount = mon.checks.filter(c => c.done).length;
+    const ov = document.createElement("div");
+    ov.className = "mon-overall";
+    const ovL = document.createElement("span");
+    ovL.textContent = doneCount + " of " + mon.checks.length +
+      " targets met";
+    const ovR = document.createElement("span");
+    ovR.textContent = mon.checks.length
+      ? Math.round(doneCount / mon.checks.length * 100) + "%" : "";
+    ov.append(ovL, ovR);
+    const ovBar = document.createElement("div");
+    ovBar.className = "mon-bar big";
+    const ovFill = document.createElement("i");
+    ovFill.style.width = (mon.checks.length
+      ? doneCount / mon.checks.length * 100 : 0) + "%";
+    ovBar.appendChild(ovFill);
+    card.append(ov, ovBar);
+    const MON_ICONS = [
+      ["Follower", "👥"], ["Posts", "📝"], ["age", "📅"],
+      ["points", "⭐"], ["streak", "🔥"],
+    ];
     mon.checks.forEach(c => {
       const row = document.createElement("div");
-      row.className = "mon-row";
-      const left = document.createElement("span");
-      left.textContent = (c.done ? "✅ " : "⬜ ") + c.label;
+      row.className = "mon-check";
+      const ic = document.createElement("span");
+      ic.className = "ph-ic";
+      const found = MON_ICONS.find(([k]) => c.label.includes(k));
+      ic.textContent = found ? found[1] : "🎯";
+      const main = document.createElement("div");
+      main.className = "mc-main";
+      const lb = document.createElement("div");
+      lb.className = "mc-label";
+      lb.textContent = c.label + (c.done ? " ✅" : "");
+      const bar = document.createElement("div");
+      bar.className = "mon-bar";
+      const fill = document.createElement("i");
+      fill.style.width = Math.min(100, c.required
+        ? c.current / c.required * 100 : 0) + "%";
+      if (c.done) fill.className = "done";
+      bar.appendChild(fill);
+      main.append(lb, bar);
       const right = document.createElement("span");
-      right.className = c.done ? "done" : "";
+      right.className = "mc-count" + (c.done ? " done" : "");
       right.textContent = c.current + " / " + c.required;
-      row.append(left, right);
+      row.append(ic, main, right);
       card.appendChild(row);
     });
     const note = document.createElement("p");

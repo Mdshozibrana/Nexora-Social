@@ -1694,3 +1694,42 @@ button.liked { animation: heartPop .32s cubic-bezier(.22,.9,.3,1); }
   border-radius: 999px; padding: 4px 11px; }
 .ph-amt.plus { background: #FDE7F1; color: #E84393; }
 .ph-amt.minus { background: #FDECEC; color: #D64545; }
+
+/* ================================================================
+   Phase 57 — decorated monetization card
+   ================================================================ */
+.mon-card.fancy { padding: 12px; }
+.mon-hero { display: flex; align-items: center; gap: 12px;
+  background: linear-gradient(135deg, #FFB75E, #F08C1E);
+  border-radius: 18px; padding: 14px 16px; color: #fff;
+  box-shadow: 0 8px 18px rgba(224, 140, 30, .30); }
+.mon-blob { width: 52px; height: 52px; flex: none;
+  border-radius: 16px; background: rgba(255, 255, 255, .25);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 28px; }
+.mon-sub { font-size: 11px; font-weight: 700;
+  letter-spacing: .14em; text-transform: uppercase; opacity: .9; }
+.mon-title { font-size: 19px; font-weight: 800; line-height: 1.1; }
+.mon-card.fancy .mon-badge { margin-left: auto; flex: none;
+  background: #fff; color: #B96A00; font-size: 12.5px;
+  padding: 6px 12px;
+  box-shadow: 0 3px 8px rgba(120, 60, 0, .20); }
+.mon-card.fancy .mon-badge.open { color: #1E9E57; }
+.mon-overall { display: flex; justify-content: space-between;
+  font-size: 12.5px; font-weight: 700; color: #96617E;
+  padding: 12px 4px 5px; }
+.mon-bar { height: 7px; border-radius: 99px; margin: 0 4px;
+  background: #F7DCE9; overflow: hidden; }
+.mon-bar.big { height: 10px; margin: 0; }
+.mon-bar i { display: block; height: 100%; border-radius: 99px;
+  background: linear-gradient(90deg, #FF8FBE, #E84393); }
+.mon-bar i.done { background: linear-gradient(90deg, #5BD98A, #1E9E57); }
+.mon-check { display: flex; align-items: center; gap: 10px;
+  padding: 10px 4px; border-bottom: 1px solid #F7DCE9; }
+.mon-check:last-of-type { border-bottom: none; }
+.mc-main { flex: 1; min-width: 0; }
+.mc-label { font-weight: 700; font-size: 14px; color: #472A3E; }
+.mc-main .mon-bar { margin: 6px 0 0; }
+.mc-count { font-weight: 800; font-size: 13.5px; flex: none;
+  color: #472A3E; }
+.mc-count.done { color: #1E9E57; }
