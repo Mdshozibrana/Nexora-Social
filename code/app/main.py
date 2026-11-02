@@ -3335,3 +3335,232 @@ def delete_story(sid: int, user: models.User = Depends(current_user),
     db.delete(s)
     db.commit()
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Phase 69: Nexa, the 3D AI assistant. She appears only when a member
+# opens the sidebar and taps her card. Brain + voice = Google Gemini
+# when GEMINI_API_KEY is set (one free key powers both); without a
+# key she answers from a built-in Nexora guide brain and /speak
+# returns no audio, so the client uses the phone's own voice. The
+# key never leaves the server.
+# ---------------------------------------------------------------------------
+import base64 as _b64
+import io as _io
+import wave as _wave
+
+
+class AssistantChatIn(BaseModel):
+    message: str = Field(default="", max_length=500)
+    history: list = Field(default_factory=list)
+
+
+class AssistantSpeakIn(BaseModel):
+    text: str = Field(default="", max_length=300)
+
+
+_NEXA_SYSTEM = (
+    "You are Nexa, the cute 3D AI assistant girl inside Nexora "
+    "Social, a Telegram social app. You chat with members like a "
+    "friendly companion and help them use the app: posting photos "
+    "and videos, daily tasks and points, referrals, the design "
+    "gallery, games, messages, and the monetization targets (500 "
+    "followers, 25 posts, 14 days old, 5000 lifetime points, a "
+    "30-day check-in streak and 12 qualified referrals). Reply in "
+    "the same language the member writes in (English or Bengali). "
+    "Keep every reply short: 1-3 friendly sentences, plain text, "
+    "no markdown and no lists. Never promise earnings or money."
+)
+
+
+def _nexa_is_bn(text):
+    return any("\u0980" <= c <= "\u09ff" for c in text)
+
+
+def _nexa_fallback(text):
+    """Built-in guide brain (no API key): friendly, bilingual,
+    and honest that full AI chat needs the owner's Gemini key."""
+    t = text.lower()
+    bn = _nexa_is_bn(text)
+
+    def has(*words):
+        return any(w in t for w in words)
+
+    if has("hi", "hello", "hey", "salam", "হাই", "হ্যালো", "সালাম",
+           "আসসালামু"):
+        return ("হাই! আমি Nexa, Nexora Social-এর AI বন্ধু। পোস্ট, "
+                "পয়েন্ট, টাস্ক বা ডিজাইন — যেকোনো বিষয়ে জিজ্ঞেস "
+                "করো!" if bn else
+                "Hi! I'm Nexa, your AI friend inside Nexora Social. "
+                "Ask me about posts, points, tasks or designs!")
+    if has("নাম", "name", "কে তুমি", "who are you"):
+        return ("আমি Nexa! Nexora Social-এর ভেতরেই থাকি — সাইডবার "
+                "খুললেই আমাকে পাবে।" if bn else
+                "I'm Nexa! I live inside Nexora Social — you will "
+                "find me whenever you open the sidebar.")
+    if has("point", "পয়েন্ট", "স্টার", "star"):
+        return ("প্রতিদিনের টাস্কে পয়েন্ট মেলে: চেক-ইনে ২০, ফলো "
+                "টাস্কে ৫, কমেন্ট টাস্কে ৫। Tasks পেজে গিয়ে Claim "
+                "করো!" if bn else
+                "You earn points from daily tasks: 20 for check-in, "
+                "5 for the follow task and 5 for the comment task. "
+                "Open the Tasks page and claim yours!")
+    if has("post", "পোস্ট", "upload", "আপলোড", "ভিডিও", "video",
+           "ছবি", "photo"):
+        return ("পোস্ট করা সহজ: Feed-এ গিয়ে লেখো, অথবা ছবি/ভিডিও "
+                "সরাসরি @NexoraSocial_bot-এর চ্যাটে পাঠিয়ে দাও — "
+                "সেটাই ফিডে পোস্ট হয়ে যাবে!" if bn else
+                "Posting is easy: write from the Feed, or send a "
+                "photo or video straight to @NexoraSocial_bot in "
+                "chat and it becomes your feed post!")
+    if has("design", "ডিজাইন"):
+        return ("Design ট্যাবে সুন্দর সব ডিজাইন আর তাদের প্রম্পট "
+                "আছে — যেকোনো ডিজাইনে হোল্ড করলেই Save, Share আর "
+                "Similar অপশন আসবে!" if bn else
+                "The Design tab is full of pretty designs with "
+                "their prompts — hold any design to save, share "
+                "or find similar ones!")
+    if has("money", "টাকা", "withdraw", "monet", "মনিটাইজ",
+           "আয়", "income", "earn"):
+        return ("মনিটাইজেশন খুলতে ৬টা লক্ষ্য লাগে: ৫০০ ফলোয়ার, "
+                "১২ জন যোগ্য রেফারেল, ২৫ পোস্ট, ১৪ দিন বয়স, "
+                "৫০০০ পয়েন্ট আর টানা ৩০ দিনের চেক-ইন স্ট্রিক। "
+                "নিজের অগ্রগতি প্রোফাইলেই দেখতে পারো!" if bn else
+                "Monetization unlocks at 6 targets: 500 followers, "
+                "12 qualified referrals, 25 posts, 14 days old, "
+                "5000 points and a 30-day check-in streak. Track "
+                "your progress on your profile!")
+    if has("game", "গেম", "খেল"):
+        return ("Games পেজে ১০টা ক্লাসিক গেম আছে — Snake, 2048, "
+                "Pac-Man আরো অনেক! ল্যাম্পটা টেনে আলো জ্বালাও "
+                "প্রথমে।" if bn else
+                "The Games page has 10 classics — Snake, 2048, "
+                "Pac-Man and more! Pull the lamp cord to light "
+                "the room first.")
+    if has("refer", "রেফার", "invite", "বন্ধু"):
+        return ("তোমার রেফারেল লিংক প্রোফাইল থেকে শেয়ার করো — "
+                "বন্ধু যোগ দিয়ে প্রথম পোস্ট করলেই তুমি ২০ "
+                "পয়েন্ট পাবে!" if bn else
+                "Share your referral link from your profile — when "
+                "a friend joins and makes their first post, you "
+                "earn 20 points!")
+    if has("thank", "ধন্যবাদ", "শুকরিয়া"):
+        return ("তোমাকেও ধন্যবাদ! আর কিছু জানতে চাইলে আমি "
+                "এখানেই আছি।" if bn else
+                "You're welcome! I'm right here if you need "
+                "anything else.")
+    if has("bye", "বিদায়", "যাই"):
+        return ("বিদায়! আবার এসো — সাইডবার খুললেই আমাকে পাবে।"
+                if bn else
+                "Bye! Come back soon — open the sidebar and I'll "
+                "be here.")
+    if has("সাহায্য", "help", "হেল্প"):
+        return ("আমি পোস্ট, পয়েন্ট, টাস্ক, রেফারেল, ডিজাইন, "
+                "গেম আর মনিটাইজেশন নিয়ে সাহায্য করতে পারি — "
+                "একটা বিষয় লিখে পাঠাও!" if bn else
+                "I can help with posts, points, tasks, referrals, "
+                "designs, games and monetization — just type a "
+                "topic!")
+    return ("ভালো প্রশ্ন! আমি এখনো শিখছি — পোস্ট, পয়েন্ট, "
+            "টাস্ক, ডিজাইন বা মনিটাইজেশন নিয়ে জিজ্ঞেস করলে "
+            "ঠিকঠাক বলতে পারব।" if bn else
+            "Good question! I'm still learning — ask me about "
+            "posts, points, tasks, designs or monetization and "
+            "I'll do my best.")
+
+
+def _gemini_chat(message, history):
+    key = settings.GEMINI_API_KEY
+    if not key:
+        return None
+    contents = []
+    for h in (history or [])[-6:]:
+        if not isinstance(h, dict):
+            continue
+        txt = str(h.get("text", ""))[:500].strip()
+        if txt:
+            contents.append({
+                "role": "model" if h.get("role") == "nexa" else "user",
+                "parts": [{"text": txt}]})
+    contents.append({"role": "user", "parts": [{"text": message}]})
+    body = {
+        "system_instruction": {"parts": [{"text": _NEXA_SYSTEM}]},
+        "contents": contents,
+        "generationConfig": {"maxOutputTokens": 220,
+                             "temperature": 0.7},
+    }
+    try:
+        r = httpx.post(
+            "https://generativelanguage.googleapis.com/v1beta/"
+            "models/gemini-2.0-flash:generateContent",
+            headers={"x-goog-api-key": key}, json=body, timeout=20)
+        if r.status_code != 200:
+            return None
+        parts = r.json()["candidates"][0]["content"]["parts"]
+        out = "".join(p.get("text", "") for p in parts).strip()
+        return out[:600] or None
+    except Exception:
+        return None
+
+
+def _gemini_tts(text):
+    """Gemini TTS with the youthful 'Leda' voice. Returns base64
+    WAV bytes, or None (client then uses the phone's own voice)."""
+    key = settings.GEMINI_API_KEY
+    if not key:
+        return None
+    body = {
+        "contents": [{"parts": [{"text": text}]}],
+        "generationConfig": {
+            "responseModalities": ["AUDIO"],
+            "speechConfig": {"voiceConfig": {"prebuiltVoiceConfig": {
+                "voiceName": "Leda"}}},
+        },
+    }
+    try:
+        r = httpx.post(
+            "https://generativelanguage.googleapis.com/v1beta/"
+            "models/gemini-2.5-flash-preview-tts:generateContent",
+            headers={"x-goog-api-key": key}, json=body, timeout=25)
+        if r.status_code != 200:
+            return None
+        data = r.json()["candidates"][0]["content"]["parts"][0]
+        pcm = _b64.b64decode(data["inlineData"]["data"])
+        buf = _io.BytesIO()
+        with _wave.open(buf, "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(24000)
+            w.writeframes(pcm)
+        return _b64.b64encode(buf.getvalue()).decode()
+    except Exception:
+        return None
+
+
+@app.get("/assistant/status")
+def assistant_status(user: models.User = Depends(current_user)):
+    return {"name": "Nexa", "ai": bool(settings.GEMINI_API_KEY)}
+
+
+@app.post("/assistant/chat")
+def assistant_chat(body: AssistantChatIn,
+                   user: models.User = Depends(current_user)):
+    _enforce_rate("assistant_chat", f"u{user.telegram_id}")
+    msg = (body.message or "").strip()
+    if not msg:
+        raise HTTPException(400, "Say something first")
+    reply = _gemini_chat(msg, body.history) or _nexa_fallback(msg)
+    return {"reply": reply, "ai": bool(settings.GEMINI_API_KEY)}
+
+
+@app.post("/assistant/speak")
+def assistant_speak(body: AssistantSpeakIn,
+                    user: models.User = Depends(current_user)):
+    _enforce_rate("assistant_speak", f"u{user.telegram_id}")
+    text = (body.text or "").strip()[:300]
+    if not text:
+        raise HTTPException(400, "Nothing to say")
+    audio = _gemini_tts(text)
+    if audio is None:
+        return {"audio": None}
+    return {"audio": audio, "mime": "audio/wav"}

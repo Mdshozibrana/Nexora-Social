@@ -217,7 +217,7 @@ function showView(name) {
                    games: "nav-games",
                    game: "nav-games", tasks: "nav-tasks",
                    leaderboard: "nav-ranks", profile: "nav-me" };
-  ["feed", "videos", "designs", "search", "tasks", "leaderboard", "profile", "saved", "shared", "games", "game", "admin", "notifications", "messages", "chat"].forEach(v => {
+  ["feed", "videos", "designs", "search", "tasks", "leaderboard", "profile", "saved", "shared", "games", "game", "admin", "notifications", "messages", "chat", "assistant"].forEach(v => {
     $("view-" + v).hidden = v !== name;
   });
   // Phase 21: only tab views move the highlight. Views without a tab
@@ -239,6 +239,8 @@ function showView(name) {
   if (name === "videos") { loadVideos(true); maybeShowAd(); }
   if (name === "leaderboard") loadRanks();
   if (name === "designs") loadDesigns(true);
+  if (name === "assistant") openAssistant();
+  if (name !== "assistant") nexaStop();
   moveNavPill();
 }
 
@@ -3743,3 +3745,146 @@ $("story-del").onclick = async () => {
   } catch (e) { setStatus("Could not delete the story."); }
   closeStory();
 };
+
+// ---------- Phase 69: Nexa, the AI assistant ----------
+// She lives behind the sidebar: her chat opens only from her
+// sidebar card. Replies are spoken aloud (Gemini voice when the
+// server has a key, otherwise the phone's own speech voice at a
+// cute high pitch) while her picture switches to the talking
+// pose.
+let nexaHist = [];
+let nexaGreeted = false;
+let nexaAudio = null;
+let nexaVoiceOn = localStorage.getItem("nx_nexa_voice") !== "0";
+
+function nexaPose(p) {
+  const im = $("nexa-img");
+  if (im) im.src = "nexa/" + p + ".webp";
+}
+
+function nexaTalking(on) {
+  const im = $("nexa-img");
+  if (im) im.classList.toggle("talking", !!on);
+  if (!on) nexaPose("idle");
+}
+
+function nexaBubble(text, who) {
+  const log = $("nexa-log");
+  if (!log) return null;
+  const b = document.createElement("div");
+  b.className = "nexa-msg " + who;
+  b.textContent = text;
+  log.appendChild(b);
+  const sc = $("app-scroll");
+  if (sc) sc.scrollTop = sc.scrollHeight;
+  return b;
+}
+
+function openAssistant() {
+  nexaPose(nexaGreeted ? "idle" : "wave");
+  const vb = $("nexa-voice");
+  if (vb) vb.textContent = nexaVoiceOn ? "🔊" : "🔇";
+  if (!nexaGreeted) {
+    nexaGreeted = true;
+    const hello = "Hi! I'm Nexa, your AI friend inside Nexora "
+      + "Social. Ask me about posts, points, tasks or designs — "
+      + "or just chat with me!";
+    nexaBubble(hello, "bot");
+    nexaHist.push({ role: "nexa", text: hello });
+  }
+}
+
+function nexaStop() {
+  if (nexaAudio) {
+    try { nexaAudio.pause(); } catch (e) { /* already stopped */ }
+    nexaAudio = null;
+  }
+  if (window.speechSynthesis) {
+    try { speechSynthesis.cancel(); } catch (e) { /* noop */ }
+  }
+  nexaTalking(false);
+}
+
+function nexaDeviceSpeak(text) {
+  if (!window.speechSynthesis) { nexaTalking(false); return; }
+  const u = new SpeechSynthesisUtterance(text);
+  u.pitch = 1.35;
+  u.rate = 1.03;
+  const vs = speechSynthesis.getVoices();
+  const f = vs.find(v => /female|zira|samantha/i.test(v.name))
+    || vs.find(v => v.lang && v.lang.indexOf("en") === 0);
+  if (f) u.voice = f;
+  u.onend = () => nexaTalking(false);
+  u.onerror = () => nexaTalking(false);
+  speechSynthesis.speak(u);
+}
+
+async function nexaSpeak(text) {
+  if (!nexaVoiceOn || !text) return;
+  nexaPose("talk");
+  nexaTalking(true);
+  try {
+    const r = await api("/assistant/speak", {
+      method: "POST", body: JSON.stringify({ text: text }) });
+    if (r && r.audio) {
+      nexaAudio = new Audio("data:" + (r.mime || "audio/wav")
+        + ";base64," + r.audio);
+      nexaAudio.onended = () => nexaTalking(false);
+      nexaAudio.onerror = () => nexaTalking(false);
+      await nexaAudio.play();
+      return;
+    }
+  } catch (e) { /* fall through to the device voice */ }
+  nexaDeviceSpeak(text);
+}
+
+async function sendNexa(prefill) {
+  const inp = $("nexa-input");
+  const text = (prefill || (inp ? inp.value : "") || "").trim();
+  if (!text) return;
+  if (!prefill && inp) inp.value = "";
+  nexaBubble(text, "me");
+  nexaHist.push({ role: "user", text: text });
+  nexaPose("think");
+  const st = $("nexa-status");
+  if (st) st.textContent = "Nexa is thinking…";
+  const typing = nexaBubble("…", "bot typing");
+  try {
+    const r = await api("/assistant/chat", {
+      method: "POST",
+      body: JSON.stringify({ message: text,
+                             history: nexaHist.slice(0, -1) }) });
+    if (typing) typing.remove();
+    const reply = (r && r.reply)
+      || "Sorry, I missed that — could you say it again?";
+    if (st) st.textContent = (r && r.ai)
+      ? "AI mode · Gemini" : "Guide mode · tap 🔊 to hear me";
+    nexaBubble(reply, "bot");
+    nexaHist.push({ role: "nexa", text: reply });
+    if (nexaHist.length > 12) nexaHist = nexaHist.slice(-12);
+    nexaSpeak(reply);
+  } catch (e) {
+    if (typing) typing.remove();
+    if (st) st.textContent = "Your AI friend — ask me anything!";
+    nexaBubble("Hmm, I can't think right now. Please try again "
+      + "in a moment!", "bot");
+    nexaPose("idle");
+  }
+}
+
+$("nexa-send").onclick = () => sendNexa();
+$("nexa-input").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    sendNexa();
+    $("nexa-input").blur();
+  }
+});
+$("nexa-voice").onclick = () => {
+  nexaVoiceOn = !nexaVoiceOn;
+  localStorage.setItem("nx_nexa_voice", nexaVoiceOn ? "1" : "0");
+  $("nexa-voice").textContent = nexaVoiceOn ? "🔊" : "🔇";
+  if (!nexaVoiceOn) nexaStop();
+};
+document.querySelectorAll(".nexa-chip").forEach(c =>
+  c.onclick = () => sendNexa(c.dataset.q));

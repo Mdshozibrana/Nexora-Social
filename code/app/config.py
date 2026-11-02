@@ -16,6 +16,11 @@ class Settings:
     # ads off. The owner gets the id from adsgram.ai after registering
     # the bot; it is a public placement id, not a secret.
     ADSGRAM_BLOCK_ID: str = os.environ.get("ADSGRAM_BLOCK_ID", "")
+    # Phase 69: Nexa, the AI assistant. One free Gemini API key
+    # (aistudio.google.com) powers her chat brain AND her voice.
+    # Empty = she runs on the built-in guide brain and the phone's
+    # own speech voice. Secret: env only, never sent to clients.
+    GEMINI_API_KEY: str = os.environ.get("GEMINI_API_KEY", "")
     # Phase 28 (security hardening):
     # MODERATOR_IDS — a least-privilege tier below ADMIN_IDS: reports,
     # comment/post moderation and bans only (no points, verify grants,
@@ -57,6 +62,10 @@ RATE_LIMITS = {
     "heartbeat": (240, 3600),
     "ad_shown": (60, 3600),
     "view": (300, 3600),
+    # Phase 69: Nexa's chat + voice budgets (a Gemini key is shared
+    # by the whole platform, so per-member caps protect the quota).
+    "assistant_chat": (30, 3600),
+    "assistant_speak": (60, 3600),
 }
 
 # Points economy (PRD section 5). PLACEHOLDER defaults — these are product

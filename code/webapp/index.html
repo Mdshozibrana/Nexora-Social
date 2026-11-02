@@ -20,7 +20,7 @@
 <meta name="twitter:description" content="Share photos, watch reels, discover designs and play classic games — all inside Telegram.">
 <meta name="twitter:image" content="https://nexora-9pip.onrender.com/webapp/og-image.png">
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
-<link rel="stylesheet" href="style.css?v=67">
+<link rel="stylesheet" href="style.css?v=68">
 </head>
 <body>
 <div id="entry-screen">
@@ -177,6 +177,27 @@
   <main id="notif-list"></main>
   <p id="notif-empty" class="empty" hidden>No notifications yet.</p>
   <button id="notif-more" class="wide" hidden>Load more</button>
+</section>
+
+<section id="view-assistant" hidden>
+  <h2 class="view-title">🤖 Nexa · AI Assistant</h2>
+  <div class="nexa-stage">
+    <img id="nexa-img" src="nexa/wave.webp" alt="Nexa, your AI assistant">
+    <div class="nexa-name">Nexa</div>
+    <div class="nexa-status" id="nexa-status">Your AI friend — ask me anything!</div>
+  </div>
+  <div id="nexa-log"></div>
+  <div class="nexa-chips">
+    <button class="nexa-chip" data-q="Hi Nexa!">👋 Say hi</button>
+    <button class="nexa-chip" data-q="How do I earn points?">⭐ Points?</button>
+    <button class="nexa-chip" data-q="How do I post a photo?">📸 Posting?</button>
+    <button class="nexa-chip" data-q="How does monetization work?">🎯 Monetization?</button>
+  </div>
+  <div class="nexa-bar">
+    <input id="nexa-input" type="text" placeholder="Talk to Nexa…" maxlength="500" autocomplete="off">
+    <button id="nexa-voice" class="nexa-voicebtn" title="Voice on or off">🔊</button>
+    <button id="nexa-send" class="nexa-sendbtn">Send</button>
+  </div>
 </section>
 
 <section id="view-messages" hidden>
@@ -491,6 +512,7 @@
     </div>
     <button id="gb-toggle" title="Expand or collapse">›</button>
   </div>
+  <button class="gb-item gb-nexa" data-go="assistant"><img class="gb-nexa-img" src="nexa/idle.webp" alt="Nexa"><span class="gb-label">Nexa · AI Assistant<span class="gb-nexa-sub">Chat with me 💬</span></span></button>
   <button class="gb-item gb-search" data-go="search"><span class="gb-ic">🔍</span><span class="gb-label">Search pages</span></button>
   <div class="gb-sec">MAIN</div>
   <button class="gb-item" data-go="feed"><span class="gb-ic">🏠</span><span class="gb-label">Home</span></button>
@@ -539,7 +561,7 @@
   <div id="reel-sheet"></div>
 </div>
 
-<script src="app.js?v=67"></script>
-<script src="games.js?v=67"></script>
+<script src="app.js?v=68"></script>
+<script src="games.js?v=68"></script>
 </body>
 </html>
