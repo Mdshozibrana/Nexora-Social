@@ -907,7 +907,21 @@ async function loadShared() {
       head.textContent = "📤 Shared by " + p.shared_by_name;
       box.append(head, postCard(p));
     });
-    $("shared-empty").hidden = data.posts.length > 0;
+    // Phase 66: designs shared via the long-press popup.
+    const dd = await api("/me/design-shared");
+    const grid = $("shared-designs");
+    grid.innerHTML = "";
+    dd.designs.forEach(d => {
+      const wrap = document.createElement("div");
+      const head = document.createElement("div");
+      head.className = "shared-by";
+      head.textContent = "🎨 Shared by " + d.shared_by_name;
+      wrap.append(head, designCard(d));
+      grid.appendChild(wrap);
+    });
+    $("shared-designs-title").hidden = dd.designs.length === 0;
+    $("shared-empty").hidden =
+      data.posts.length > 0 || dd.designs.length > 0;
   } catch (e) { box.textContent = "Could not load shared posts."; }
 }
 
@@ -919,7 +933,14 @@ async function loadSaved() {
     const data = await api("/me/saved");
     box.innerHTML = "";
     data.posts.forEach(p => box.appendChild(postCard(p)));
-    $("saved-empty").hidden = data.posts.length > 0;
+    // Phase 66: designs saved via the long-press popup's 📌.
+    const dd = await api("/me/design-saved");
+    const grid = $("saved-designs");
+    grid.innerHTML = "";
+    dd.designs.forEach(d => grid.appendChild(designCard(d)));
+    $("saved-designs-title").hidden = dd.designs.length === 0;
+    $("saved-empty").hidden =
+      data.posts.length > 0 || dd.designs.length > 0;
   } catch (e) { box.textContent = "Could not load your saved posts."; }
 }
 
@@ -2133,6 +2154,203 @@ async function toggleDesignLike(d) {
   } catch (e) { setStatus("Could not update the like."); }
 }
 
+// ------------------------------------------------- phase 66: the design
+// long-press popup. HOLD a design (owner, Pinterest-style) and four
+// round icon buttons float on its right side — every one working:
+// 🔍 similar designs, 💬 WhatsApp share, 📤 in-app share, 📌 save.
+let lpTimer = null, lpFired = false, lpSX = 0, lpSY = 0;
+let popDesign = null, popAnchor = null;
+let designSimilar = null;
+
+function attachLongPress(el, fire) {
+  el.addEventListener("pointerdown", e => {
+    lpFired = false; lpSX = e.clientX; lpSY = e.clientY;
+    clearTimeout(lpTimer);
+    lpTimer = setTimeout(() => {
+      lpFired = true; fire();
+      setTimeout(() => { lpFired = false; }, 400);
+    }, 450);
+  });
+  const cancel = e => {
+    if (e && e.type === "pointermove" &&
+        Math.hypot(e.clientX - lpSX, e.clientY - lpSY) < 10) return;
+    clearTimeout(lpTimer);
+  };
+  el.addEventListener("pointermove", cancel);
+  el.addEventListener("pointerup", cancel);
+  el.addEventListener("pointercancel", cancel);
+  el.addEventListener("contextmenu", e => e.preventDefault());
+}
+
+function showDesignPop(d, anchorEl) {
+  popDesign = d; popAnchor = anchorEl;
+  const pop = $("design-pop");
+  const r = anchorEl.getBoundingClientRect();
+  pop.hidden = false;
+  $("design-pop-backdrop").hidden = false;
+  const railH = 222;
+  let top = r.top + (r.height - railH) / 2;
+  top = Math.max(10, Math.min(top, window.innerHeight - railH - 10));
+  let left = r.right - 58;
+  left = Math.max(8, Math.min(left, window.innerWidth - 56));
+  pop.style.top = top + "px";
+  pop.style.left = left + "px";
+  $("dp-save").classList.toggle("on", !!d.saved);
+  if (anchorEl.classList) anchorEl.classList.add("lp-on");
+  if (navigator.vibrate) { try { navigator.vibrate(15); } catch (e) {} }
+}
+
+function hideDesignPop() {
+  $("design-pop").hidden = true;
+  $("design-pop-backdrop").hidden = true;
+  if (popAnchor && popAnchor.classList)
+    popAnchor.classList.remove("lp-on");
+  popAnchor = null; popDesign = null;
+}
+
+async function designPopSave() {
+  const d = popDesign; if (!d) return;
+  try {
+    const r = await api("/designs/" + d.id + "/save",
+                        { method: "POST" });
+    d.saved = r.saved;
+    $("dp-save").classList.toggle("on", r.saved);
+    setStatus(r.saved ? "Design saved 📌 — find it in Saved."
+                      : "Removed from Saved.");
+  } catch (e) { setStatus("Could not save the design."); }
+}
+
+function designPopWhatsApp() {
+  const d = popDesign; if (!d) return;
+  const text = "🎨 " + (d.prompt || "Design").slice(0, 140) +
+    "\n— via Nexora Social https://t.me/NexoraSocial_bot";
+  const url = "https://wa.me/?text=" + encodeURIComponent(text);
+  hideDesignPop();
+  if (window.Telegram && tg && tg.openLink) tg.openLink(url);
+  else window.open(url, "_blank");
+}
+
+function designPopShare() {
+  const d = popDesign; if (!d) return;
+  hideDesignPop();
+  if (!$("design-sheet-wrap").hidden) closeDesignSheet();
+  openDesignSharePicker(d);
+}
+
+function designPopSimilar() {
+  const d = popDesign; if (!d) return;
+  hideDesignPop();
+  if (!$("design-sheet-wrap").hidden) closeDesignSheet();
+  setSimilarMode(d);
+  $("app-scroll").scrollTop = 0;
+  loadDesigns(true);
+}
+
+function setSimilarMode(d) {
+  designSimilar = d;
+  $("design-similar-bar").hidden = !d;
+  if (d) $("design-similar-text").textContent =
+    (d.prompt || "this design").slice(0, 42);
+}
+
+async function openDesignSharePicker(d) {
+  const sheet = $("reel-sheet");
+  sheet.innerHTML = "";
+  const title = document.createElement("div");
+  title.className = "sheet-title";
+  title.textContent = "Send design to…";
+  const searchRow = document.createElement("div");
+  searchRow.className = "sheet-search";
+  const input = document.createElement("input");
+  input.type = "text";
+  input.placeholder = "Search people…";
+  searchRow.appendChild(input);
+  const list = document.createElement("div");
+  sheet.append(title, searchRow, list);
+
+  const render = users => {
+    list.innerHTML = "";
+    const visible = users.filter(u => !me || u.telegram_id !== me.telegram_id);
+    if (!visible.length) {
+      const e = document.createElement("p");
+      e.className = "hint";
+      e.textContent = "No people here yet. Follow someone, or search by name.";
+      list.appendChild(e);
+    }
+    visible.forEach(u => {
+      const r = document.createElement("div");
+      r.className = "pick-row";
+      const nm = document.createElement("span");
+      nm.className = "pick-name";
+      nm.textContent = u.first_name;
+      if (u.is_verified) nm.appendChild(verifiedBadge());
+      if (u.username) {
+        const sm = document.createElement("small");
+        sm.textContent = "@" + u.username;
+        nm.appendChild(sm);
+      }
+      const send = document.createElement("button");
+      send.className = "pick-send";
+      send.textContent = "Send";
+      send.onclick = async () => {
+        send.disabled = true;
+        try {
+          await api("/designs/" + d.id + "/share", { method: "POST",
+            body: JSON.stringify({ to_user_id: u.telegram_id }) });
+          send.textContent = "Sent ✓";
+          send.classList.add("sent");
+          setStatus("Design shared with " + u.first_name + ".");
+        } catch (e) {
+          send.disabled = false;
+          setStatus("Could not share the design.");
+        }
+      };
+      r.append(avatarEl(u.first_name, u.telegram_id, false, u.photo_file_id), nm, send);
+      list.appendChild(r);
+    });
+    const cancel = document.createElement("button");
+    cancel.className = "sheet-row";
+    const ic2 = document.createElement("span");
+    ic2.className = "ic";
+    ic2.textContent = "✕";
+    cancel.append(ic2, document.createTextNode("Cancel"));
+    cancel.onclick = () => closeReelMenu();
+    list.appendChild(cancel);
+  };
+
+  try {
+    const data = await api("/me/following");
+    render(data.users);
+  } catch (e) { render([]); }
+  let timer = null;
+  input.oninput = () => {
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
+      const q = input.value.trim();
+      try {
+        const dd = q ? await api("/search?q=" + encodeURIComponent(q))
+                     : await api("/me/following");
+        render(dd.users);
+      } catch (e) { /* keep the current list */ }
+    }, 250);
+  };
+  $("reel-sheet-wrap").hidden = false;
+}
+
+$("dp-save").onclick = designPopSave;
+$("dp-wa").onclick = designPopWhatsApp;
+$("dp-share").onclick = designPopShare;
+$("dp-similar").onclick = designPopSimilar;
+$("design-pop-backdrop").onclick = hideDesignPop;
+$("design-similar-clear").onclick = () => {
+  setSimilarMode(null); loadDesigns(true);
+};
+$("app-scroll").addEventListener("scroll",
+  () => clearTimeout(lpTimer), { passive: true });
+attachLongPress($("ds-img"), () => {
+  if (currentDesign) showDesignPop(currentDesign, $("ds-img"));
+});
+
 function designCard(d) {
   const el = document.createElement("div");
   el.className = "design-card";
@@ -2149,7 +2367,8 @@ function designCard(d) {
   like.className = "design-like" + (d.liked ? " liked" : "");
   like.dataset.did = d.id;
   like.textContent = (d.liked ? "❤️ " : "🤍 ") + d.like_count;
-  like.onclick = e => { e.stopPropagation(); toggleDesignLike(d); };
+  like.onclick = e => { e.stopPropagation(); if (lpFired) return;
+    toggleDesignLike(d); };
   // Phase 31: like + unique views share one compact stats row,
   // Pinterest-style, under the prompt snippet.
   const stats = document.createElement("div");
@@ -2161,7 +2380,11 @@ function designCard(d) {
   stats.append(like, views);
   body.append(p, stats);
   el.append(img, body);
-  el.onclick = () => openDesignSheet(d);
+  // Phase 66 (owner): HOLD a design and the icon popup appears
+  // (Pinterest-style). A fired long-press swallows the tap that
+  // would otherwise open the sheet.
+  attachLongPress(el, () => showDesignPop(d, el));
+  el.onclick = () => { if (lpFired) return; openDesignSheet(d); };
   return el;
 }
 
@@ -2171,6 +2394,7 @@ async function loadDesigns(reset) {
   if (reset) { designCursor = null; grid.innerHTML = ""; }
   try {
     const url = "/designs?limit=20" +
+      (designSimilar ? "&similar_to=" + designSimilar.id : "") +
       (designCursor ? "&cursor=" + designCursor : "");
     const r = await api(url);
     r.designs.forEach(d => grid.appendChild(designCard(d)));

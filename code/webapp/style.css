@@ -1037,7 +1037,7 @@ body { padding: 0; overflow: hidden; }
 .ptr-indicator { text-align: center; font-size: 13px; font-weight: 600;
   color: #E84393; overflow: hidden; height: 0; line-height: 40px;
   transition: height .18s ease; }
-#design-grid { columns: 2; column-gap: 10px; }
+#design-grid, .design-grid { columns: 2; column-gap: 10px; }
 .design-card { break-inside: avoid; margin: 0 0 10px;
   background: #FFFBFC; border-radius: 18px; overflow: hidden;
   box-shadow: var(--clay-shadow-sm); cursor: pointer; }
@@ -1758,3 +1758,35 @@ button.liked { animation: heartPop .32s cubic-bezier(.22,.9,.3,1); }
    ================================================================ */
 .user-row { display: flex; align-items: center; gap: 9px;
   width: 100%; }
+
+/* ================================================================
+   Phase 66 — the design LONG-PRESS popup (owner: hold a design and
+   the Pinterest-style icon popup appears, every icon working).
+   Dark round buttons float on the pressed card's right side.
+   ================================================================ */
+#design-pop-backdrop { position: fixed; inset: 0; z-index: 84;
+  background: rgba(30, 8, 22, .28); }
+#design-pop { position: fixed; z-index: 85; display: flex;
+  flex-direction: column; gap: 10px; }
+#design-pop[hidden] { display: none; }
+.dp-btn { width: 48px; height: 48px; border-radius: 50%; border: none;
+  background: rgba(26, 13, 21, .78); color: #fff; font-size: 21px;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 8px 20px rgba(30, 5, 20, .4);
+  -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+  cursor: pointer; }
+.dp-btn:active { transform: scale(.9); }
+.dp-btn.dp-wa { background: #25D366; }
+.dp-btn.on { background: #E84393; }
+.design-card, #ds-img { -webkit-touch-callout: none;
+  -webkit-user-select: none; user-select: none; }
+.design-card.lp-on { outline: 3px solid #F79AC0; }
+.similar-bar { display: flex; align-items: center; gap: 8px;
+  justify-content: space-between; background: #FFF3F9;
+  border: 2px solid #FBD3E6; border-radius: 14px;
+  padding: 8px 12px; margin: 10px 0; font-size: 13px; }
+.similar-bar[hidden] { display: none; }
+.similar-bar b { font-weight: 700; }
+.similar-bar button { flex: none; font-size: 12px; padding: 6px 10px; }
+.view-subtitle { margin: 16px 0 8px; font-size: 16px; }
+#shared-designs > div { break-inside: avoid; }

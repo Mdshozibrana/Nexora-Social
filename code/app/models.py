@@ -299,6 +299,31 @@ class DesignView(Base):
     __table_args__ = (UniqueConstraint("design_id", "user_id"),)
 
 
+class DesignSave(Base):
+    """Phase 66: a member's saved (pinned) designs — the 📌 button
+    on the design popup's action rail. Listed under /me/design-saved
+    and shown in the Saved view."""
+    __tablename__ = "design_saves"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    design_id = Column(Integer, ForeignKey("designs.id"), index=True)
+    user_id = Column(BigInteger, ForeignKey("users.telegram_id"))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    __table_args__ = (UniqueConstraint("design_id", "user_id"),)
+
+
+class DesignShare(Base):
+    """Phase 66: in-app design shares — one member sends a design
+    to another from the popup's action rail; it lands in the
+    receiver's Shared view with a bot notification."""
+    __tablename__ = "design_shares"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    design_id = Column(Integer, ForeignKey("designs.id"), index=True)
+    from_user_id = Column(BigInteger, ForeignKey("users.telegram_id"))
+    to_user_id = Column(BigInteger, ForeignKey("users.telegram_id"),
+                        index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class Message(Base):
     """Phase 36 (owner: a Facebook-style messenger in the top
     corner): a direct message between two members. read_at stays

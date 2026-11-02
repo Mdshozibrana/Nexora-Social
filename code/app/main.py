@@ -2548,9 +2548,14 @@ def admin_comment_remove(comment_id: int,
 # Members browse, open, like and copy prompts like any post.
 # ---------------------------------------------------------------------------
 
-def _design_dict(db, design, user, views=None, liked=None):
+def _design_dict(db, design, user, views=None, liked=None, saved=None):
     if liked is None:
         liked = db.query(models.DesignLike).filter_by(
+            design_id=design.id, user_id=user.telegram_id).first() \
+            is not None
+    if saved is None:
+        # Phase 66: the popup rail's 📌 state.
+        saved = db.query(models.DesignSave).filter_by(
             design_id=design.id, user_id=user.telegram_id).first() \
             is not None
     if views is None:
@@ -2560,6 +2565,7 @@ def _design_dict(db, design, user, views=None, liked=None):
     return {"id": design.id, "image_file_id": design.image_file_id,
             "prompt": design.prompt,
             "like_count": design.like_count, "liked": liked,
+            "saved": saved,
             "views": views,
             "author_id": OFFICIAL_ID, "author_name": OFFICIAL_NAME,
             "created_at": design.created_at.isoformat()
@@ -2570,6 +2576,11 @@ def _remove_design(db, design):
     db.query(models.DesignLike).filter_by(
         design_id=design.id).delete(synchronize_session=False)
     db.query(models.DesignView).filter_by(
+        design_id=design.id).delete(synchronize_session=False)
+    # Phase 66: saves and shares of a removed design go with it.
+    db.query(models.DesignSave).filter_by(
+        design_id=design.id).delete(synchronize_session=False)
+    db.query(models.DesignShare).filter_by(
         design_id=design.id).delete(synchronize_session=False)
     db.delete(design)
 
@@ -2593,7 +2604,7 @@ def _interest_words(text):
 
 
 @app.get("/designs")
-def list_designs(cursor: int = 0, limit: int = 20,
+def list_designs(cursor: int = 0, limit: int = 20, similar_to: int = 0,
                  user: models.User = Depends(current_user),
                  db: Session = Depends(get_db)):
     limit = max(1, min(limit, 40))
@@ -2601,7 +2612,25 @@ def list_designs(cursor: int = 0, limit: int = 20,
                  .filter_by(user_id=user.telegram_id).all()}
     viewed_ids = {v.design_id for v in db.query(models.DesignView)
                   .filter_by(user_id=user.telegram_id).all()}
-    if not liked_ids and not viewed_ids:
+    seed = db.get(models.Design, similar_to) if similar_to else None
+    if seed is not None:
+        # Phase 66 (the popup rail's 🔍 "More like this"): rank every
+        # OTHER design by prompt-word overlap with the seed design —
+        # the Phase 61 taste words, pointed at one design. Offset
+        # cursor, same as personalised mode.
+        seed_words = _interest_words(seed.prompt)
+
+        def sim_key(d):
+            match = len(seed_words & _interest_words(d.prompt))
+            return (match, min(d.like_count or 0, 20), d.id)
+
+        ranked = sorted(
+            (d for d in db.query(models.Design).all()
+             if d.id != seed.id), key=sim_key, reverse=True)
+        rows = ranked[cursor:cursor + limit]
+        next_cursor = cursor + limit \
+            if cursor + limit < len(ranked) else None
+    elif not liked_ids and not viewed_ids:
         # No taste signals yet — the exact legacy behaviour:
         # newest first, keyset pagination on the design id.
         q = db.query(models.Design)
@@ -2640,6 +2669,7 @@ def list_designs(cursor: int = 0, limit: int = 20,
     # Phase 38: batched view counts + liked set for the whole page.
     counts = {}
     liked_set = set()
+    saved_set = set()
     if rows:
         ids = [d.id for d in rows]
         counts = {did: n for did, n in db.query(
@@ -2650,9 +2680,14 @@ def list_designs(cursor: int = 0, limit: int = 20,
             models.DesignLike).filter_by(
             user_id=user.telegram_id).filter(
             models.DesignLike.design_id.in_(ids)).all()}
+        saved_set = {s.design_id for s in db.query(
+            models.DesignSave).filter_by(
+            user_id=user.telegram_id).filter(
+            models.DesignSave.design_id.in_(ids)).all()}
     return {"designs": [_design_dict(db, d, user,
                                      views=counts.get(d.id, 0),
-                                     liked=d.id in liked_set)
+                                     liked=d.id in liked_set,
+                                     saved=d.id in saved_set)
                         for d in rows],
             "next_cursor": next_cursor}
 
@@ -2764,6 +2799,96 @@ def view_design(design_id: int,
                            user.telegram_id)
     return {"views": db.query(models.DesignView).filter_by(
         design_id=design.id).count(), "counted": counted}
+
+
+@app.post("/designs/{design_id}/save")
+def toggle_design_save(design_id: int,
+                       user: models.User = Depends(current_user),
+                       db: Session = Depends(get_db)):
+    """Phase 66: the 📌 button of the long-press popup — save /
+    unsave a design. Saved designs appear in the Saved view."""
+    design = db.get(models.Design, design_id)
+    if design is None:
+        raise HTTPException(404, "Design not found")
+    row = db.query(models.DesignSave).filter_by(
+        design_id=design_id, user_id=user.telegram_id).first()
+    if row is not None:
+        db.delete(row)
+        saved = False
+    else:
+        db.add(models.DesignSave(design_id=design_id,
+                                 user_id=user.telegram_id))
+        saved = True
+    db.commit()
+    return {"saved": saved, "design_id": design_id}
+
+
+@app.get("/me/design-saved")
+def my_design_saved(user: models.User = Depends(current_user),
+                    db: Session = Depends(get_db)):
+    rows = db.query(models.Design).join(
+        models.DesignSave,
+        models.DesignSave.design_id == models.Design.id) \
+        .filter(models.DesignSave.user_id == user.telegram_id) \
+        .order_by(models.DesignSave.id.desc()).limit(50).all()
+    return {"designs": [_design_dict(db, d, user, saved=True)
+                        for d in rows]}
+
+
+@app.post("/designs/{design_id}/share")
+async def share_design(design_id: int, body: ShareIn,
+                       user: models.User = Depends(current_user),
+                       db: Session = Depends(get_db)):
+    """Phase 66: the 📤 button of the long-press popup — send a
+    design to another member in-app (their Shared view + a bot
+    notification), mirroring the post share."""
+    _enforce_rate("share", f"u{user.telegram_id}")
+    design = db.get(models.Design, design_id)
+    if design is None:
+        raise HTTPException(404, "Design not found")
+    if body.to_user_id == user.telegram_id:
+        raise HTTPException(400, "You cannot share to yourself")
+    target = db.get(models.User, body.to_user_id)
+    if target is None:
+        raise HTTPException(404, "User not found")
+    if _blocked_by(db, body.to_user_id, user.telegram_id) \
+            or _blocked_by(db, user.telegram_id, body.to_user_id):
+        raise HTTPException(403, "This member is not available")
+    db.add(models.DesignShare(design_id=design.id,
+                              from_user_id=user.telegram_id,
+                              to_user_id=body.to_user_id))
+    db.commit()
+    snippet = (design.prompt or "")[:80]
+    await notify.notify_user(
+        db, body.to_user_id, "share",
+        f"\U0001F3A8 {user.first_name} shared a design with you in "
+        f"Nexora Social{f': {snippet}' if snippet else ''}")
+    notify.record(db, body.to_user_id, "share",
+                  actor_id=user.telegram_id,
+                  text=f"{user.first_name} shared a design with you")
+    return {"ok": True, "design_id": design.id,
+            "to_user_id": body.to_user_id}
+
+
+@app.get("/me/design-shared")
+def my_design_shared(user: models.User = Depends(current_user),
+                     db: Session = Depends(get_db)):
+    shares = db.query(models.DesignShare).filter_by(
+        to_user_id=user.telegram_id) \
+        .order_by(models.DesignShare.id.desc()).limit(50).all()
+    out = []
+    for s in shares:
+        d = db.get(models.Design, s.design_id)
+        if d is None:
+            continue
+        sender = db.get(models.User, s.from_user_id)
+        dd = _design_dict(db, d, user)
+        dd["shared_by_id"] = s.from_user_id
+        dd["shared_by_name"] = sender.first_name if sender else ""
+        dd["shared_at"] = s.created_at.isoformat() \
+            if s.created_at else None
+        out.append(dd)
+    return {"designs": out}
 
 
 @app.delete("/designs/{design_id}")

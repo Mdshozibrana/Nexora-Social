@@ -20,7 +20,7 @@
 <meta name="twitter:description" content="Share photos, watch reels, discover designs and play classic games — all inside Telegram.">
 <meta name="twitter:image" content="https://nexora-9pip.onrender.com/webapp/og-image.png">
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
-<link rel="stylesheet" href="style.css?v=64">
+<link rel="stylesheet" href="style.css?v=65">
 </head>
 <body>
 <div id="entry-screen">
@@ -117,6 +117,10 @@
     </div>
     <input type="file" id="design-file" accept="image/*" hidden>
   </div>
+  <div id="design-similar-bar" class="similar-bar" hidden>
+    <span>🔍 Similar to: <b id="design-similar-text"></b></span>
+    <button id="design-similar-clear" type="button">✕ Show all</button>
+  </div>
   <div id="design-grid"></div>
   <p id="design-empty" class="hint" hidden>No designs yet — the first
     one is on its way ✨</p>
@@ -149,6 +153,8 @@
   <h2 class="view-title">🔖 Saved</h2>
   <p class="hint">Posts and videos you saved from the options menu.</p>
   <main id="saved-list"></main>
+  <h3 id="saved-designs-title" class="view-subtitle" hidden>🎨 Saved designs</h3>
+  <div id="saved-designs" class="design-grid"></div>
   <p id="saved-empty" class="empty" hidden>Nothing saved yet. Open a video,
   tap ⋮ and choose Save.</p>
   <button id="saved-back" class="wide">← Back to my profile</button>
@@ -158,6 +164,8 @@
   <h2 class="view-title">📥 Shared with me</h2>
   <p class="hint">Posts and videos other members sent you inside the app.</p>
   <main id="shared-list"></main>
+  <h3 id="shared-designs-title" class="view-subtitle" hidden>🎨 Designs shared with you</h3>
+  <div id="shared-designs" class="design-grid"></div>
   <p id="shared-empty" class="empty" hidden>Nobody has shared anything
   with you yet.</p>
   <button id="shared-back" class="wide">← Back to my profile</button>
@@ -428,6 +436,18 @@
   </div>
 </div>
 
+<div id="design-pop-backdrop" hidden></div>
+<div id="design-pop" hidden>
+  <button id="dp-similar" class="dp-btn" type="button"
+    title="More like this">🔍</button>
+  <button id="dp-wa" class="dp-btn dp-wa" type="button"
+    title="Share on WhatsApp">💬</button>
+  <button id="dp-share" class="dp-btn" type="button"
+    title="Share in app">📤</button>
+  <button id="dp-save" class="dp-btn" type="button"
+    title="Save design">📌</button>
+</div>
+
 <div id="design-sheet-wrap" hidden>
   <div id="design-sheet-backdrop"></div>
   <div id="design-sheet">
@@ -516,7 +536,7 @@
   <div id="reel-sheet"></div>
 </div>
 
-<script src="app.js?v=64"></script>
-<script src="games.js?v=64"></script>
+<script src="app.js?v=65"></script>
+<script src="games.js?v=65"></script>
 </body>
 </html>
