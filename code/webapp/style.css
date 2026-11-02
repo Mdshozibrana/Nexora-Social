@@ -1741,3 +1741,10 @@ button.liked { animation: heartPop .32s cubic-bezier(.22,.9,.3,1); }
   color: #472A3E; background: #fff; margin: 2px 0 10px;
   resize: vertical; }
 .sheet-edit-ta:focus { outline: none; border-color: #EC4899; }
+
+/* ================================================================
+   Phase 60 — search/user rows are flex rows again (a theme layer
+   had set display:block, stacking the avatar above the name)
+   ================================================================ */
+.user-row { display: flex; align-items: center; gap: 9px;
+  width: 100%; }

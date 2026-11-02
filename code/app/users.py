@@ -47,7 +47,10 @@ def get_or_create_user(db, tg_user: dict, referrer_id=None):
     uid = int(tg_user["id"])
     user = db.get(models.User, uid)
     if user:
-        user.username = tg_user.get("username") or user.username
+        # Phase 60: never let a stray "@" into the stored
+        # username (renders add their own @).
+        user.username = (tg_user.get("username") or "").lstrip("@") \
+            or user.username
         # Phase 42: an in-app name edit (by the member or an
         # admin) wins over this Telegram sync — name_changed_at
         # marks the name as app-managed; without the guard, an
@@ -65,7 +68,7 @@ def get_or_create_user(db, tg_user: dict, referrer_id=None):
         return user, False
     user = models.User(
         telegram_id=uid,
-        username=tg_user.get("username"),
+        username=(tg_user.get("username") or "").lstrip("@") or None,
         first_name=tg_user.get("first_name", ""),
         language_code=tg_user.get("language_code"),
         is_verified=uid in settings.ADMIN_IDS,

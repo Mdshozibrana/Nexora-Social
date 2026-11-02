@@ -58,6 +58,20 @@ def _migrate():
         if "thumb_file_id" not in post_cols:
             conn.execute(text(
                 "ALTER TABLE posts ADD COLUMN thumb_file_id VARCHAR(256)"))
+    # Phase 60: a managed account created as "@name" stored the @
+    # IN the username, so every "@" + username render showed
+    # "@@name". Strip stray leading @s once (idempotent — later
+    # runs match nothing). Write paths strip too, so it cannot
+    # come back.
+    with engine.begin() as conn:
+        rows = conn.execute(text(
+            "SELECT telegram_id, username FROM users "
+            "WHERE username LIKE '@%'")).fetchall()
+        for tid, uname in rows:
+            conn.execute(text(
+                "UPDATE users SET username = :u "
+                "WHERE telegram_id = :t"),
+                {"u": uname.lstrip("@"), "t": tid})
 
 
 _migrate()
@@ -2084,7 +2098,7 @@ def admin_create_fake_users(body: FakeUserIn,
     for i in range(count):
         while db.get(models.User, next_id) is not None:
             next_id += 1
-        uname = body.username.strip() if body.username else None
+        uname = body.username.strip().lstrip("@") if body.username else None
         if uname and count > 1:
             uname = f"{uname}{i + 1}"
         u = models.User(

@@ -1013,7 +1013,8 @@ async function runSearch(q) {
       row.className = "user-row";
       row.appendChild(avatarEl(u.first_name, u.telegram_id, false, u.photo_file_id));
       row.appendChild(document.createTextNode(
-        u.first_name + (u.username ? " @" + u.username : "")));
+        u.first_name + (u.username
+          ? " @" + String(u.username).replace(/^@+/, "") : "")));
       if (u.is_verified) row.appendChild(verifiedBadge());
       row.onclick = () => openProfile(u.telegram_id);
       usersBox.appendChild(row);
