@@ -133,13 +133,13 @@ calls = []
 
 def fake_post(url, headers=None, json=None, timeout=None):
     calls.append(url)
-    if url.endswith("gemini-2.0-flash:generateContent"):
+    if "tts" not in url and url.endswith(":generateContent"):
         assert headers["x-goog-api-key"] == "test-key-69"
         assert json["system_instruction"]["parts"][0]["text"] \
             .startswith("You are Nexa")
         return FakeResp({"candidates": [{"content": {"parts": [
             {"text": "Hello! I am so happy to chat with you."}]}}]})
-    if url.endswith("gemini-2.5-flash-preview-tts:generateContent"):
+    if "tts" in url and url.endswith(":generateContent"):
         vc = json["generationConfig"]["speechConfig"]["voiceConfig"]
         assert vc["prebuiltVoiceConfig"]["voiceName"] == "Leda"
         pcm = b"\x00\x01" * 2400  # 0.1 s of 24 kHz 16-bit mono

@@ -3469,6 +3469,15 @@ def _nexa_fallback(text):
             "I'll do my best.")
 
 
+# Google retires/renames Gemini models quickly (checked live
+# 2026-11-03: 2.0-flash gone, 2.5-flash closed to new keys,
+# 3.8-flash intermittently 503) — try in order, first win works.
+_NEXA_CHAT_MODELS = ("gemini-3-flash-preview", "gemini-3.8-flash",
+                     "gemini-flash-latest")
+_NEXA_TTS_MODELS = ("gemini-2.5-flash-preview-tts",
+                    "gemini-3.8-flash-tts")
+
+
 def _gemini_chat(message, history):
     key = settings.GEMINI_API_KEY
     if not key:
@@ -3489,18 +3498,21 @@ def _gemini_chat(message, history):
         "generationConfig": {"maxOutputTokens": 220,
                              "temperature": 0.7},
     }
-    try:
-        r = httpx.post(
-            "https://generativelanguage.googleapis.com/v1beta/"
-            "models/gemini-2.0-flash:generateContent",
-            headers={"x-goog-api-key": key}, json=body, timeout=20)
-        if r.status_code != 200:
-            return None
-        parts = r.json()["candidates"][0]["content"]["parts"]
-        out = "".join(p.get("text", "") for p in parts).strip()
-        return out[:600] or None
-    except Exception:
-        return None
+    for model in _NEXA_CHAT_MODELS:
+        try:
+            r = httpx.post(
+                "https://generativelanguage.googleapis.com/v1beta/"
+                f"models/{model}:generateContent",
+                headers={"x-goog-api-key": key}, json=body, timeout=20)
+            if r.status_code != 200:
+                continue
+            parts = r.json()["candidates"][0]["content"]["parts"]
+            out = "".join(p.get("text", "") for p in parts).strip()
+            if out:
+                return out[:600]
+        except Exception:
+            continue
+    return None
 
 
 def _gemini_tts(text):
@@ -3517,24 +3529,26 @@ def _gemini_tts(text):
                 "voiceName": "Leda"}}},
         },
     }
-    try:
-        r = httpx.post(
-            "https://generativelanguage.googleapis.com/v1beta/"
-            "models/gemini-2.5-flash-preview-tts:generateContent",
-            headers={"x-goog-api-key": key}, json=body, timeout=25)
-        if r.status_code != 200:
-            return None
-        data = r.json()["candidates"][0]["content"]["parts"][0]
-        pcm = _b64.b64decode(data["inlineData"]["data"])
-        buf = _io.BytesIO()
-        with _wave.open(buf, "wb") as w:
-            w.setnchannels(1)
-            w.setsampwidth(2)
-            w.setframerate(24000)
-            w.writeframes(pcm)
-        return _b64.b64encode(buf.getvalue()).decode()
-    except Exception:
-        return None
+    for model in _NEXA_TTS_MODELS:
+        try:
+            r = httpx.post(
+                "https://generativelanguage.googleapis.com/v1beta/"
+                f"models/{model}:generateContent",
+                headers={"x-goog-api-key": key}, json=body, timeout=25)
+            if r.status_code != 200:
+                continue
+            data = r.json()["candidates"][0]["content"]["parts"][0]
+            pcm = _b64.b64decode(data["inlineData"]["data"])
+            buf = _io.BytesIO()
+            with _wave.open(buf, "wb") as w:
+                w.setnchannels(1)
+                w.setsampwidth(2)
+                w.setframerate(24000)
+                w.writeframes(pcm)
+            return _b64.b64encode(buf.getvalue()).decode()
+        except Exception:
+            continue
+    return None
 
 
 @app.get("/assistant/status")
