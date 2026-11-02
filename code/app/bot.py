@@ -1,7 +1,7 @@
 """The bot: front door + notifications (PRD section 2).
 /start handles referrals via the deep-link payload ref_<telegram_id> and
 hands the user a button that opens the Mini App."""
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, WebAppInfo
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, MenuButtonWebApp, Update, WebAppInfo
 from telegram.ext import (
     Application, CommandHandler, ContextTypes, MessageHandler, filters,
 )
@@ -125,5 +125,19 @@ def build_bot_app() -> Application:
 async def start_bot(app: Application):
     """Start polling without blocking the API server (PTB async API)."""
     await app.initialize()
+    # Phase 64 (owner): a persistent "Open App" button beside the
+    # message input in every chat with the bot — Telegram's chat
+    # menu button. Set once at startup; Telegram stores it
+    # server-side. It takes over the menu slot next to the input
+    # (typed commands like /start keep working). A failure here
+    # must never stop the bot, so it is fully guarded.
+    if settings.WEBAPP_URL:
+        try:
+            await app.bot.set_chat_menu_button(
+                menu_button=MenuButtonWebApp(
+                    text="Open App",
+                    web_app=WebAppInfo(url=settings.WEBAPP_URL)))
+        except Exception:
+            pass
     await app.updater.start_polling(drop_pending_updates=True)
     await app.start()
