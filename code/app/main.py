@@ -3356,7 +3356,7 @@ class AssistantChatIn(BaseModel):
 
 
 class AssistantSpeakIn(BaseModel):
-    text: str = Field(default="", max_length=300)
+    text: str = Field(default="", max_length=700)
 
 
 _NEXA_SYSTEM = (
@@ -3495,7 +3495,7 @@ def _gemini_chat(message, history):
     body = {
         "system_instruction": {"parts": [{"text": _NEXA_SYSTEM}]},
         "contents": contents,
-        "generationConfig": {"maxOutputTokens": 220,
+        "generationConfig": {"maxOutputTokens": 1500,
                              "temperature": 0.7},
     }
     for model in _NEXA_CHAT_MODELS:
@@ -3509,7 +3509,7 @@ def _gemini_chat(message, history):
             parts = r.json()["candidates"][0]["content"]["parts"]
             out = "".join(p.get("text", "") for p in parts).strip()
             if out:
-                return out[:600]
+                return out[:900]
         except Exception:
             continue
     return None
@@ -3567,11 +3567,30 @@ def assistant_chat(body: AssistantChatIn,
     return {"reply": reply, "ai": bool(settings.GEMINI_API_KEY)}
 
 
+@app.post("/assistant/reply")
+def assistant_reply(body: AssistantChatIn,
+                    user: models.User = Depends(current_user)):
+    """Phase 71: chat + voice in ONE call. Two sequential calls
+    (chat, then speak) made playback start seconds after the
+    member's tap, and the WebView then refused to play the audio
+    at all — Nexa seemed to answer in text only."""
+    _enforce_rate("assistant_chat", f"u{user.telegram_id}")
+    _enforce_rate("assistant_speak", f"u{user.telegram_id}")
+    msg = (body.message or "").strip()
+    if not msg:
+        raise HTTPException(400, "Say something first")
+    reply = _gemini_chat(msg, body.history) or _nexa_fallback(msg)
+    audio = _gemini_tts(reply[:650])
+    return {"reply": reply, "audio": audio,
+            "mime": "audio/wav" if audio else None,
+            "ai": bool(settings.GEMINI_API_KEY)}
+
+
 @app.post("/assistant/speak")
 def assistant_speak(body: AssistantSpeakIn,
                     user: models.User = Depends(current_user)):
     _enforce_rate("assistant_speak", f"u{user.telegram_id}")
-    text = (body.text or "").strip()[:300]
+    text = (body.text or "").strip()[:650]
     if not text:
         raise HTTPException(400, "Nothing to say")
     audio = _gemini_tts(text)

@@ -3758,7 +3758,7 @@ let nexaPlayer = null;
 let nexaVoiceOn = localStorage.getItem("nx_nexa_voice") !== "0";
 
 const NEXA_SILENT_WAV = "data:audio/wav;base64,"
-  + "UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
+  + "UklGRkQDAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YSADAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==";
 
 // Telegram's WebView only lets audio play when it grows out of a
 // real tap. So the Send button (and her sidebar card) first plays
@@ -3791,6 +3791,15 @@ function nexaBubble(text, who) {
   const b = document.createElement("div");
   b.className = "nexa-msg " + who;
   b.textContent = text;
+  if (who === "bot") {
+    b.dataset.say = text;
+    const hint = document.createElement("span");
+    hint.className = "nexa-hear";
+    hint.textContent = " \uD83D\uDD0A";
+    b.appendChild(hint);
+    b.title = "Tap to hear Nexa";
+    b.onclick = () => { nexaUnlockAudio(); nexaSpeak(text, true); };
+  }
   log.appendChild(b);
   const sc = $("app-scroll");
   if (sc) sc.scrollTop = sc.scrollHeight;
@@ -3836,8 +3845,24 @@ function nexaDeviceSpeak(text, done) {
   speechSynthesis.speak(u);
 }
 
-async function nexaSpeak(text) {
-  if (!nexaVoiceOn || !text) return;
+function nexaPlayAudio(b64, mime) {
+  nexaPose("talk");
+  nexaTalking(true);
+  let guard = setTimeout(() => nexaTalking(false), 30000);
+  const done = () => { clearTimeout(guard); nexaTalking(false); };
+  try {
+    if (!nexaPlayer) nexaPlayer = new Audio();
+    nexaPlayer.src = "data:" + (mime || "audio/wav")
+      + ";base64," + b64;
+    nexaPlayer.onended = done;
+    nexaPlayer.onerror = done;
+    const pr = nexaPlayer.play();
+    if (pr && pr.catch) pr.catch(done);
+  } catch (e) { done(); }
+}
+
+async function nexaSpeak(text, force) {
+  if ((!nexaVoiceOn && !force) || !text) return;
   nexaPose("talk");
   nexaTalking(true);
   let guard = setTimeout(() => nexaTalking(false),
@@ -3847,12 +3872,8 @@ async function nexaSpeak(text) {
     const r = await api("/assistant/speak", {
       method: "POST", body: JSON.stringify({ text: text }) });
     if (r && r.audio) {
-      if (!nexaPlayer) nexaPlayer = new Audio();
-      nexaPlayer.src = "data:" + (r.mime || "audio/wav")
-        + ";base64," + r.audio;
-      nexaPlayer.onended = done;
-      nexaPlayer.onerror = done;
-      await nexaPlayer.play();
+      clearTimeout(guard);
+      nexaPlayAudio(r.audio, r.mime);
       return;
     }
   } catch (e) { /* fall through to the device voice */ }
@@ -3871,7 +3892,8 @@ async function sendNexa(prefill) {
   if (st) st.textContent = "Nexa is thinking…";
   const typing = nexaBubble("…", "bot typing");
   try {
-    const r = await api("/assistant/chat", {
+    const r = await api(nexaVoiceOn ? "/assistant/reply"
+                                    : "/assistant/chat", {
       method: "POST",
       body: JSON.stringify({ message: text,
                              history: nexaHist.slice(0, -1) }) });
@@ -3883,7 +3905,9 @@ async function sendNexa(prefill) {
     nexaBubble(reply, "bot");
     nexaHist.push({ role: "nexa", text: reply });
     if (nexaHist.length > 12) nexaHist = nexaHist.slice(-12);
-    nexaSpeak(reply);
+    if (nexaVoiceOn && r.audio) nexaPlayAudio(r.audio, r.mime);
+    else if (nexaVoiceOn) nexaSpeak(reply);
+    else nexaPose("idle");
   } catch (e) {
     if (typing) typing.remove();
     if (st) st.textContent = "Your AI friend — ask me anything!";

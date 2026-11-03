@@ -1837,6 +1837,8 @@ button.liked { animation: heartPop .32s cubic-bezier(.22,.9,.3,1); }
   border-bottom-left-radius: 6px;
   box-shadow: 3px 3px 8px rgba(214, 165, 190, .4); }
 .nexa-msg.typing { opacity: .65; font-style: italic; }
+.nexa-msg.bot { cursor: pointer; }
+.nexa-hear { opacity: .55; font-size: 13px; }
 
 .nexa-chips { display: flex; gap: 8px; flex-wrap: wrap;
   margin-bottom: 10px; }
