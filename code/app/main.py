@@ -2788,7 +2788,7 @@ async def upload_design(prompt: str = Form(""),
     if kind != "photo":
         raise HTTPException(400, "Designs must be images only")
     design = models.Design(image_file_id=file_id,
-                           prompt=prompt.strip()[:2000])
+                           prompt=prompt.strip()[:10000])
     db.add(design)
     db.commit()
     db.refresh(design)
@@ -2822,14 +2822,14 @@ async def edit_design(design_id: int,
         _tok = _upload_screen.set(False)
         try:
             kind, file_id = await _telegram_upload_or_400(
-                user, file, (prompt or design.prompt or "")[:1024])
+                user, file, (prompt or design.prompt or "")[:10000])
         finally:
             _upload_screen.reset(_tok)
         if kind != "photo":
             raise HTTPException(400, "Designs must be images only")
         design.image_file_id = file_id
     if prompt is not None:
-        design.prompt = prompt.strip()[:2000]
+        design.prompt = prompt.strip()[:10000]
     _audit(db, user, "design_edit", detail=f"design {design_id}")
     db.commit()
     db.refresh(design)

@@ -20,8 +20,8 @@
 <meta name="twitter:description" content="Share photos, watch reels, discover designs and play classic games — all inside Telegram.">
 <meta name="twitter:image" content="https://nexora-9pip.onrender.com/webapp/og-image.png">
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
-<link rel="stylesheet" href="style.css?v=83">
-<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=83">
+<link rel="stylesheet" href="style.css?v=84">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=84">
 </head>
 <body>
 <div id="entry-screen">
@@ -110,8 +110,9 @@
   </div>
   <div id="design-upload" class="card" hidden>
     <div class="design-up-title">➕ Add a design <span class="hint">(admin only — posted without your name or ID)</span></div>
-    <textarea id="design-prompt" rows="3" maxlength="2000"
+    <textarea id="design-prompt" rows="3" maxlength="10000"
       placeholder="Paste the prompt for this design…"></textarea>
+    <div id="design-prompt-count" class="hint" style="text-align:right"></div>
     <div class="composer-row">
       <button id="design-pick" class="tool-btn" title="Pick the design image">🖼️</button>
       <span id="design-attach" class="attach-chip" hidden></span>
@@ -510,8 +511,9 @@
         <button id="ds-remove" class="danger-btn" type="button" hidden>Remove</button>
       </div>
       <div id="ds-edit-box" hidden>
-        <textarea id="ds-edit-prompt" rows="4" maxlength="2000"
+        <textarea id="ds-edit-prompt" rows="4" maxlength="10000"
           placeholder="Prompt for this design"></textarea>
+        <div id="ds-edit-count" class="hint" style="text-align:right"></div>
         <div class="ds-edit-row">
           <button id="ds-edit-img" type="button">🖼️ Replace image</button>
           <button id="ds-edit-save" type="button">Save changes</button>
@@ -584,8 +586,8 @@
   <div id="reel-sheet"></div>
 </div>
 
-<script src="vendor/leaflet/leaflet.js?v=83"></script>
-<script src="app.js?v=83"></script>
-<script src="games.js?v=83"></script>
+<script src="vendor/leaflet/leaflet.js?v=84"></script>
+<script src="app.js?v=84"></script>
+<script src="games.js?v=84"></script>
 </body>
 </html>

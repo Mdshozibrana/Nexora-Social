@@ -3064,6 +3064,7 @@ $("ds-edit").onclick = () => {
   box.hidden = !box.hidden;
   if (!box.hidden) {
     $("ds-edit-prompt").value = currentDesign.prompt || "";
+    if (paintDsEditCount) paintDsEditCount();
     $("ds-edit-status").textContent = "";
   }
 };
@@ -3104,6 +3105,23 @@ $("design-file").onchange = () => {
   chip.textContent = designFile ? "🖼️ " + designFile.name : "";
   $("design-status").textContent = "";
 };
+// Phase 84 (owner): long prompts were silently cut at 2,000
+// characters — the limit is now 10,000, and a live counter
+// under each prompt box shows where you stand.
+function wireCharCount(inputId, countId) {
+  const ta = $(inputId), el = $(countId);
+  if (!ta || !el) return;
+  const paint = () => { el.textContent =
+    ta.value.length + " / " + ta.maxLength; };
+  ta.addEventListener("input", paint);
+  paint();
+  return paint;
+}
+const paintDesignCount = wireCharCount("design-prompt",
+                                       "design-prompt-count");
+const paintDsEditCount = wireCharCount("ds-edit-prompt",
+                                       "ds-edit-count");
+
 $("design-post").onclick = async () => {
   if (!designFile) {
     $("design-status").textContent = "Pick a design image first 🖼️";
@@ -3124,6 +3142,7 @@ $("design-post").onclick = async () => {
     $("design-file").value = "";
     $("design-attach").hidden = true;
     $("design-prompt").value = "";
+    if (paintDesignCount) paintDesignCount();
     $("design-status").textContent = "Design posted ✨";
     loadDesigns(true);
   } catch (e) {

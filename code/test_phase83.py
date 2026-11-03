@@ -36,7 +36,7 @@ assert 'apiFormProgress("/stories/upload", form, () => {}, null)' \
 for bit in (".up-progress", "#composer-progress-fill.busy",
             "@keyframes upslide"):
     assert bit in CSS, bit
-assert "app.js?v=83" in HTML and "style.css?v=83" in HTML
+assert "app.js?v=84" in HTML and "style.css?v=84" in HTML
 print("client OK")
 
 # --- bot: one status message, edited into the outcome --------------
