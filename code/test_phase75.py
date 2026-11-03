@@ -39,5 +39,5 @@ assert '"/assistant/speak"' in MAIN and '"/assistant/reply"' in MAIN
 assert "members chat with you by text" in MAIN
 print("server dormant OK")
 
-assert "app.js?v=82" in HTML and "style.css?v=82" in HTML
+assert "app.js?v=83" in HTML and "style.css?v=83" in HTML
 print("PHASE 75 OK")

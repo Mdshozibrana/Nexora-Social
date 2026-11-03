@@ -2059,17 +2059,41 @@ $("composer-post").onclick = async () => {
       const form = new FormData();
       form.append("file", await shrinkForUpload(composerFile));
       form.append("caption", text);
+      // Phase 83 (owner): a visible progress bar, not just the
+      // button text — real % while the bytes go up, an animated
+      // "Posting…" state while the server finishes (Telegram send
+      // + safety check), then the outcome.
+      const bar = $("composer-progress"),
+            fill = $("composer-progress-fill"),
+            lab = $("composer-progress-label");
+      bar.hidden = false;
+      fill.classList.remove("busy", "done");
+      fill.style.width = "0%";
+      lab.textContent = "Uploading… 0%";
       const res = await apiFormProgress("/posts/upload", form, pct => {
-        btn.textContent = pct === null
-          ? "Sending… keep the app open"
-          : "Uploading… " + pct + "%";
+        if (pct === null) {
+          fill.style.width = "100%";
+          fill.classList.add("busy");
+          lab.textContent = "Posting…";
+          btn.textContent = "Sending… keep the app open";
+        } else {
+          fill.style.width = pct + "%";
+          lab.textContent = "Uploading… " + pct + "%";
+          btn.textContent = "Uploading… " + pct + "%";
+        }
       }, composerUploadId);
       if (res && res.status === "processing") {
+        lab.textContent = "🎬 Processing video…";
         setStatus("🎬 Video received! It's being processed — the bot " +
           "will message you when it's live in Videos.");
         composerStatus("🎬 Video received — the bot will message " +
           "you when it's live in Videos.");
+      } else {
+        fill.classList.remove("busy");
+        fill.classList.add("done");
+        lab.textContent = "Posted ✓";
       }
+      setTimeout(() => { bar.hidden = true; }, 3000);
       composerFile = null;
       composerUploadId = null;
       $("composer-file").value = "";
@@ -2082,6 +2106,7 @@ $("composer-post").onclick = async () => {
     setTab("explore");
     loadMe().catch(() => {});
   } catch (e) {
+    $("composer-progress").hidden = true;
     composerStatus(e.message || "Could not post.");
     setStatus(e.message || "Could not post.");
   }
@@ -4134,7 +4159,10 @@ $("story-file").addEventListener("change", async () => {
   try {
     const form = new FormData();
     form.append("file", await shrinkForUpload(f));
-    await apiFormProgress("/stories/upload", form, () => {}, null);
+    await apiFormProgress("/stories/upload", form, pct => {
+      setStatus(pct === null ? "Posting your story… finishing"
+                             : "Posting your story… " + pct + "%");
+    }, null);
     setStatus("📸 Story posted — it stays up for 24 hours.");
     loadStories();
   } catch (e) {

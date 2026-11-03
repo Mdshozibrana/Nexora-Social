@@ -105,23 +105,40 @@ async def _save_media_post(update: Update, ptype: str, file_id: str,
         if user.is_banned:
             await update.message.reply_text("This account is suspended.")
             return
+        # Phase 83 (owner): a live progress signal — one message
+        # that opens as "⏳ Posting…" and is edited into the
+        # outcome, so the member watches it happen instead of
+        # waiting in silence (screening takes a few seconds).
+        status_msg = None
+        try:
+            status_msg = await update.message.reply_text(
+                f"⏳ Posting your {ptype}…")
+        except Exception:
+            status_msg = None
+
+        async def _finish(text):
+            if status_msg is not None:
+                try:
+                    await status_msg.edit_text(text)
+                    return
+                except Exception:
+                    pass
+            await update.message.reply_text(text)
         # Phase 81 (owner's rule): adult or graphic media is
         # screened BEFORE the post exists — it is never posted,
         # and the member is told exactly why.
         if context is not None and moderation.active():
             verdict = await _screen_via_bot(context, ptype, file_id)
             if verdict != "clean":
-                await update.message.reply_text(
-                    moderation.block_message(ptype, verdict))
+                await _finish(moderation.block_message(ptype, verdict))
                 return
         post, is_first, _ = register_post(
             db, user, ptype, file_id, update.message.caption or "",
             thumb_file_id=thumb_file_id)
+        note = " \U0001F389 First post bonus earned!" if is_first else ""
+        await _finish(f"✅ Posted to {settings.APP_NAME}!{note}")
     finally:
         db.close()
-    note = " \U0001F389 First post bonus earned!" if is_first else ""
-    await update.message.reply_text(
-        f"\u2705 Posted to {settings.APP_NAME}!{note}")
 
 
 async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):

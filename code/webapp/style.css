@@ -2005,3 +2005,21 @@ img { -webkit-user-drag: none; }
 /* ---------- Phase 82: leaderboard name opens the profile ---- */
 .rank-link { cursor: pointer; }
 .rank-link:active .rank-title { text-decoration: underline; }
+
+/* ---------- Phase 83: upload progress bar ------------------- */
+.up-progress { position: relative; height: 8px; border-radius: 99px;
+  background: #F6DEEB; margin: 10px 2px 22px; }
+.up-progress[hidden] { display: none; }
+#composer-progress-fill { position: absolute; left: 0; top: 0;
+  height: 8px; border-radius: 99px; width: 0%;
+  background: linear-gradient(90deg, #FF8FBE, #E84393);
+  transition: width .18s ease; }
+#composer-progress-label { position: absolute; right: 0; top: 12px;
+  font-size: 12.5px; font-weight: 700; color: #96617E;
+  white-space: nowrap; }
+#composer-progress-fill.busy { background: repeating-linear-gradient(
+  45deg, #FF8FBE 0 14px, #E84393 14px 28px);
+  animation: upslide 0.7s linear infinite; }
+#composer-progress-fill.done { background: #3DBE6C; }
+@keyframes upslide { from { background-position: 0 0; }
+  to { background-position: 40px 0; } }
