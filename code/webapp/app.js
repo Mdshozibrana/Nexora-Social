@@ -1374,6 +1374,10 @@ async function loadRanks() {
           isMe ? "(You)" : ""].filter(Boolean).join(" ");
         nm.appendChild(small);
       }
+      // Phase 82 (owner): tapping the NAME opens the profile
+      // too — the avatar button already did, the name did not.
+      nm.classList.add("rank-link");
+      nm.onclick = () => openProfile(r.telegram_id);
       const pts = document.createElement("span");
       pts.className = "rank-points";
       pts.textContent = "⭐ " + r.points;

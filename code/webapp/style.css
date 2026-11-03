@@ -2001,3 +2001,7 @@ img { -webkit-user-drag: none; }
   background: linear-gradient(135deg, #FF8FBE, #E84393);
   color: #fff; font-weight: 800; font-size: 14px;
   padding: 9px 18px; border-radius: 999px; }
+
+/* ---------- Phase 82: leaderboard name opens the profile ---- */
+.rank-link { cursor: pointer; }
+.rank-link:active .rank-title { text-decoration: underline; }
