@@ -1778,12 +1778,37 @@ $("reel-sound").onclick = () => {
   $("reel-sound").textContent = reelMuted ? "🔇" : "🔊";
 };
 
-loadMe().then(() => loadFeed(true)).catch(() => {
+function bootFailed() {
   $("status").textContent = "Please open this app from inside Telegram.";
   $("entry-go").disabled = true;
   $("entry-note").textContent =
     "Please open Nexora Social from inside Telegram to continue.";
+}
+loadMe().then(() => loadFeed(true)).catch(() => {
+  // Phase 76: the first attempt can fail while the free server
+  // wakes up — retry once before showing the fallback above.
+  setTimeout(() => {
+    loadMe().then(() => loadFeed(true)).catch(bootFailed);
+  }, 2000);
 });
+
+// Phase 76 (owner screenshot: every image on the site broken
+// after a slow first open, while the data itself loaded fine):
+// the WebView never retries a failed image, so one cold-start
+// hiccup left the whole gallery broken until a manual reload.
+// Any /media image or video that fails now retries itself with
+// a short pause and a cache-buster, up to three times.
+document.addEventListener("error", (e) => {
+  const t = e.target;
+  if (!t || (t.tagName !== "IMG" && t.tagName !== "VIDEO")) return;
+  const src = t.getAttribute("src") || "";
+  if (!src.includes("/media/")) return;
+  const tries = Number(t.dataset.mr || 0);
+  if (tries >= 3) return;
+  t.dataset.mr = tries + 1;
+  const bust = (src.includes("?") ? "&r=" : "?r=") + (tries + 1);
+  setTimeout(() => { t.src = src + bust; }, 800 * (tries + 1));
+}, true);
 
 // ---------------------------------------------------- entry (Sign Up/Login) ---
 // Neumorphic entry screens in the owner's chosen design (Oct 31).
