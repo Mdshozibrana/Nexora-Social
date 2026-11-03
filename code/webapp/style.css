@@ -1929,3 +1929,75 @@ img { -webkit-user-drag: none; }
 .nb-row-main b { color: #472A3E; }
 .nb-empty { padding: 8px 2px; }
 .nb-note { font-size: 12.5px; margin-top: 10px; }
+
+/* ---------- Phase 80: Nearby in the Story Circles design ----
+   (owner picked Sample F over two earlier rounds) */
+.nb-wrap { background: transparent !important; border: none !important; }
+.nb-stories-head { display: flex; align-items: center;
+  justify-content: space-between; margin: 14px 2px 0; }
+.nb-stories-title { font-size: 19px; font-weight: 800; color: #472A3E; }
+.nb-online { background: linear-gradient(135deg, #4CC778, #2FA84F);
+  color: #fff; font-size: 12px; font-weight: 800;
+  padding: 4px 11px; border-radius: 999px; }
+.nb-stories { display: flex; gap: 14px; overflow-x: auto;
+  padding: 10px 2px 12px; scrollbar-width: none; }
+.nb-stories::-webkit-scrollbar { display: none; }
+.nb-story { flex: none; width: 76px; padding: 0; border: none;
+  background: none; cursor: pointer; display: flex;
+  flex-direction: column; align-items: center; gap: 3px; }
+.nb-ring { width: 68px; height: 68px; border-radius: 50%;
+  padding: 3px; box-sizing: border-box; display: block; }
+.nb-ring.r0 { background: conic-gradient(from 210deg,
+  #FF8FBE, #E84393, #FB8C00, #FF8FBE); }
+.nb-ring.r1 { background: conic-gradient(from 210deg,
+  #FFD54F, #FB8C00, #FF8FBE, #FFD54F); }
+.nb-ring.r2 { background: conic-gradient(from 210deg,
+  #81C7FF, #1E88E5, #673AB7, #81C7FF); }
+.nb-ring.r3 { background: conic-gradient(from 210deg,
+  #8CE8C3, #00A86B, #1E88E5, #8CE8C3); }
+.nb-ring.invite { background: #DCE7DE; }
+.nb-ring-in { background: #fff; border-radius: 50%; padding: 3px;
+  box-sizing: border-box; display: block; width: 100%; height: 100%; }
+.nb-story-img { width: 56px; height: 56px; border-radius: 50%;
+  object-fit: cover; display: block; }
+.nb-ini { display: flex; align-items: center; justify-content: center;
+  color: #fff; font-weight: 800; }
+.nb-story-img.nb-ini { font-size: 22px; }
+.nb-plus { background: #EDF3EE; color: #472A3E; font-size: 30px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%; }
+.nb-story-name { font-size: 12.5px; font-weight: 700; color: #472A3E;
+  max-width: 76px; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; }
+.nb-story-dist { font-size: 11.5px; color: #96617E; }
+.nb-pin { width: 46px; height: 46px; background: #fff;
+  border-radius: 50%; box-shadow: 0 4px 12px rgba(71,42,62,.35);
+  position: relative; display: flex; align-items: center;
+  justify-content: center; }
+.nb-pin::after { content: ""; position: absolute; bottom: -8px;
+  left: 50%; transform: translateX(-50%); width: 0; height: 0;
+  border-left: 7px solid transparent; border-right: 7px solid transparent;
+  border-top: 9px solid #fff; }
+.nb-pin-img { width: 38px; height: 38px; border-radius: 50%;
+  object-fit: cover; display: block; }
+.nb-pin-img.nb-ini { font-size: 17px; }
+.nb-me-pin { width: 46px; height: 46px; border-radius: 50%;
+  background: linear-gradient(135deg, #FF8FBE, #E84393);
+  border: 3px solid #fff; box-sizing: border-box;
+  box-shadow: 0 4px 12px rgba(232,67,147,.45); position: relative;
+  display: flex; align-items: center; justify-content: center; }
+.nb-me-pin::after { content: ""; position: absolute; inset: -11px;
+  border-radius: 50%; border: 2px solid rgba(232,67,147,.55);
+  animation: nbpulse 1.8s ease-out infinite; }
+.nb-card { display: flex; align-items: center; gap: 11px;
+  width: 100%; box-sizing: border-box; background: #FFFBFC;
+  border-radius: 20px; padding: 10px 12px; margin: 8px 0;
+  box-shadow: 0 6px 16px rgba(236,72,153,.10); cursor: pointer; }
+.nb-card .nb-row-main { flex: 1; min-width: 0; }
+.nb-card-ava { width: 46px; height: 46px; border-radius: 50%;
+  object-fit: cover; flex: none; display: block; }
+.nb-card-ava.nb-ini { display: flex; font-size: 19px; }
+.nb-route-btn { flex: none; border: none; cursor: pointer;
+  background: linear-gradient(135deg, #FF8FBE, #E84393);
+  color: #fff; font-weight: 800; font-size: 14px;
+  padding: 9px 18px; border-radius: 999px; }

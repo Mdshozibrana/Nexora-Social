@@ -20,8 +20,8 @@
 <meta name="twitter:description" content="Share photos, watch reels, discover designs and play classic games — all inside Telegram.">
 <meta name="twitter:image" content="https://nexora-9pip.onrender.com/webapp/og-image.png">
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
-<link rel="stylesheet" href="style.css?v=79">
-<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=79">
+<link rel="stylesheet" href="style.css?v=80">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=80">
 </head>
 <body>
 <div id="entry-screen">
@@ -203,7 +203,6 @@
 
 <section id="view-nearby" hidden>
   <h2 class="view-title">📍 Nearby</h2>
-  <p class="muted">See who is using Nexora around you right now. Blue dots are active members within 500 metres — tap one to see their name, open their profile, or get the walking route to them.</p>
   <div class="nb-share">
     <div class="nb-share-txt">
       <div class="nb-share-title">Show me to people nearby</div>
@@ -211,6 +210,11 @@
     </div>
     <button id="nearby-toggle" class="nb-switch" aria-label="Toggle location sharing"><span class="nb-knob"></span></button>
   </div>
+  <div class="nb-stories-head" id="nearby-stories-head" hidden>
+    <span class="nb-stories-title">Around you now</span>
+    <span class="nb-online" id="nearby-count"></span>
+  </div>
+  <div class="nb-stories" id="nearby-stories"></div>
   <div id="nearby-map"></div>
   <div id="nearby-route" class="nb-route" hidden></div>
   <div id="nearby-list"></div>
@@ -579,8 +583,8 @@
   <div id="reel-sheet"></div>
 </div>
 
-<script src="vendor/leaflet/leaflet.js?v=79"></script>
-<script src="app.js?v=79"></script>
-<script src="games.js?v=79"></script>
+<script src="vendor/leaflet/leaflet.js?v=80"></script>
+<script src="app.js?v=80"></script>
+<script src="games.js?v=80"></script>
 </body>
 </html>

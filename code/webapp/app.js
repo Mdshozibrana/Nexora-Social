@@ -308,10 +308,34 @@ function nbDir(b) { return NB_DIRS[Math.round(b / 45) % 8]; }
 function nbEsc(t) { const d = document.createElement("div");
   d.textContent = t == null ? "" : String(t); return d.innerHTML; }
 
-function nbDot(me) {
+// Phase 80 (owner's pick: Sample F — Story Circles): markers
+// are bubble pins carrying the member's photo; the stories row
+// up top mirrors the same people.
+const NB_PALS = [["#81C7FF", "#1E88E5"], ["#FFCC80", "#FB8C00"],
+                 ["#B39DFF", "#673AB7"], ["#8CE8C3", "#00A86B"],
+                 ["#FFABBC", "#E84393"]];
+function nbPal(id) { return NB_PALS[Math.abs(id) % NB_PALS.length]; }
+
+function nbAvaHTML(q, cls) {
+  if (q.photo_file_id)
+    return '<img class="' + cls + '" src="' +
+      mediaUrl(q.photo_file_id) + '" alt="">';
+  const pal = nbPal(q.id);
+  return '<span class="' + cls + ' nb-ini" style="background:linear-gradient(160deg,' +
+    pal[0] + "," + pal[1] + ')">' +
+    nbEsc((q.name || "?").trim().charAt(0).toUpperCase()) + "</span>";
+}
+
+function nbBubbleIcon(q) {
   return L.divIcon({ className: "nb-wrap",
-    html: '<div class="nb-dot' + (me ? " me" : "") + '"></div>',
-    iconSize: [22, 22], iconAnchor: [11, 11] });
+    html: '<div class="nb-pin">' + nbAvaHTML(q, "nb-pin-img") + "</div>",
+    iconSize: [46, 56], iconAnchor: [23, 52], popupAnchor: [0, -50] });
+}
+
+function nbMeIcon() {
+  return L.divIcon({ className: "nb-wrap",
+    html: '<div class="nb-me-pin"><svg viewBox="0 0 24 24" width="24" height="24" fill="#fff"><circle cx="12" cy="8" r="4.2"/><path d="M3.5 20.5c.8-4 4.2-6 8.5-6s7.7 2 8.5 6"/></svg></div>',
+    iconSize: [46, 46], iconAnchor: [23, 23] });
 }
 
 function nbGeo(res) {
@@ -369,13 +393,15 @@ function nbPaintPeople(people) {
       nbMarkers[q.id].setPopupContent(popup);
       nbMarkers[q.id]._nb = q;
     } else {
-      const m = L.marker([q.lat, q.lon], { icon: nbDot(false) }).addTo(nbMap);
+      const m = L.marker([q.lat, q.lon],
+        { icon: nbBubbleIcon(q) }).addTo(nbMap);
       m.bindPopup(popup); m._nb = q; nbMarkers[q.id] = m;
     }
   });
   Object.keys(nbMarkers).forEach(id => {
     if (!seen[id]) { nbMap.removeLayer(nbMarkers[id]); delete nbMarkers[id]; }
   });
+  nbPaintStories(people);
   const list = $("nearby-list");
   list.innerHTML = "";
   if (!people.length) {
@@ -386,18 +412,60 @@ function nbPaintPeople(people) {
     return;
   }
   people.forEach(q => {
-    const row = document.createElement("button");
-    row.className = "nb-row";
-    row.innerHTML = '<span class="nb-arrow" style="transform:rotate(' +
-      q.bearing + 'deg)">⬆</span><span class="nb-row-main"><b>' +
-      nbEsc(q.name) + '</b><span class="muted">' + nbDir(q.bearing) +
-      " · " + q.distance_m + " m</span></span>";
+    const row = document.createElement("div");
+    row.className = "nb-card";
+    row.innerHTML = nbAvaHTML(q, "nb-card-ava") +
+      '<span class="nb-row-main"><b>' + nbEsc(q.name) +
+      (q.verified ? ' <span class="verified">✔</span>' : "") +
+      '</b><span class="muted">' +
+      (q.username ? "@" + nbEsc(q.username) + "  ·  " : "") +
+      nbDir(q.bearing) + "  ·  " + q.distance_m + " m</span></span>" +
+      '<button class="nb-route-btn">Route</button>';
     row.onclick = () => { if (nbMap) { nbMap.setView([q.lat, q.lon], 17);
       nbMarkers[q.id].openPopup(); } };
+    row.querySelector(".nb-route-btn").onclick = e => {
+      e.stopPropagation();
+      if (nbMarkers[q.id]) nbRoute(nbMarkers[q.id]._nb);
+    };
     list.append(row);
   });
   nbSetStatus("Sharing is on — " + people.length +
     " member(s) within 500 m.");
+}
+
+function nbPaintStories(people) {
+  const head = $("nearby-stories-head");
+  const wrap = $("nearby-stories");
+  wrap.innerHTML = "";
+  if (!people.length) { head.hidden = true; return; }
+  head.hidden = false;
+  $("nearby-count").textContent = people.length + " online";
+  people.forEach((q, i) => {
+    const b = document.createElement("button");
+    b.className = "nb-story";
+    b.innerHTML = '<span class="nb-ring r' + (i % 4) + '">' +
+      '<span class="nb-ring-in">' + nbAvaHTML(q, "nb-story-img") +
+      "</span></span>" +
+      '<span class="nb-story-name">' +
+      nbEsc((q.name || "").split(" ")[0]) + "</span>" +
+      '<span class="nb-story-dist">' + q.distance_m + " m</span>";
+    b.onclick = () => { if (nbMap) { nbMap.setView([q.lat, q.lon], 17);
+      nbMarkers[q.id].openPopup(); } };
+    wrap.append(b);
+  });
+  const inv = document.createElement("button");
+  inv.className = "nb-story";
+  inv.innerHTML = '<span class="nb-ring invite"><span class="nb-ring-in">' +
+    '<span class="nb-story-img nb-plus">+</span></span></span>' +
+    '<span class="nb-story-name">Invite</span>' +
+    '<span class="nb-story-dist">&nbsp;</span>';
+  inv.onclick = () => {
+    const url = "https://t.me/share/url?url=" +
+      encodeURIComponent("https://t.me/NexoraSocial_bot") +
+      "&text=" + encodeURIComponent("Join me on Nexora Social!");
+    if (tg.openLink) tg.openLink(url); else window.open(url);
+  };
+  wrap.append(inv);
 }
 
 async function nbRefresh() {
@@ -409,7 +477,7 @@ async function nbRefresh() {
     if (nbMap) {
       if (!nbMeMarker) {
         nbMeMarker = L.marker([pos.lat, pos.lon],
-          { icon: nbDot(true) }).addTo(nbMap);
+          { icon: nbMeIcon() }).addTo(nbMap);
         nbMeMarker.bindPopup("<b>You are here</b>");
         nbMap.setView([pos.lat, pos.lon], 16);
       } else nbMeMarker.setLatLng([pos.lat, pos.lon]);
@@ -513,6 +581,8 @@ $("nearby-toggle").onclick = async () => {
       delete nbMarkers[id];
     });
     $("nearby-list").innerHTML = "";
+    $("nearby-stories").innerHTML = "";
+    $("nearby-stories-head").hidden = true;
     nbSetStatus("Off — nobody can see you on the map.");
     try { await api("/me/location", { method: "POST", body: JSON.stringify(
       { lat: 0, lon: 0, share: false }) }); } catch (e) {}
