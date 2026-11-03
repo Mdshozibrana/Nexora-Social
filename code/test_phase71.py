@@ -141,5 +141,5 @@ w = wave.open(io.BytesIO(raw))
 assert w.getnframes() >= 100, w.getnframes()
 print("client markers OK")
 
-assert "app.js?v=73" in HTML and "style.css?v=73" in HTML
+assert "app.js?v=74" in HTML and "style.css?v=74" in HTML
 print("PHASE 71 OK")

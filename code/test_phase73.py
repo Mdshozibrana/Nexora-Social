@@ -18,12 +18,16 @@ MAIN = open("app/main.py").read()
 
 # --- her day: scenes exist and are wired ------------------------------
 SCENES = ("life-work", "life-cooking", "life-study",
-          "life-gym", "life-cleaning", "life-run")
+          "life-gym", "life-cleaning", "life-run",
+          "life-garden", "life-painting", "life-guitar",
+          "life-yoga")
 for name in SCENES:
     assert os.path.exists(f"webapp/nexa/{name}.webp"), name
     assert name in JS, name
 for label in ("is working", "is cooking", "is studying",
-              "at the gym", "is cleaning", "out running"):
+              "at the gym", "is cleaning", "out running",
+              "watering her plants", "is painting",
+              "playing guitar", "doing yoga"):
     assert label in JS, label
 for bit in ("NEXA_LIFE", "nexaLifeTick", "nexaLifeStart()",
             "nexaLifeStop()", "setInterval(nexaLifeTick, 6000)"):
@@ -44,5 +48,5 @@ assert 'nexaHist.push({ role: "nexa", text: reply });' in JS
 print("ephemeral OK")
 
 HTML = open("webapp/index.html").read()
-assert "app.js?v=73" in HTML and "style.css?v=73" in HTML
+assert "app.js?v=74" in HTML and "style.css?v=74" in HTML
 print("PHASE 73 OK")

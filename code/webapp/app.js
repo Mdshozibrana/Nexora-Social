@@ -3868,6 +3868,10 @@ const NEXA_LIFE = [
   { img: "life-gym", label: "Nexa is at the gym 🏋️" },
   { img: "life-cleaning", label: "Nexa is cleaning her room 🧹" },
   { img: "life-run", label: "Nexa is out running 🏃‍♀️" },
+  { img: "life-garden", label: "Nexa is watering her plants 🌿" },
+  { img: "life-painting", label: "Nexa is painting 🎨" },
+  { img: "life-guitar", label: "Nexa is playing guitar 🎸" },
+  { img: "life-yoga", label: "Nexa is doing yoga 🧘" },
 ];
 let nexaLifeIdx = 0;
 let nexaLifeTimer = null;
