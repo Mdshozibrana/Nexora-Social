@@ -20,7 +20,8 @@
 <meta name="twitter:description" content="Share photos, watch reels, discover designs and play classic games — all inside Telegram.">
 <meta name="twitter:image" content="https://nexora-9pip.onrender.com/webapp/og-image.png">
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
-<link rel="stylesheet" href="style.css?v=77">
+<link rel="stylesheet" href="style.css?v=78">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=78">
 </head>
 <body>
 <div id="entry-screen">
@@ -198,6 +199,22 @@
     <input id="nexa-input" type="text" placeholder="Talk to Nexa…" maxlength="500" autocomplete="off">
     <button id="nexa-send" class="nexa-sendbtn">Send</button>
   </div>
+</section>
+
+<section id="view-nearby" hidden>
+  <h2 class="view-title">📍 Nearby</h2>
+  <p class="muted">See who is using Nexora around you right now. Blue dots are active members within 500 metres — tap one to see their name, open their profile, or get the walking route to them.</p>
+  <div class="nb-share">
+    <div class="nb-share-txt">
+      <div class="nb-share-title">Show me to people nearby</div>
+      <div class="muted" id="nearby-status">Off — nobody can see you on the map.</div>
+    </div>
+    <button id="nearby-toggle" class="nb-switch" aria-label="Toggle location sharing"><span class="nb-knob"></span></button>
+  </div>
+  <div id="nearby-map"></div>
+  <div id="nearby-route" class="nb-route" hidden></div>
+  <div id="nearby-list"></div>
+  <p class="muted nb-note">🔒 Your location is shared only while this is on and the app is open. Members who follow you and you follow back see your exact spot; everyone else sees you roughly 50–100 metres off, so nobody learns your exact doorstep. Turn it off any time — your saved location is deleted right away.</p>
 </section>
 
 <section id="view-messages" hidden>
@@ -519,6 +536,7 @@
   <button class="gb-item" data-go="videos"><span class="gb-ic">▶️</span><span class="gb-label">Videos</span></button>
   <button class="gb-item" data-go="designs"><span class="gb-ic">🎨</span><span class="gb-label">Design</span></button>
   <button class="gb-item" data-go="games"><span class="gb-ic">🎮</span><span class="gb-label">Games</span></button>
+  <button class="gb-item" data-go="nearby"><span class="gb-ic">📍</span><span class="gb-label">Nearby</span></button>
   <div class="gb-sec">LIBRARY</div>
   <button class="gb-item" data-go="messages"><span class="gb-ic">💬</span><span class="gb-label">Messages</span><span id="gb-msg-badge" class="gb-badge" hidden></span></button>
   <button class="gb-item" data-go="notifications"><span class="gb-ic">🔔</span><span class="gb-label">Notifications</span><span id="gb-bell-badge" class="gb-badge" hidden></span></button>
@@ -561,7 +579,8 @@
   <div id="reel-sheet"></div>
 </div>
 
-<script src="app.js?v=77"></script>
-<script src="games.js?v=77"></script>
+<script src="vendor/leaflet/leaflet.js?v=78"></script>
+<script src="app.js?v=78"></script>
+<script src="games.js?v=78"></script>
 </body>
 </html>

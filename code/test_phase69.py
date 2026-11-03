@@ -79,14 +79,14 @@ for bit in ('id="nexa-img"', 'src="nexa/wave.webp"', 'id="nexa-log"',
 assert seg.count('class="nexa-chip"') == 4
 for bit in ("openAssistant()", "sendNexa",
             '"/assistant/chat"',
-            '"chat", "assistant"]'):
+            '"chat", "assistant", "nearby"]'):
     assert bit in JS, bit
 for bit in (".gb-nexa-img", ".nexa-stage", "@keyframes nexaTalk",
             ".nexa-msg.me", ".nexa-msg.bot"):
     assert bit in CSS, bit
 for pose in ("idle", "talk", "wave", "think"):
     assert os.path.exists(f"webapp/nexa/{pose}.webp"), pose
-assert "style.css?v=77" in HTML and "app.js?v=77" in HTML
+assert "style.css?v=78" in HTML and "app.js?v=78" in HTML
 print("client markers OK")
 
 # --- auth + fallback brain (no key) ------------------------------------

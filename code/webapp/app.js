@@ -225,7 +225,7 @@ function showView(name, viaBack) {
                    games: "nav-games",
                    game: "nav-games", tasks: "nav-tasks",
                    leaderboard: "nav-ranks", profile: "nav-me" };
-  ["feed", "videos", "designs", "search", "tasks", "leaderboard", "profile", "saved", "shared", "games", "game", "admin", "notifications", "messages", "chat", "assistant"].forEach(v => {
+  ["feed", "videos", "designs", "search", "tasks", "leaderboard", "profile", "saved", "shared", "games", "game", "admin", "notifications", "messages", "chat", "assistant", "nearby"].forEach(v => {
     $("view-" + v).hidden = v !== name;
   });
   // Phase 21: only tab views move the highlight. Views without a tab
@@ -249,6 +249,8 @@ function showView(name, viaBack) {
   if (name === "designs") loadDesigns(true);
   if (name === "assistant") openAssistant();
   if (name !== "assistant") nexaStop();
+  if (name === "nearby") openNearby();
+  if (name !== "nearby") stopNearby();
   moveNavPill();
   updateBackButton();
 }
@@ -291,6 +293,251 @@ function onAppBack() {
   updateBackButton();
 }
 if (tg.BackButton) tg.BackButton.onClick(onAppBack);
+
+// ---------- Phase 78: Nearby — live map of members around you --
+// Opt-in only: nothing is sent or shown until the member turns
+// sharing on. While the view is open, the app refreshes its own
+// fix and the people list every 20 s; leaving the view stops the
+// timers (and a closed Mini App cannot be tracked anyway).
+let nbMap = null, nbMeMarker = null, nbMarkers = {}, nbRouteLine = null;
+let nbTimer = null, nbPos = null, nbSharing = false, nbTarget = null;
+let nbLastSent = 0, nbLastLat = null, nbLastLon = null;
+const NB_DIRS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+
+function nbDir(b) { return NB_DIRS[Math.round(b / 45) % 8]; }
+function nbEsc(t) { const d = document.createElement("div");
+  d.textContent = t == null ? "" : String(t); return d.innerHTML; }
+
+function nbDot(me) {
+  return L.divIcon({ className: "nb-wrap",
+    html: '<div class="nb-dot' + (me ? " me" : "") + '"></div>',
+    iconSize: [22, 22], iconAnchor: [11, 11] });
+}
+
+function nbGeo(res) {
+  if (!navigator.geolocation) return res(null);
+  navigator.geolocation.getCurrentPosition(
+    q => res({ lat: q.coords.latitude, lon: q.coords.longitude }),
+    () => res(null),
+    { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 });
+}
+
+function nbLocate() {
+  // Telegram's LocationManager (Bot API 8.0+) where offered,
+  // the browser geolocation API everywhere else.
+  return new Promise(res => {
+    const lm = tg.LocationManager;
+    if (!lm) return nbGeo(res);
+    const go = () => {
+      if (lm.isLocationAvailable)
+        lm.getLocation(d => d
+          ? res({ lat: d.latitude, lon: d.longitude }) : nbGeo(res));
+      else nbGeo(res);
+    };
+    if (lm.isInited) go(); else lm.init(go);
+  });
+}
+
+function nbSetStatus(t) { const el = $("nearby-status"); if (el) el.textContent = t; }
+function nbPaintToggle() { $("nearby-toggle").classList.toggle("on", nbSharing); }
+
+async function nbSendLocation() {
+  if (!nbSharing || !nbPos) return;
+  const now = Date.now();
+  const moved = nbLastLat === null ? 9999 :
+    (Math.abs(nbPos.lat - nbLastLat) + Math.abs(nbPos.lon - nbLastLon)) * 111320;
+  if (now - nbLastSent < 25000 && moved < 15) return;
+  nbLastSent = now; nbLastLat = nbPos.lat; nbLastLon = nbPos.lon;
+  try { await api("/me/location", { method: "POST", body: JSON.stringify(
+    { lat: nbPos.lat, lon: nbPos.lon, share: true }) }); } catch (e) {}
+}
+
+function nbPaintPeople(people) {
+  const seen = {};
+  people.forEach(q => {
+    seen[q.id] = 1;
+    const popup = '<div class="nb-pop"><b>' + nbEsc(q.name) + "</b>" +
+      (q.username ? '<div class="muted">@' + nbEsc(q.username) + "</div>" : "") +
+      '<div class="nb-pop-meta">🧭 ' + nbDir(q.bearing) + " · " +
+      q.distance_m + " m away</div>" +
+      '<button class="nb-pop-btn" data-nb-profile="' + q.id +
+      '">👤 View profile</button>' +
+      '<button class="nb-pop-btn alt" data-nb-route="' + q.id +
+      '">🚶 Show route</button></div>';
+    if (nbMarkers[q.id]) {
+      nbMarkers[q.id].setLatLng([q.lat, q.lon]);
+      nbMarkers[q.id].setPopupContent(popup);
+      nbMarkers[q.id]._nb = q;
+    } else {
+      const m = L.marker([q.lat, q.lon], { icon: nbDot(false) }).addTo(nbMap);
+      m.bindPopup(popup); m._nb = q; nbMarkers[q.id] = m;
+    }
+  });
+  Object.keys(nbMarkers).forEach(id => {
+    if (!seen[id]) { nbMap.removeLayer(nbMarkers[id]); delete nbMarkers[id]; }
+  });
+  const list = $("nearby-list");
+  list.innerHTML = "";
+  if (!people.length) {
+    list.innerHTML = '<p class="muted nb-empty">No one nearby right now. ' +
+      "When other members open Nexora within 500 metres of you with " +
+      "sharing on, they appear here.</p>";
+    nbSetStatus("Sharing is on — nobody within 500 m right now.");
+    return;
+  }
+  people.forEach(q => {
+    const row = document.createElement("button");
+    row.className = "nb-row";
+    row.innerHTML = '<span class="nb-arrow" style="transform:rotate(' +
+      q.bearing + 'deg)">⬆</span><span class="nb-row-main"><b>' +
+      nbEsc(q.name) + '</b><span class="muted">' + nbDir(q.bearing) +
+      " · " + q.distance_m + " m</span></span>";
+    row.onclick = () => { if (nbMap) { nbMap.setView([q.lat, q.lon], 17);
+      nbMarkers[q.id].openPopup(); } };
+    list.append(row);
+  });
+  nbSetStatus("Sharing is on — " + people.length +
+    " member(s) within 500 m.");
+}
+
+async function nbRefresh() {
+  if (!nbSharing) return;
+  const pos = await nbLocate();
+  if (pos) {
+    nbPos = pos;
+    nbSendLocation();
+    if (nbMap) {
+      if (!nbMeMarker) {
+        nbMeMarker = L.marker([pos.lat, pos.lon],
+          { icon: nbDot(true) }).addTo(nbMap);
+        nbMeMarker.bindPopup("<b>You are here</b>");
+        nbMap.setView([pos.lat, pos.lon], 16);
+      } else nbMeMarker.setLatLng([pos.lat, pos.lon]);
+    }
+  }
+  let r;
+  try { r = await api("/me/nearby"); } catch (e) { return; }
+  if (!r.sharing) {
+    nbSharing = false; nbPaintToggle();
+    nbSetStatus("Off — nobody can see you on the map.");
+    return;
+  }
+  nbPaintPeople(r.people || []);
+  if (nbTarget) {
+    const t = (r.people || []).find(q => q.id === nbTarget);
+    if (t) nbRoute(t, true); else nbClearRoute();
+  }
+}
+
+async function nbRoute(q, silent) {
+  if (!nbPos || !nbMap) return;
+  nbTarget = q.id;
+  const url = "https://routing.openstreetmap.de/routed-foot/route/v1/" +
+    "driving/" + nbPos.lon + "," + nbPos.lat + ";" + q.lon + "," +
+    q.lat + "?overview=full&geometries=geojson";
+  let pts = null, dist = q.distance_m, dur = null;
+  try {
+    const resp = await fetch(url);
+    const j = await resp.json();
+    if (j.routes && j.routes[0]) {
+      pts = j.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
+      dist = Math.round(j.routes[0].distance);
+      dur = Math.max(1, Math.round(j.routes[0].duration / 60));
+    }
+  } catch (e) {}
+  if (!pts) pts = [[nbPos.lat, nbPos.lon], [q.lat, q.lon]];
+  if (nbRouteLine) nbMap.removeLayer(nbRouteLine);
+  nbRouteLine = L.polyline(pts, { color: "#E84393", weight: 5,
+    opacity: .9, dashArray: dur === null ? "2 8" : null }).addTo(nbMap);
+  if (!silent) nbMap.fitBounds(nbRouteLine.getBounds(),
+    { padding: [30, 30] });
+  const bar = $("nearby-route");
+  bar.hidden = false;
+  bar.innerHTML = "🚶 Walking route to <b>" + nbEsc(q.name) + "</b>: " +
+    dist + " m" + (dur ? " · about " + dur + " min" : "") +
+    ' <button class="nb-route-x" id="nb-route-x">✕ Clear</button>';
+  $("nb-route-x").onclick = nbClearRoute;
+}
+
+function nbClearRoute() {
+  nbTarget = null;
+  if (nbRouteLine && nbMap) nbMap.removeLayer(nbRouteLine);
+  nbRouteLine = null;
+  $("nearby-route").hidden = true;
+}
+
+function openNearby() {
+  if (typeof L === "undefined") {
+    nbSetStatus("The map is still loading — reopen Nearby in a moment.");
+    return;
+  }
+  if (!nbMap) {
+    nbMap = L.map("nearby-map", { zoomControl: false });
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+      { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(nbMap);
+    nbMap.setView([23.8103, 90.4125], 13);
+    nbMap.on("popupopen", e => {
+      const el = e.popup.getElement();
+      if (!el) return;
+      const pb = el.querySelector("[data-nb-profile]");
+      if (pb) pb.onclick = () => { nbMap.closePopup();
+        openProfile(+pb.dataset.nbProfile); };
+      const rb = el.querySelector("[data-nb-route]");
+      if (rb) rb.onclick = () => { const m = nbMarkers[rb.dataset.nbRoute];
+        if (m) { nbMap.closePopup(); nbRoute(m._nb); } };
+    });
+  }
+  setTimeout(() => { if (nbMap) nbMap.invalidateSize(); }, 60);
+  api("/me/nearby").then(r => {
+    nbSharing = !!r.sharing;
+    nbPaintToggle();
+    nbSetStatus(nbSharing ? "Sharing is on."
+      : "Off — nobody can see you on the map.");
+    if (nbSharing) nbRefresh();
+  }).catch(() => {});
+  if (nbTimer) clearInterval(nbTimer);
+  nbTimer = setInterval(() => { if (nbSharing) nbRefresh(); }, 20000);
+}
+
+function stopNearby() {
+  if (nbTimer) { clearInterval(nbTimer); nbTimer = null; }
+}
+
+$("nearby-toggle").onclick = async () => {
+  if (nbSharing) {
+    nbSharing = false;
+    nbPaintToggle();
+    nbClearRoute();
+    Object.keys(nbMarkers).forEach(id => {
+      if (nbMap) nbMap.removeLayer(nbMarkers[id]);
+      delete nbMarkers[id];
+    });
+    $("nearby-list").innerHTML = "";
+    nbSetStatus("Off — nobody can see you on the map.");
+    try { await api("/me/location", { method: "POST", body: JSON.stringify(
+      { lat: 0, lon: 0, share: false }) }); } catch (e) {}
+    return;
+  }
+  nbSetStatus("Getting your location… allow the permission if asked.");
+  const pos = await nbLocate();
+  if (!pos) {
+    nbSetStatus("Location is not available. Turn on your phone's " +
+      "location and allow it for Telegram, then try again.");
+    return;
+  }
+  nbPos = pos;
+  try {
+    const r = await api("/me/location", { method: "POST",
+      body: JSON.stringify({ lat: pos.lat, lon: pos.lon, share: true }) });
+    if (r && r.sharing) {
+      nbSharing = true;
+      nbPaintToggle();
+      nbLastSent = Date.now(); nbLastLat = pos.lat; nbLastLon = pos.lon;
+      nbRefresh();
+    }
+  } catch (e) { nbSetStatus("Could not turn sharing on — try again."); }
+};
+
 
 const NAV_IDS = ["nav-feed", "nav-videos", "nav-design", "nav-games", "nav-tasks",
                  "nav-ranks", "nav-me"];
@@ -1945,7 +2192,7 @@ function toggleSidebar() {
 function syncSidebarActive() {
   const current = ["feed", "videos", "designs", "search", "tasks",
     "leaderboard", "profile", "saved", "shared", "games", "game",
-    "messages", "notifications"]
+    "nearby", "messages", "notifications"]
     .find(v => !$("view-" + v).hidden) || "feed";
   const key = current === "game" ? "games" : current;
   document.querySelectorAll(".gb-item[data-go]").forEach(b =>

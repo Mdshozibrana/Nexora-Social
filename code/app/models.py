@@ -3,7 +3,7 @@ servers; only the file_id lives here (PRD section 7)."""
 from datetime import datetime
 
 from sqlalchemy import (
-    BigInteger, Boolean, Column, DateTime, ForeignKey, Integer,
+    BigInteger, Boolean, Column, DateTime, Float, ForeignKey, Integer,
     String, Text, UniqueConstraint,
 )
 
@@ -37,6 +37,12 @@ class User(Base):
     # issues fresh initData), which kills any leaked string without
     # banning the account (security §1/§14).
     auth_revoked_at = Column(DateTime, nullable=True)
+    # Phase 78 (Nearby): opt-in live location sharing. Coordinates
+    # exist only while sharing is on; turning it off clears them.
+    share_location = Column(Boolean, default=False)
+    lat = Column(Float, nullable=True)
+    lon = Column(Float, nullable=True)
+    loc_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 

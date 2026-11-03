@@ -9,7 +9,7 @@ CSS = open("webapp/style.css").read()
 for marker in ('class="admin-hero"', 'id="ah-members"',
                'id="ah-active"', 'id="ah-posts"', 'id="ah-reports"',
                'class="admin-live"', 'class="live-dot"',
-               "Owner control room", "?v=77"):
+               "Owner control room", "?v=78"):
     assert marker in HTML, marker
 # the dashboard's data containers survived the redesign
 for marker in ('id="dash-tiles"', 'id="admin-stats"',

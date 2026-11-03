@@ -65,6 +65,7 @@ RATE_LIMITS = {
     # Phase 69: Nexa's chat + voice budgets (a Gemini key is shared
     # by the whole platform, so per-member caps protect the quota).
     "assistant_chat": (30, 3600),
+    "location": (300, 3600),
     "assistant_speak": (60, 3600),
 }
 

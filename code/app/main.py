@@ -47,7 +47,9 @@ def _migrate():
               "last_seen_at": "TIMESTAMP", "is_managed": "BOOLEAN",
               "auth_revoked_at": "TIMESTAMP",
               "cover_file_id": "VARCHAR(256)",
-              "name_changed_at": "TIMESTAMP"}
+              "name_changed_at": "TIMESTAMP",
+              "share_location": "BOOLEAN", "lat": "FLOAT",
+              "lon": "FLOAT", "loc_at": "TIMESTAMP"}
     with engine.begin() as conn:
         for name, ddl in wanted.items():
             if name not in existing:
@@ -164,7 +166,7 @@ _CSP = (
     "style-src 'self' 'unsafe-inline'; "
     "img-src 'self' data: blob: https:; "
     "media-src 'self' blob: https:; "
-    "connect-src 'self' https://sad.adsgram.ai https://api.adsgram.ai; "
+    "connect-src 'self' https://sad.adsgram.ai https://api.adsgram.ai https://routing.openstreetmap.de; "
     "font-src 'self' data:; "
     "object-src 'none'; base-uri 'self'; form-action 'self'; "
     "frame-ancestors 'self' https://web.telegram.org "
@@ -3665,6 +3667,122 @@ def _gemini_tts(text):
         except Exception:
             continue
     return None
+
+
+
+# --- Phase 78: Nearby — an opt-in live map of members around you --
+# A member appears ONLY while sharing is on and their fix is fresh
+# (<= 10 min, i.e. their app is open). To see others you must share
+# yourself. Mutual follows get the exact spot; everyone else is
+# shown fuzzed by a stable 50-100 m offset (same all day, so the
+# dot does not jump) — close enough to meet, never a stranger's
+# doorstep. Blocked pairs never see each other.
+
+class LocationIn(BaseModel):
+    lat: float
+    lon: float
+    share: bool = True
+
+
+def _haversine_m(lat1, lon1, lat2, lon2):
+    from math import asin, cos, radians, sin, sqrt
+    dlat = radians(lat2 - lat1)
+    dlon = radians(lon2 - lon1)
+    a = (sin(dlat / 2) ** 2
+         + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon / 2) ** 2)
+    return 6371000 * 2 * asin(sqrt(a))
+
+
+def _bearing_deg(lat1, lon1, lat2, lon2):
+    from math import atan2, cos, degrees, radians, sin
+    dlon = radians(lon2 - lon1)
+    x = sin(dlon) * cos(radians(lat2))
+    y = (cos(radians(lat1)) * sin(radians(lat2))
+         - sin(radians(lat1)) * cos(radians(lat2)) * cos(dlon))
+    return (degrees(atan2(x, y)) + 360) % 360
+
+
+def _fuzz(lat, lon, tid):
+    """A stable 50-100 m offset for one member for one day."""
+    import hashlib
+    from math import cos, pi, radians, sin
+    seed = int(hashlib.sha256(
+        f"nx-fuzz:{tid}:{datetime.utcnow():%Y-%m-%d}".encode()
+    ).hexdigest()[:8], 16)
+    ang = (seed % 360) * pi / 180.0
+    dist = 50 + (seed >> 9) % 51
+    dlat = dist * cos(ang) / 111320.0
+    dlon = dist * sin(ang) / (111320.0 * max(0.2, cos(radians(lat))))
+    return lat + dlat, lon + dlon
+
+
+@app.post("/me/location")
+def update_location(body: LocationIn,
+                    user: models.User = Depends(current_user),
+                    db: Session = Depends(get_db)):
+    _enforce_rate("location", f"u{user.telegram_id}")
+    if not body.share:
+        user.share_location = False
+        user.lat = None
+        user.lon = None
+        user.loc_at = None
+        db.commit()
+        return {"ok": True, "sharing": False}
+    if not (-90 <= body.lat <= 90 and -180 <= body.lon <= 180):
+        raise HTTPException(400, "Invalid coordinates")
+    user.share_location = True
+    user.lat = body.lat
+    user.lon = body.lon
+    user.loc_at = datetime.utcnow()
+    db.commit()
+    return {"ok": True, "sharing": True}
+
+
+@app.get("/me/nearby")
+def nearby(user: models.User = Depends(current_user),
+           db: Session = Depends(get_db)):
+    fresh = datetime.utcnow() - timedelta(minutes=10)
+    if (not user.share_location or user.lat is None or user.lon is None
+            or user.loc_at is None or user.loc_at < fresh):
+        return {"sharing": False, "people": []}
+    blocked = _block_related_ids(db, user.telegram_id)
+    rows = (db.query(models.User)
+            .filter(models.User.share_location.is_(True),
+                    models.User.loc_at >= fresh,
+                    models.User.telegram_id != user.telegram_id,
+                    models.User.is_banned.is_(False))
+            .all())
+    i_follow = {f.following_id for f in db.query(models.Follow)
+                .filter_by(follower_id=user.telegram_id).all()}
+    follows_me = {f.follower_id for f in db.query(models.Follow)
+                  .filter_by(following_id=user.telegram_id).all()}
+    people = []
+    for u in rows:
+        if u.telegram_id in blocked or u.lat is None or u.lon is None:
+            continue
+        if _haversine_m(user.lat, user.lon, u.lat, u.lon) > 500:
+            continue
+        mutual = (u.telegram_id in i_follow
+                  and u.telegram_id in follows_me)
+        dlat, dlon = ((u.lat, u.lon) if mutual
+                      else _fuzz(u.lat, u.lon, u.telegram_id))
+        people.append({
+            "id": u.telegram_id,
+            "name": u.first_name or "Member",
+            "username": u.username or "",
+            "verified": bool(u.is_verified),
+            "photo_file_id": u.photo_file_id,
+            "lat": round(dlat, 6), "lon": round(dlon, 6),
+            "distance_m": int(round(
+                _haversine_m(user.lat, user.lon, dlat, dlon))),
+            "bearing": int(round(
+                _bearing_deg(user.lat, user.lon, dlat, dlon))),
+            "mutual": mutual,
+        })
+    people.sort(key=lambda q: q["distance_m"])
+    return {"sharing": True,
+            "me": {"lat": user.lat, "lon": user.lon},
+            "people": people}
 
 
 @app.get("/assistant/status")
