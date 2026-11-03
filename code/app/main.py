@@ -2,6 +2,7 @@
 referrals, points, search, reports, media proxy, and the Mini App host.
 Only the PRD section-8 admin endpoints remain for a later phase."""
 import asyncio
+import contextvars
 import logging
 import os
 import tempfile
@@ -20,7 +21,8 @@ from sqlalchemy.orm import Session
 
 from datetime import datetime, timedelta
 
-from . import filesig, geoip, imgconv, models, notify, ratelimit, \
+from . import filesig, geoip, imgconv, models, moderation, notify, \
+    ratelimit, \
     tgupload, videoutil
 from .config import (DAILY_TASKS, MONETIZATION, OFFICIAL_FOLLOWER_BASE,
                      OFFICIAL_ID, OFFICIAL_NAME, RATE_LIMITS,
@@ -582,9 +584,39 @@ def create_post(body: PostIn, user: models.User = Depends(current_user),
     _enforce_rate("post", f"u{user.telegram_id}")
     if body.type not in ("photo", "video", "text"):
         raise HTTPException(400, "type must be photo, video or text")
+    # Phase 81: a media post carries a Telegram file_id the server
+    # never saw uploaded — fetch and screen it, so this endpoint
+    # cannot bypass the screening every upload goes through.
+    if moderation.active() and body.type in ("photo", "video") \
+            and body.media_file_id:
+        verdict = _screen_file_id(body.type, body.media_file_id)
+        if verdict != "clean":
+            raise HTTPException(
+                400, moderation.block_message(body.type, verdict))
     post, _, _ = register_post(db, user, body.type, body.media_file_id,
                                body.caption)
     return post_dict(db, post)
+
+
+def _screen_file_id(kind, file_id):
+    """Phase 81: fetch a Telegram file's bytes and screen them
+    (photo: classify directly; video: three frames)."""
+    data = moderation.fetch_file_bytes(file_id)
+    if data is None:
+        return "error"
+    if kind == "photo":
+        return moderation.classify_image(data)
+    with tempfile.NamedTemporaryFile(delete=False,
+                                     suffix=".src") as f:
+        f.write(data)
+        path = f.name
+    try:
+        return moderation.screen_video(path)
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
 
 
 def _send_chat_id(user):
@@ -642,6 +674,20 @@ async def _finish_video_post(author_id, send_chat_id, src_path,
         async with _transcode_sem:
             await asyncio.to_thread(videoutil.transcode_to_mp4,
                                     src_path, dst)
+        # Phase 81: screen frames of the finished MP4 first — a
+        # video that fails never reaches Telegram or the feed;
+        # the member hears why from the bot instead.
+        if moderation.active():
+            verdict = await asyncio.to_thread(
+                moderation.screen_video, dst)
+            if verdict != "clean":
+                sec_log.warning(
+                    "video screened out (%s) for user %s",
+                    verdict, author_id)
+                await notify.send_message(
+                    send_chat_id,
+                    moderation.block_message("video", verdict))
+                return
         with open(dst, "rb") as f:
             mp4 = f.read()
         _, file_id, thumb_id = await tgupload.upload_media(
@@ -679,6 +725,13 @@ async def _finish_video_post(author_id, send_chat_id, src_path,
                 os.unlink(p)
             except OSError:
                 pass
+
+
+# Phase 81: design uploads (admin-only, owner-trusted) opt out of
+# media screening through this context flag; the upload helper's
+# signature stays exactly as it was so callers are untouched.
+_upload_screen = contextvars.ContextVar("nexora_upload_screen",
+                                         default=True)
 
 
 async def _telegram_upload_or_400(user, file: UploadFile, caption=""):
@@ -740,6 +793,17 @@ async def _telegram_upload_or_400(user, file: UploadFile, caption=""):
                          "a JPG or PNG version of it")
             filename = filename.rsplit(".", 1)[0] + ".jpg"
             content_type = "image/jpeg"
+        # Phase 81: screen the exact bytes that would be posted
+        # (designs skip this — admin-only, owner-trusted uploads).
+        if _upload_screen.get() and moderation.active():
+            verdict = await asyncio.to_thread(
+                moderation.classify_image, data, content_type)
+            if verdict != "clean":
+                sec_log.warning(
+                    "media screened out (%s) for user %s",
+                    verdict, user.telegram_id)
+                raise HTTPException(
+                    400, moderation.block_message("photo", verdict))
         return await _send_to_telegram(
             user, filename, data, content_type)
     # --- video ---
@@ -2715,8 +2779,12 @@ async def upload_design(prompt: str = Form(""),
         raise HTTPException(
             403, "Designs can be posted only from the admin account")
     _enforce_rate("upload", f"u{user.telegram_id}")
-    kind, file_id = await _telegram_upload_or_400(
-        user, file, prompt.strip())
+    _tok = _upload_screen.set(False)
+    try:
+        kind, file_id = await _telegram_upload_or_400(
+            user, file, prompt.strip())
+    finally:
+        _upload_screen.reset(_tok)
     if kind != "photo":
         raise HTTPException(400, "Designs must be images only")
     design = models.Design(image_file_id=file_id,
@@ -2751,8 +2819,12 @@ async def edit_design(design_id: int,
         raise HTTPException(400, "Nothing to change")
     if file is not None:
         _enforce_rate("upload", f"u{user.telegram_id}")
-        kind, file_id = await _telegram_upload_or_400(
-            user, file, (prompt or design.prompt or "")[:1024])
+        _tok = _upload_screen.set(False)
+        try:
+            kind, file_id = await _telegram_upload_or_400(
+                user, file, (prompt or design.prompt or "")[:1024])
+        finally:
+            _upload_screen.reset(_tok)
         if kind != "photo":
             raise HTTPException(400, "Designs must be images only")
         design.image_file_id = file_id

@@ -6,6 +6,11 @@ from telegram.ext import (
     Application, CommandHandler, ContextTypes, MessageHandler, filters,
 )
 
+import asyncio
+import os
+import tempfile
+
+from . import moderation
 from .config import settings
 from .db import SessionLocal
 from .services import register_post
@@ -59,8 +64,33 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text, reply_markup=InlineKeyboardMarkup(buttons) if buttons else None)
 
 
+async def _screen_via_bot(context, ptype, file_id):
+    """Phase 81: download the media from Telegram and classify it
+    (a video by three frames). Any failure to fetch or classify
+    fails closed — unscreened media never becomes a post."""
+    try:
+        tg_file = await context.bot.get_file(file_id)
+        data = bytes(await tg_file.download_as_bytearray())
+    except Exception:
+        return "error"
+    if ptype == "photo":
+        return await asyncio.to_thread(
+            moderation.classify_image, data, "image/jpeg")
+    with tempfile.NamedTemporaryFile(delete=False,
+                                     suffix=".src") as f:
+        f.write(data)
+        path = f.name
+    try:
+        return await asyncio.to_thread(moderation.screen_video, path)
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+
 async def _save_media_post(update: Update, ptype: str, file_id: str,
-                           thumb_file_id: str = None):
+                           thumb_file_id: str = None, context=None):
     """A photo/video sent to the bot becomes a post (PRD section 7: the
     media already lives on Telegram's servers, we keep only the file_id).
     Same shared service as the Mini App, so first-post points and referral
@@ -75,6 +105,15 @@ async def _save_media_post(update: Update, ptype: str, file_id: str,
         if user.is_banned:
             await update.message.reply_text("This account is suspended.")
             return
+        # Phase 81 (owner's rule): adult or graphic media is
+        # screened BEFORE the post exists — it is never posted,
+        # and the member is told exactly why.
+        if context is not None and moderation.active():
+            verdict = await _screen_via_bot(context, ptype, file_id)
+            if verdict != "clean":
+                await update.message.reply_text(
+                    moderation.block_message(ptype, verdict))
+                return
         post, is_first, _ = register_post(
             db, user, ptype, file_id, update.message.caption or "",
             thumb_file_id=thumb_file_id)
@@ -102,7 +141,9 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "\u2705 Profile picture updated!")
         return
-    await _save_media_post(update, "photo", update.message.photo[-1].file_id)
+    await _save_media_post(update, "photo",
+                           update.message.photo[-1].file_id,
+                           context=context)
 
 
 async def video_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -111,7 +152,7 @@ async def video_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # a preview frame before the video plays.
     thumb = video.thumbnail.file_id if video.thumbnail else None
     await _save_media_post(update, "video", video.file_id,
-                           thumb_file_id=thumb)
+                           thumb_file_id=thumb, context=context)
 
 
 def build_bot_app() -> Application:
