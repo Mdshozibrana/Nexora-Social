@@ -1327,10 +1327,10 @@ button.liked { animation: heartPop .32s cubic-bezier(.22,.9,.3,1); }
    badges, and the member's profile at the bottom. It replaces
    the old slide-in drawer.
    ================================================================ */
-#gb-backdrop { position: fixed; inset: 0; z-index: 64;
+#gb-backdrop { position: fixed; inset: 0; z-index: 79;
   background: rgba(46, 12, 30, .32);
   backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px); }
-#glassbar { position: fixed; left: 8px; top: 50%; z-index: 65;
+#glassbar { position: fixed; left: 8px; top: 50%; z-index: 80;
   transform: translateY(-50%); width: 58px; max-height: 88vh;
   overflow-y: auto; overflow-x: hidden; scrollbar-width: none;
   padding: 12px 7px; border-radius: 30px;
@@ -1348,7 +1348,10 @@ button.liked { animation: heartPop .32s cubic-bezier(.22,.9,.3,1); }
     border-radius .3s ease; }
 #glassbar::-webkit-scrollbar { display: none; }
 #glassbar.open { width: min(302px, 84vw); top: 10px;
-  max-height: calc(100vh - 20px); transform: none;
+  /* Phase 79: end above the floating bottom nav (~90 px), not
+     at the screen's bottom edge; the panel scrolls internally,
+     so every row stays reachable and none hides behind the nav. */
+  max-height: calc(100dvh - 116px); transform: none;
   border-radius: 28px; padding: 16px 12px; }
 .gb-head { display: flex; flex-direction: column;
   align-items: center; gap: 9px; margin-bottom: 10px; }
@@ -1388,7 +1391,14 @@ button.liked { animation: heartPop .32s cubic-bezier(.22,.9,.3,1); }
 #glassbar.open .gb-label { opacity: 1; transform: none; }
 .gb-item.active { background: rgba(255, 255, 255, .8);
   box-shadow: 0 6px 16px rgba(160, 60, 110, .18),
-    inset 0 1px 0 #fff; font-weight: 800; }
+    inset 0 1px 0 #fff; font-weight: 800;
+  /* Phase 79: the legacy generic button.active rule paints
+     active buttons' text white (Telegram-theme leftover); at
+     (0,1,1) it beat .gb-item's plum (0,1,0), so the selected
+     sidebar word rendered white on the white pill — invisible
+     (owner screenshot). Pin the plum here at (0,2,0)+. */
+  color: #472A3E; }
+.gb-item.active .gb-label { color: #472A3E; }
 .gb-badge { flex: none; min-width: 20px; text-align: center;
   background: linear-gradient(135deg, #FF8FBE, #E84393);
   color: #fff; font-size: 11px; font-weight: 800;
