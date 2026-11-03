@@ -3826,35 +3826,9 @@ let nexaHist = [];
 let nexaGreeted = false;
 let nexaBusy = false;
 let nexaPairShown = false;
-let nexaPlayer = null;
-let nexaVoiceOn = localStorage.getItem("nx_nexa_voice") !== "0";
-
-const NEXA_SILENT_WAV = "data:audio/wav;base64,"
-  + "UklGRkQDAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YSADAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==";
-
-// Telegram's WebView only lets audio play when it grows out of a
-// real tap. So the Send button (and her sidebar card) first plays
-// a silent clip on ONE shared player element; later, when her
-// spoken reply arrives from the server, that same blessed element
-// is allowed to play it — she always answers in voice AND text.
-function nexaUnlockAudio() {
-  try {
-    if (!nexaPlayer) nexaPlayer = new Audio();
-    nexaPlayer.src = NEXA_SILENT_WAV;
-    const pr = nexaPlayer.play();
-    if (pr && pr.catch) pr.catch(() => {});
-  } catch (e) { /* audio stays text-only this time */ }
-}
-
 function nexaPose(p) {
   const im = $("nexa-img");
   if (im) im.src = "nexa/" + p + ".webp";
-}
-
-function nexaTalking(on) {
-  const im = $("nexa-img");
-  if (im) im.classList.toggle("talking", !!on);
-  if (!on) { nexaBusy = false; nexaPose("idle"); }
 }
 
 // Phase 73 (owner): Nexa lives her own little life — when she
@@ -3903,15 +3877,6 @@ function nexaBubble(text, who) {
   const b = document.createElement("div");
   b.className = "nexa-msg " + who;
   b.textContent = text;
-  if (who === "bot") {
-    b.dataset.say = text;
-    const hint = document.createElement("span");
-    hint.className = "nexa-hear";
-    hint.textContent = " \uD83D\uDD0A";
-    b.appendChild(hint);
-    b.title = "Tap to hear Nexa";
-    b.onclick = () => { nexaUnlockAudio(); nexaSpeak(text, true); };
-  }
   log.appendChild(b);
   const sc = $("app-scroll");
   if (sc) sc.scrollTop = sc.scrollHeight;
@@ -3921,8 +3886,6 @@ function nexaBubble(text, who) {
 function openAssistant() {
   nexaLifeStart();
   nexaPose(nexaGreeted ? "idle" : "wave");
-  const vb = $("nexa-voice");
-  if (vb) vb.textContent = nexaVoiceOn ? "🔊" : "🔇";
   if (!nexaGreeted) {
     nexaGreeted = true;
     const hello = "Hi! I'm Nexa, your AI friend inside Nexora "
@@ -3930,70 +3893,12 @@ function openAssistant() {
       + "or just chat with me!";
     nexaBubble(hello, "bot");
     nexaHist.push({ role: "nexa", text: hello });
-    nexaSpeak(hello);
   }
 }
 
 function nexaStop() {
   nexaLifeStop();
-  if (nexaPlayer) {
-    try { nexaPlayer.pause(); } catch (e) { /* already stopped */ }
-  }
-  if (window.speechSynthesis) {
-    try { speechSynthesis.cancel(); } catch (e) { /* noop */ }
-  }
-  nexaTalking(false);
-}
-
-function nexaDeviceSpeak(text, done) {
-  if (!window.speechSynthesis) { done(); return; }
-  const u = new SpeechSynthesisUtterance(text);
-  u.pitch = 1.35;
-  u.rate = 1.03;
-  const vs = speechSynthesis.getVoices();
-  const f = vs.find(v => /female|zira|samantha/i.test(v.name))
-    || vs.find(v => v.lang && v.lang.indexOf("en") === 0);
-  if (f) u.voice = f;
-  u.onend = done;
-  u.onerror = done;
-  speechSynthesis.speak(u);
-}
-
-function nexaPlayAudio(b64, mime) {
-  nexaBusy = true;
-  nexaPose("talk");
-  nexaTalking(true);
-  let guard = setTimeout(() => nexaTalking(false), 30000);
-  const done = () => { clearTimeout(guard); nexaTalking(false); };
-  try {
-    if (!nexaPlayer) nexaPlayer = new Audio();
-    nexaPlayer.src = "data:" + (mime || "audio/wav")
-      + ";base64," + b64;
-    nexaPlayer.onended = done;
-    nexaPlayer.onerror = done;
-    const pr = nexaPlayer.play();
-    if (pr && pr.catch) pr.catch(done);
-  } catch (e) { done(); }
-}
-
-async function nexaSpeak(text, force) {
-  if ((!nexaVoiceOn && !force) || !text) return;
-  nexaBusy = true;
-  nexaPose("talk");
-  nexaTalking(true);
-  let guard = setTimeout(() => nexaTalking(false),
-    Math.min(30000, 4000 + text.length * 90));
-  const done = () => { clearTimeout(guard); nexaTalking(false); };
-  try {
-    const r = await api("/assistant/speak", {
-      method: "POST", body: JSON.stringify({ text: text }) });
-    if (r && r.audio) {
-      clearTimeout(guard);
-      nexaPlayAudio(r.audio, r.mime);
-      return;
-    }
-  } catch (e) { /* fall through to the device voice */ }
-  nexaDeviceSpeak(text, done);
+  nexaBusy = false;
 }
 
 async function sendNexa(prefill) {
@@ -4010,8 +3915,7 @@ async function sendNexa(prefill) {
   if (st) st.textContent = "Nexa is thinking…";
   const typing = nexaBubble("…", "bot typing");
   try {
-    const r = await api(nexaVoiceOn ? "/assistant/reply"
-                                    : "/assistant/chat", {
+    const r = await api("/assistant/chat", {
       method: "POST",
       body: JSON.stringify({ message: text,
                              history: nexaHist.slice(0, -1) }) });
@@ -4019,14 +3923,13 @@ async function sendNexa(prefill) {
     const reply = (r && r.reply)
       || "Sorry, I missed that — could you say it again?";
     if (st) st.textContent = (r && r.ai)
-      ? "AI mode · Gemini" : "Guide mode · tap 🔊 to hear me";
+      ? "AI mode · Gemini" : "Guide mode";
     nexaBubble(reply, "bot");
     nexaHist.push({ role: "nexa", text: reply });
     if (nexaHist.length > 12) nexaHist = nexaHist.slice(-12);
     nexaPairShown = true;
-    if (nexaVoiceOn && r.audio) nexaPlayAudio(r.audio, r.mime);
-    else if (nexaVoiceOn) nexaSpeak(reply);
-    else { nexaBusy = false; nexaPose("idle"); }
+    nexaBusy = false;
+    nexaPose("idle");
   } catch (e) {
     if (typing) typing.remove();
     if (st) st.textContent = "Your AI friend — ask me anything!";
@@ -4038,25 +3941,16 @@ async function sendNexa(prefill) {
   }
 }
 
-$("nexa-send").onclick = () => { nexaUnlockAudio(); sendNexa(); };
+$("nexa-send").onclick = () => sendNexa();
 $("nexa-input").addEventListener("keydown", (e) => {
   if (e.key === "Enter") {
     e.preventDefault();
-    nexaUnlockAudio();
     sendNexa();
     $("nexa-input").blur();
   }
 });
-$("nexa-voice").onclick = () => {
-  nexaVoiceOn = !nexaVoiceOn;
-  localStorage.setItem("nx_nexa_voice", nexaVoiceOn ? "1" : "0");
-  $("nexa-voice").textContent = nexaVoiceOn ? "🔊" : "🔇";
-  if (!nexaVoiceOn) nexaStop();
-};
 document.querySelectorAll(".nexa-chip").forEach(c =>
-  c.onclick = () => { nexaUnlockAudio(); sendNexa(c.dataset.q); });
-const nexaCard = document.querySelector(".gb-nexa");
-if (nexaCard) nexaCard.addEventListener("click", nexaUnlockAudio);
+  c.onclick = () => sendNexa(c.dataset.q));
 
 // ---------- Phase 70: no long-press menus anywhere ----------
 // A long-press on anything (image, video, button, text) must

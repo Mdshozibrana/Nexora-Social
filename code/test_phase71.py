@@ -130,16 +130,9 @@ finally:
     settings.GEMINI_API_KEY = ""
 print("reply gemini OK")
 
-# --- client: single-call path, replayable bubbles, real unlock clip ----
-for bit in ('"/assistant/reply"', "nexaPlayAudio", "dataset.say",
-            "nexa-hear", "nexaSpeak(text, true)"):
-    assert bit in JS, bit
-i = JS.index("NEXA_SILENT_WAV")
-literal = JS[JS.index('"', JS.index("+", i)) + 1:JS.index('";', i)]
-raw = base64.b64decode(literal)
-w = wave.open(io.BytesIO(raw))
-assert w.getnframes() >= 100, w.getnframes()
+# --- client: replies render as text bubbles -------------------
+assert '"/assistant/chat"' in JS
 print("client markers OK")
 
-assert "app.js?v=74" in HTML and "style.css?v=74" in HTML
+assert "app.js?v=75" in HTML and "style.css?v=75" in HTML
 print("PHASE 71 OK")

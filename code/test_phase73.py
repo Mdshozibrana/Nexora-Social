@@ -36,7 +36,7 @@ for bit in ("NEXA_LIFE", "nexaLifeTick", "nexaLifeStart()",
 assert "if (nexaBusy) return;" in JS
 assert "nexaBusy = true" in JS and "nexaBusy = false" in JS
 # leaving the assistant view stops the rotation
-assert "nexaLifeStop();\n  if (nexaPlayer)" in JS
+assert "nexaLifeStop();\n  nexaBusy = false;" in JS
 print("life OK")
 
 # --- ephemeral chat -----------------------------------------------------
@@ -48,5 +48,5 @@ assert 'nexaHist.push({ role: "nexa", text: reply });' in JS
 print("ephemeral OK")
 
 HTML = open("webapp/index.html").read()
-assert "app.js?v=74" in HTML and "style.css?v=74" in HTML
+assert "app.js?v=75" in HTML and "style.css?v=75" in HTML
 print("PHASE 73 OK")

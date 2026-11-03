@@ -73,21 +73,20 @@ assert 'class="gb-item gb-nexa" data-go="assistant"' in HTML
 assert 'src="nexa/idle.webp"' in HTML
 seg = HTML[HTML.index('id="view-assistant"'):HTML.index('id="view-messages"')]
 for bit in ('id="nexa-img"', 'src="nexa/wave.webp"', 'id="nexa-log"',
-            'id="nexa-input"', 'id="nexa-send"', 'id="nexa-voice"',
+            'id="nexa-input"', 'id="nexa-send"',
             'class="nexa-chip"'):
     assert bit in seg, bit
 assert seg.count('class="nexa-chip"') == 4
-for bit in ("openAssistant()", "sendNexa", "nexaSpeak",
-            "nexaUnlockAudio", "nexaPlayer", "NEXA_SILENT_WAV",
-            '"/assistant/chat"', '"/assistant/speak"',
-            '"chat", "assistant"]', 'localStorage.getItem("nx_nexa_voice")'):
+for bit in ("openAssistant()", "sendNexa",
+            '"/assistant/chat"',
+            '"chat", "assistant"]'):
     assert bit in JS, bit
 for bit in (".gb-nexa-img", ".nexa-stage", "@keyframes nexaTalk",
             ".nexa-msg.me", ".nexa-msg.bot"):
     assert bit in CSS, bit
 for pose in ("idle", "talk", "wave", "think"):
     assert os.path.exists(f"webapp/nexa/{pose}.webp"), pose
-assert "style.css?v=74" in HTML and "app.js?v=74" in HTML
+assert "style.css?v=75" in HTML and "app.js?v=75" in HTML
 print("client markers OK")
 
 # --- auth + fallback brain (no key) ------------------------------------
