@@ -2473,6 +2473,76 @@ $("design-more").onclick = () => loadDesigns(false);
   sc.addEventListener("touchcancel", finish);
 })();
 
+// Phase 72 (owner): pull-to-refresh on EVERY main page, just
+// like Design's — pulling down from the top reloads whichever
+// page is open with its own loader. Design keeps its own
+// handler above; views without a loader (search, games, chat,
+// assistant) are skipped.
+(() => {
+  const sc = $("app-scroll");
+  const ind = $("ptr-global");
+  if (!sc || !ind) return;
+  const LOADERS = {
+    feed: () => loadFeed(true),
+    videos: () => loadVideos(true),
+    tasks: () => loadTasks(),
+    leaderboard: () => loadRanks(),
+    saved: () => loadSaved(),
+    shared: () => loadShared(),
+    notifications: () => loadNotifications(true),
+    messages: () => loadMessages(),
+    profile: () => { if (me) openProfile(me.telegram_id); },
+    admin: () => loadAdmin(),
+  };
+  let startY = null, pull = 0, busy = false;
+  const THRESH = 70;
+  const current = () => Object.keys(LOADERS)
+    .find(v => !$("view-" + v).hidden);
+  sc.addEventListener("touchstart", e => {
+    if (busy || !current() || sc.scrollTop > 0) return;
+    startY = e.touches[0].clientY;
+    pull = 0;
+  }, { passive: true });
+  sc.addEventListener("touchmove", e => {
+    if (startY === null || busy) return;
+    const dy = e.touches[0].clientY - startY;
+    if (dy <= 0 || sc.scrollTop > 0) {
+      startY = null;
+      ind.hidden = true;
+      ind.style.height = "0px";
+      return;
+    }
+    e.preventDefault();
+    pull = dy;
+    ind.hidden = false;
+    ind.style.height = Math.min(dy * 0.6, 84) + "px";
+    ind.textContent = dy >= THRESH ? "↑ Release to refresh"
+                                   : "↓ Pull to refresh";
+  }, { passive: false });
+  const finish = async () => {
+    if (startY === null) return;
+    const go = pull >= THRESH && !busy;
+    const view = current();
+    startY = null;
+    pull = 0;
+    if (!go || !view) {
+      ind.hidden = true;
+      ind.style.height = "0px";
+      return;
+    }
+    busy = true;
+    ind.hidden = false;
+    ind.style.height = "40px";
+    ind.textContent = "⟳ Refreshing…";
+    try { await LOADERS[view](); } catch (e) { /* keep the page */ }
+    ind.hidden = true;
+    ind.style.height = "0px";
+    busy = false;
+  };
+  sc.addEventListener("touchend", finish);
+  sc.addEventListener("touchcancel", finish);
+})();
+
 function openDesignSheet(d) {
   currentDesign = d;
   $("ds-img").src = mediaUrl(d.image_file_id);
@@ -3754,6 +3824,8 @@ $("story-del").onclick = async () => {
 // pose.
 let nexaHist = [];
 let nexaGreeted = false;
+let nexaBusy = false;
+let nexaPairShown = false;
 let nexaPlayer = null;
 let nexaVoiceOn = localStorage.getItem("nx_nexa_voice") !== "0";
 
@@ -3782,7 +3854,43 @@ function nexaPose(p) {
 function nexaTalking(on) {
   const im = $("nexa-img");
   if (im) im.classList.toggle("talking", !!on);
-  if (!on) nexaPose("idle");
+  if (!on) { nexaBusy = false; nexaPose("idle"); }
+}
+
+// Phase 73 (owner): Nexa lives her own little life — when she
+// is not answering, she is always busy doing something, and the
+// stage rotates through her day. And the chat is ephemeral:
+// asking a new question clears the previous question + answer.
+const NEXA_LIFE = [
+  { img: "life-work", label: "Nexa is working 💻" },
+  { img: "life-cooking", label: "Nexa is cooking 🍳" },
+  { img: "life-study", label: "Nexa is studying 📚" },
+  { img: "life-gym", label: "Nexa is at the gym 🏋️" },
+  { img: "life-cleaning", label: "Nexa is cleaning her room 🧹" },
+  { img: "life-run", label: "Nexa is out running 🏃‍♀️" },
+];
+let nexaLifeIdx = 0;
+let nexaLifeTimer = null;
+
+function nexaLifeTick() {
+  if (nexaBusy) return;
+  const view = $("view-assistant");
+  if (!view || view.hidden) return;
+  const step = NEXA_LIFE[nexaLifeIdx % NEXA_LIFE.length];
+  nexaLifeIdx += 1;
+  nexaPose(step.img);
+  const st = $("nexa-status");
+  if (st) st.textContent = step.label;
+}
+
+function nexaLifeStart() {
+  if (nexaLifeTimer) return;
+  nexaLifeTimer = setInterval(nexaLifeTick, 6000);
+}
+
+function nexaLifeStop() {
+  if (nexaLifeTimer) clearInterval(nexaLifeTimer);
+  nexaLifeTimer = null;
 }
 
 function nexaBubble(text, who) {
@@ -3807,6 +3915,7 @@ function nexaBubble(text, who) {
 }
 
 function openAssistant() {
+  nexaLifeStart();
   nexaPose(nexaGreeted ? "idle" : "wave");
   const vb = $("nexa-voice");
   if (vb) vb.textContent = nexaVoiceOn ? "🔊" : "🔇";
@@ -3822,6 +3931,7 @@ function openAssistant() {
 }
 
 function nexaStop() {
+  nexaLifeStop();
   if (nexaPlayer) {
     try { nexaPlayer.pause(); } catch (e) { /* already stopped */ }
   }
@@ -3846,6 +3956,7 @@ function nexaDeviceSpeak(text, done) {
 }
 
 function nexaPlayAudio(b64, mime) {
+  nexaBusy = true;
   nexaPose("talk");
   nexaTalking(true);
   let guard = setTimeout(() => nexaTalking(false), 30000);
@@ -3863,6 +3974,7 @@ function nexaPlayAudio(b64, mime) {
 
 async function nexaSpeak(text, force) {
   if ((!nexaVoiceOn && !force) || !text) return;
+  nexaBusy = true;
   nexaPose("talk");
   nexaTalking(true);
   let guard = setTimeout(() => nexaTalking(false),
@@ -3885,6 +3997,8 @@ async function sendNexa(prefill) {
   const text = (prefill || (inp ? inp.value : "") || "").trim();
   if (!text) return;
   if (!prefill && inp) inp.value = "";
+  if (nexaPairShown) $("nexa-log").innerHTML = "";
+  nexaBusy = true;
   nexaBubble(text, "me");
   nexaHist.push({ role: "user", text: text });
   nexaPose("think");
@@ -3905,14 +4019,17 @@ async function sendNexa(prefill) {
     nexaBubble(reply, "bot");
     nexaHist.push({ role: "nexa", text: reply });
     if (nexaHist.length > 12) nexaHist = nexaHist.slice(-12);
+    nexaPairShown = true;
     if (nexaVoiceOn && r.audio) nexaPlayAudio(r.audio, r.mime);
     else if (nexaVoiceOn) nexaSpeak(reply);
-    else nexaPose("idle");
+    else { nexaBusy = false; nexaPose("idle"); }
   } catch (e) {
     if (typing) typing.remove();
     if (st) st.textContent = "Your AI friend — ask me anything!";
     nexaBubble("Hmm, I can't think right now. Please try again "
       + "in a moment!", "bot");
+    nexaPairShown = true;
+    nexaBusy = false;
     nexaPose("idle");
   }
 }

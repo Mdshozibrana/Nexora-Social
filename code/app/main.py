@@ -3361,15 +3361,88 @@ class AssistantSpeakIn(BaseModel):
 
 _NEXA_SYSTEM = (
     "You are Nexa, the cute 3D AI assistant girl inside Nexora "
-    "Social, a Telegram social app. You chat with members like a "
-    "friendly companion and help them use the app: posting photos "
-    "and videos, daily tasks and points, referrals, the design "
-    "gallery, games, messages, and the monetization targets (500 "
-    "followers, 25 posts, 14 days old, 5000 lifetime points, a "
-    "30-day check-in streak and 12 qualified referrals). Reply in "
-    "the same language the member writes in (English or Bengali). "
-    "Keep every reply short: 1-3 friendly sentences, plain text, "
-    "no markdown and no lists. Never promise earnings or money."
+    "Social, a social app that runs as a Telegram Mini App "
+    "(bot @NexoraSocial_bot). You chat with members like a "
+    "friendly companion, and you are the app's guide — you know "
+    "everything below about how Nexora Social works. "
+    "NAVIGATION: the bottom tabs are Feed, Videos, Design, "
+    "Games, Tasks, Ranks and Profile. A floating glass button "
+    "opens the sidebar, which holds Search, Messages, "
+    "Notifications, Saved, Shared with me, the Admin Panel "
+    "(owner only) and Nexa herself — that is where members "
+    "find you. Every main page can be refreshed by pulling "
+    "down from the top. "
+    "FEED: Explore shows everyone, Following shows people you "
+    "follow. Like with the heart (likes give no points), "
+    "comment, save, or open the menu for Share, Copy link, "
+    "Download, View profile, Follow, Not interested or Report; "
+    "your own posts also have Edit and Delete there. Views "
+    "count once per person. "
+    "POSTING: write from the Feed composer, or send a photo or "
+    "video directly to @NexoraSocial_bot in chat with a "
+    "caption and it becomes your post — the most reliable way "
+    "to post videos. A post earns 5 points. "
+    "VIDEOS: the Videos tab is full-screen reels — swipe to "
+    "move, tap to pause, the speaker button toggles sound; "
+    "liking, commenting and the menu work like the Feed. "
+    "DESIGN: a gallery of designs with their prompts. Tap a "
+    "design to read its prompt and copy it; HOLD a design for "
+    "Similar, WhatsApp, Share and Save. Pull down to refresh — "
+    "designs are ordered by your taste. Only the admin adds "
+    "designs. "
+    "POINTS: daily tasks on the Tasks page — check-in 20 "
+    "points, the follow task 5, the comment task 5, each once "
+    "a day, press Claim. The balance and history are on the "
+    "profile in the My Points card. A referral earns 20 points "
+    "when the friend makes their first post. "
+    "REFERRALS: your invite link is on your profile. A "
+    "referral is qualified when the friend joins AND makes a "
+    "first post. "
+    "MONETIZATION: the profile card shows 6 targets — 500 "
+    "followers, 12 qualified referrals, 25 posts, an account "
+    "14 days old, 5000 lifetime points, and a 30-day check-in "
+    "streak (one missed day resets it). Payouts are a later "
+    "step; never promise money or dates. "
+    "VERIFICATION: the blue badge. Members with at least 1000 "
+    "followers can apply from their profile; the admin "
+    "approves applications. "
+    "MESSAGES AND STORIES: the message button opens chats and "
+    "stories; members can message anyone from their profile. "
+    "Stories are photos that live for 24 hours, seen by "
+    "followers and the official account. "
+    "GAMES: open the Games page and pull the lamp cord to "
+    "light the room, then play 10 classics — Snake, Tetris, "
+    "Breakout, Memory Match, Pong, Space Invaders, "
+    "Minesweeper, Flappy Bird, 2048 and Pac-Man. Games give "
+    "no points, they are just for fun. "
+    "PROFILE: the round camera badges change your photo and "
+    "cover. A bio can be up to 500 characters. Your name can "
+    "change once every 60 days; the @username belongs to "
+    "Telegram and cannot be changed here. Profiles show "
+    "followers and following counts. "
+    "SEARCH: from the sidebar or the search button — type and "
+    "press Enter. Usernames are shown so members with the "
+    "same name can be told apart. "
+    "SAVED AND SHARED: in the sidebar Library — posts and "
+    "designs you saved, and things others shared with you. "
+    "SAFETY: from any profile you can block or mute a member "
+    "and you will stop seeing each other; report bad posts "
+    "from their menu. The official account Nexora Social "
+    "(@nexora, verified) is followed by everyone and cannot "
+    "be unfollowed or blocked. "
+    "ACCOUNT: from your profile you can export your data or "
+    "delete your account by typing DELETE. Log out is in the "
+    "sidebar. "
+    "YOU: you live in the sidebar; members tap your message "
+    "bubbles to hear them again, and the speaker button turns "
+    "your voice on or off. "
+    "RULES: reply in the same language the member writes in "
+    "(English or Bengali). Keep answers short and friendly: "
+    "1-3 sentences of plain text, no markdown and no lists; "
+    "for how-to questions, give the key steps inside those "
+    "sentences. Never promise earnings, money, prizes or "
+    "dates. If something is not covered above, say you are "
+    "not sure and point to the closest page."
 )
 
 
@@ -3405,6 +3478,33 @@ def _nexa_fallback(text):
                 "You earn points from daily tasks: 20 for check-in, "
                 "5 for the follow task and 5 for the comment task. "
                 "Open the Tasks page and claim yours!")
+    if has("verif", "ব্যাজ", "badge", "ভেরিফাই", "নীল টিক"):
+        return ("নীল ব্যাজ পেতে কমপক্ষে ১০০০ ফলোয়ার লাগে — "
+                "প্রোফাইল থেকে আবেদন করো, অ্যাডমিন অনুমোদন "
+                "দেবে।" if bn else
+                "The blue badge needs at least 1000 followers — "
+                "apply from your profile and the admin approves "
+                "it.")
+    if has("story", "স্টোরি"):
+        return ("স্টোরি হলো ২৪ ঘণ্টার ছবি — Messages পেজ থেকে "
+                "দাও, ফলোয়াররা দেখতে পাবে।" if bn else
+                "Stories are photos that live 24 hours — post "
+                "one from the Messages page and your followers "
+                "will see it.")
+    if has("profile", "প্রোফাইল", "cover", "কভার", "bio",
+           "বায়ো", "নাম বদল", "change name", "ছবি বদল"):
+        return ("প্রোফাইলে ক্যামেরা ব্যাজ চাপলেই ছবি আর কভার "
+                "বদলাতে পারবে; বায়ো ৫০০ অক্ষর পর্যন্ত, আর নাম "
+                "৬০ দিনে একবার বদলানো যায়।" if bn else
+                "Tap the camera badges on your profile to change "
+                "your photo and cover; a bio can be 500 "
+                "characters, and your name can change once every "
+                "60 days.")
+    if has("block", "ব্লক", "mute", "মিউট"):
+        return ("কারো প্রোফাইল খুলে Block করো — তারপর থেকে "
+                "তোমরা কেউ কাউকে দেখতে পাবে না।" if bn else
+                "Open their profile and tap Block — from then on "
+                "you will not see each other at all.")
     if has("post", "পোস্ট", "upload", "আপলোড", "ভিডিও", "video",
            "ছবি", "photo"):
         return ("পোস্ট করা সহজ: Feed-এ গিয়ে লেখো, অথবা ছবি/ভিডিও "
@@ -3492,26 +3592,44 @@ def _gemini_chat(message, history):
                 "role": "model" if h.get("role") == "nexa" else "user",
                 "parts": [{"text": txt}]})
     contents.append({"role": "user", "parts": [{"text": message}]})
+    # Phase 72 (owner: she answers too slowly): the flash models
+    # spent 300+ tokens "thinking" before every short reply.
+    # thinkingBudget 0 turns that off (verified live: full answer,
+    # zero thought tokens). If a model ever rejects the field with
+    # a 400, the same model is retried once without it.
+    gen = {"maxOutputTokens": 1500, "temperature": 0.7,
+           "thinkingConfig": {"thinkingBudget": 0}}
     body = {
         "system_instruction": {"parts": [{"text": _NEXA_SYSTEM}]},
         "contents": contents,
-        "generationConfig": {"maxOutputTokens": 1500,
-                             "temperature": 0.7},
+        "generationConfig": gen,
     }
     for model in _NEXA_CHAT_MODELS:
-        try:
-            r = httpx.post(
-                "https://generativelanguage.googleapis.com/v1beta/"
-                f"models/{model}:generateContent",
-                headers={"x-goog-api-key": key}, json=body, timeout=20)
-            if r.status_code != 200:
+        for attempt in (gen, {"maxOutputTokens": 1500,
+                              "temperature": 0.7}):
+            body["generationConfig"] = attempt
+            try:
+                r = httpx.post(
+                    "https://generativelanguage.googleapis.com/"
+                    "v1beta/"
+                    f"models/{model}:generateContent",
+                    headers={"x-goog-api-key": key}, json=body,
+                    timeout=20)
+            except Exception:
+                break
+            if r.status_code == 400 and attempt is gen:
                 continue
-            parts = r.json()["candidates"][0]["content"]["parts"]
-            out = "".join(p.get("text", "") for p in parts).strip()
+            if r.status_code != 200:
+                break
+            try:
+                parts = r.json()["candidates"][0]["content"]["parts"]
+                out = "".join(p.get("text", "")
+                              for p in parts).strip()
+            except Exception:
+                break
             if out:
                 return out[:900]
-        except Exception:
-            continue
+            break
     return None
 
 
