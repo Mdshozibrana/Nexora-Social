@@ -202,11 +202,19 @@ function markViewed(kind, id, onViews) {
     .catch(() => {});
 }
 
-function showView(name) {
+function showView(name, viaBack) {
   // Phase 20: defense in depth — the admin view refuses to open for
   // non-admins even if triggered programmatically (the API is guarded
   // too; this keeps the shell itself private as the owner expects).
   if (name === "admin" && !(me && me.is_admin)) name = "feed";
+  // Phase 77: remember where we came from, so Telegram's back
+  // button walks back through the app instead of leaving it.
+  if (!viaBack && name !== currentView) {
+    if (viewStack[viewStack.length - 1] !== currentView)
+      viewStack.push(currentView);
+    if (viewStack.length > 30) viewStack.shift();
+  }
+  currentView = name;
   // Phase 30: no video may follow the member to another page.
   pauseAllVideos();
   // Phase 23: each view starts at the top of the app shell.
@@ -242,7 +250,47 @@ function showView(name) {
   if (name === "assistant") openAssistant();
   if (name !== "assistant") nexaStop();
   moveNavPill();
+  updateBackButton();
 }
+
+// ---------- Phase 77: the back button stays inside the app ----
+// Telegram routes the Android back button to the app ONLY while
+// the app shows Telegram's own BackButton; with it hidden, back
+// closes the Mini App from any screen (owner: "বটে ব্যাক করলে
+// বের হয়ে আসে কেনো?"). So: back first closes whatever is open
+// (design popup, a sheet, the design sheet, the sidebar), then
+// walks back through the view history, and the button hides
+// only on the home screen — Feed, nothing open, empty history —
+// where leaving the app is the expected behaviour.
+let viewStack = [];
+let currentView = "feed";
+
+function anyOverlayOpen() {
+  const pop = $("design-pop");
+  return !$("reel-sheet-wrap").hidden
+    || !$("design-sheet-wrap").hidden
+    || (pop && !pop.hidden)
+    || $("glassbar").classList.contains("open");
+}
+
+function updateBackButton() {
+  if (!tg.BackButton) return;
+  if (anyOverlayOpen() || viewStack.length || currentView !== "feed")
+    tg.BackButton.show();
+  else tg.BackButton.hide();
+}
+
+function onAppBack() {
+  const pop = $("design-pop");
+  if (pop && !pop.hidden) hideDesignPop();
+  else if (!$("reel-sheet-wrap").hidden) closeReelMenu();
+  else if (!$("design-sheet-wrap").hidden) closeDesignSheet();
+  else if ($("glassbar").classList.contains("open")) closeSidebar();
+  else if (viewStack.length) showView(viewStack.pop(), true);
+  else if (currentView !== "feed") showView("feed", true);
+  updateBackButton();
+}
+if (tg.BackButton) tg.BackButton.onClick(onAppBack);
 
 const NAV_IDS = ["nav-feed", "nav-videos", "nav-design", "nav-games", "nav-tasks",
                  "nav-ranks", "nav-me"];
@@ -636,7 +684,7 @@ function reelCard(p) {
 }
 
 // ------------------------------------------------------- options sheet ---
-function closeReelMenu() { $("reel-sheet-wrap").hidden = true; }
+function closeReelMenu() { $("reel-sheet-wrap").hidden = true; updateBackButton(); }
 
 async function openReelMenu(p, reelEl) {
   const sheet = $("reel-sheet");
@@ -723,6 +771,7 @@ async function openReelMenu(p, reelEl) {
   }, true);
   row("✕", "Cancel", () => {});
   $("reel-sheet-wrap").hidden = false;
+  updateBackButton();
 }
 
 // Phase 59: caption editor for your own post, inside the
@@ -792,6 +841,7 @@ function openPostEditor(p, cardEl) {
   cancel.onclick = () => closeReelMenu();
   sheet.append(title, ta, save, cancel);
   $("reel-sheet-wrap").hidden = false;
+  updateBackButton();
   ta.focus();
 }
 
@@ -895,6 +945,7 @@ async function openSharePicker(p) {
     }, 250);
   };
   $("reel-sheet-wrap").hidden = false;
+  updateBackButton();
 }
 
 async function loadShared() {
@@ -1864,6 +1915,7 @@ paintEntry();
 // removed; the pill is the ONE way to open the sidebar.
 function openSidebar() {
   $("glassbar").classList.add("open");
+  updateBackButton();
   // Phase 48: the inline top belongs to the dragged pill spot;
   // the open panel always docks to the top of its side.
   $("glassbar").style.top = "";
@@ -1882,6 +1934,7 @@ function openSidebar() {
 }
 function closeSidebar() {
   $("glassbar").classList.remove("open");
+  updateBackButton();
   $("gb-backdrop").hidden = true;
   gbRestorePos();  // Phase 48: the pill returns to its dragged spot
 }
@@ -2215,6 +2268,7 @@ function showDesignPop(d, anchorEl) {
   const r = anchorEl.getBoundingClientRect();
   pop.hidden = false;
   $("design-pop-backdrop").hidden = false;
+  updateBackButton();
   const railH = 222;
   let top = r.top + (r.height - railH) / 2;
   top = Math.max(10, Math.min(top, window.innerHeight - railH - 10));
@@ -2230,6 +2284,7 @@ function showDesignPop(d, anchorEl) {
 function hideDesignPop() {
   $("design-pop").hidden = true;
   $("design-pop-backdrop").hidden = true;
+  updateBackButton();
   if (popAnchor && popAnchor.classList)
     popAnchor.classList.remove("lp-on");
   popAnchor = null; popDesign = null;
@@ -2362,6 +2417,7 @@ async function openDesignSharePicker(d) {
     }, 250);
   };
   $("reel-sheet-wrap").hidden = false;
+  updateBackButton();
 }
 
 $("dp-save").onclick = designPopSave;
@@ -2589,6 +2645,7 @@ function openDesignSheet(d) {
   dsEditFile = null;
   $("ds-copy").textContent = "📋 Copy Prompt";
   $("design-sheet-wrap").hidden = false;
+  updateBackButton();
   // "See more" only earns its place when the prompt truly overflows.
   requestAnimationFrame(() => {
     $("ds-more").hidden =
@@ -2605,6 +2662,7 @@ function openDesignSheet(d) {
 }
 function closeDesignSheet() {
   $("design-sheet-wrap").hidden = true;
+  updateBackButton();
   currentDesign = null;
 }
 $("design-sheet-backdrop").onclick = closeDesignSheet;
