@@ -1050,6 +1050,19 @@ body { padding: 0; overflow: hidden; }
   font-size: 13px; font-weight: 700; }
 .design-like.liked { color: #E84393; }
 .design-up-title { font-weight: 800; margin-bottom: 8px; }
+/* Phase 85 (owner picked sample A — Gradient Glow): the Post
+   Design button had NO styling of its own and rendered as a
+   naked browser button. Now a pink-gradient pill with white
+   bold text, a sparkle, and a soft pink glow. */
+#design-post { margin-left: auto; border: none; cursor: pointer;
+  border-radius: 999px; padding: 12px 26px;
+  background: linear-gradient(90deg, #FF8FBE, #E84393);
+  color: #fff; font-weight: 700; font-size: 15px;
+  box-shadow: 0 8px 22px rgba(232, 67, 147, .45),
+              0 2px 6px rgba(232, 67, 147, .35); }
+#design-post::before { content: "✦ "; }
+#design-post:active { transform: scale(.96); }
+#design-post:disabled { opacity: .55; box-shadow: none; }
 #design-upload textarea, #design-switch { margin-bottom: 10px; }
 #design-upload textarea { width: 100%; }
 #design-sheet-wrap { position: fixed; inset: 0; z-index: 80; }
