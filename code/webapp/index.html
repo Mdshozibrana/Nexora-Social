@@ -20,8 +20,8 @@
 <meta name="twitter:description" content="Share photos, watch reels, discover designs and play classic games — all inside Telegram.">
 <meta name="twitter:image" content="https://nexora-9pip.onrender.com/webapp/og-image.png">
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
-<link rel="stylesheet" href="style.css?v=85">
-<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=85">
+<link rel="stylesheet" href="style.css?v=86">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=86">
 </head>
 <body>
 <div id="entry-screen">
@@ -221,6 +221,17 @@
   <div id="nearby-route" class="nb-route" hidden></div>
   <div id="nearby-list"></div>
   <p class="muted nb-note">🔒 Your location is shared only while this is on and the app is open. Members who follow you and you follow back see your exact spot; everyone else sees you roughly 50–100 metres off, so nobody learns your exact doorstep. Turn it off any time — your saved location is deleted right away.</p>
+</section>
+
+<section id="view-museum" hidden>
+  <h2 class="view-title">🏛️ Museum</h2>
+  <div class="museum-name" id="museum-name">🏛️ Rose Hall</div>
+  <div id="museum-rooms" class="museum-rooms"></div>
+  <div id="museum-stage">
+    <div id="museum-room"></div>
+  </div>
+  <p class="hint museum-hint">↔ Drag or scroll to walk along the wall. Tap a picture to open it — and walk to a door to visit the next room.</p>
+  <p id="museum-empty" class="muted" hidden>No designs to exhibit yet.</p>
 </section>
 
 <section id="view-messages" hidden>
@@ -544,6 +555,7 @@
   <button class="gb-item" data-go="designs"><span class="gb-ic">🎨</span><span class="gb-label">Design</span></button>
   <button class="gb-item" data-go="games"><span class="gb-ic">🎮</span><span class="gb-label">Games</span></button>
   <button class="gb-item" data-go="nearby"><span class="gb-ic">📍</span><span class="gb-label">Nearby</span></button>
+  <button class="gb-item" data-go="museum"><span class="gb-ic">🏛️</span><span class="gb-label">Museum</span></button>
   <div class="gb-sec">LIBRARY</div>
   <button class="gb-item" data-go="messages"><span class="gb-ic">💬</span><span class="gb-label">Messages</span><span id="gb-msg-badge" class="gb-badge" hidden></span></button>
   <button class="gb-item" data-go="notifications"><span class="gb-ic">🔔</span><span class="gb-label">Notifications</span><span id="gb-bell-badge" class="gb-badge" hidden></span></button>
@@ -586,8 +598,8 @@
   <div id="reel-sheet"></div>
 </div>
 
-<script src="vendor/leaflet/leaflet.js?v=85"></script>
-<script src="app.js?v=85"></script>
-<script src="games.js?v=85"></script>
+<script src="vendor/leaflet/leaflet.js?v=86"></script>
+<script src="app.js?v=86"></script>
+<script src="games.js?v=86"></script>
 </body>
 </html>

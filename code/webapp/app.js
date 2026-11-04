@@ -225,7 +225,7 @@ function showView(name, viaBack) {
                    games: "nav-games",
                    game: "nav-games", tasks: "nav-tasks",
                    leaderboard: "nav-ranks", profile: "nav-me" };
-  ["feed", "videos", "designs", "search", "tasks", "leaderboard", "profile", "saved", "shared", "games", "game", "admin", "notifications", "messages", "chat", "assistant", "nearby"].forEach(v => {
+  ["feed", "videos", "designs", "search", "tasks", "leaderboard", "profile", "saved", "shared", "games", "game", "admin", "notifications", "messages", "chat", "assistant", "nearby", "museum"].forEach(v => {
     $("view-" + v).hidden = v !== name;
   });
   // Phase 21: only tab views move the highlight. Views without a tab
@@ -249,6 +249,7 @@ function showView(name, viaBack) {
   if (name === "designs") loadDesigns(true);
   if (name === "assistant") openAssistant();
   if (name !== "assistant") nexaStop();
+  if (name === "museum") openMuseum();
   if (name === "nearby") openNearby();
   if (name !== "nearby") stopNearby();
   moveNavPill();
@@ -2828,6 +2829,176 @@ function designCard(d) {
   return el;
 }
 
+
+// ---------- Phase 86: Museum (owner: a Museum section in the
+// sidebar, with many rooms full of pictures; you drag or scroll
+// along the wall to walk from room to room, and every room has
+// its own design). The exhibits are the Design gallery's
+// pictures, five to a room; tapping one opens its design sheet.
+const MUSEUM_THEMES = [
+  { name: "Rose Hall", wall: "linear-gradient(180deg,#F7C8DA,#EFA8C4)",
+    floor: "#B76E8E", frame: "#C9A227", mat: "#FFF7EA",
+    glow: "rgba(255,214,130,.55)" },
+  { name: "Midnight Gallery", wall: "linear-gradient(180deg,#2E2140,#1D1530)",
+    floor: "#120C20", frame: "#C0C6D4", mat: "#EDEFF5",
+    glow: "rgba(170,190,255,.5)" },
+  { name: "Emerald Room", wall: "linear-gradient(180deg,#BFE3CF,#8FC7A6)",
+    floor: "#4E7A5F", frame: "#7A5230", mat: "#FFFDF4",
+    glow: "rgba(255,240,190,.5)" },
+  { name: "Sky Gallery", wall: "linear-gradient(180deg,#D6ECFF,#A9D2F5)",
+    floor: "#6E97B8", frame: "#FFFFFF", mat: "#FFFFFF",
+    glow: "rgba(255,255,255,.65)" },
+  { name: "Sunset Salon", wall: "linear-gradient(180deg,#FFD9A8,#F2A56B)",
+    floor: "#9A5B33", frame: "#5C3A21", mat: "#FFF6E8",
+    glow: "rgba(255,196,100,.55)" },
+  { name: "Marble Hall", wall: "linear-gradient(180deg,#F4F4F6,#DCDCE2)",
+    floor: "#9A9AA4", frame: "#23232A", mat: "#FFFFFF",
+    glow: "rgba(255,255,255,.7)" },
+];
+let museumRooms = null, museumIdx = 0, museumX = 0, museumMoved = 0;
+
+function openMuseum() { loadMuseum(false); }
+
+async function loadMuseum(force) {
+  if (museumRooms && !force) { openMuseumRoom(museumIdx); return; }
+  let designs = [];
+  try {
+    const r = await api("/designs?limit=30");
+    designs = r.designs || [];
+  } catch (e) { designs = []; }
+  museumRooms = [];
+  for (let i = 0; i < designs.length; i += 5)
+    museumRooms.push(designs.slice(i, i + 5));
+  $("museum-empty").hidden = museumRooms.length > 0;
+  $("museum-stage").hidden = museumRooms.length === 0;
+  openMuseumRoom(0);
+}
+
+function paintMuseumChips() {
+  const wrap = $("museum-rooms");
+  wrap.innerHTML = "";
+  (museumRooms || []).forEach((room, i) => {
+    const b = document.createElement("button");
+    b.className = "museum-chip" + (i === museumIdx ? " on" : "");
+    b.textContent = (i + 1) + " · " +
+      MUSEUM_THEMES[i % MUSEUM_THEMES.length].name;
+    b.onclick = () => openMuseumRoom(i);
+    wrap.appendChild(b);
+  });
+}
+
+function museumSetX(x) {
+  const stage = $("museum-stage"), room = $("museum-room");
+  const min = Math.min(0, stage.clientWidth - room.scrollWidth);
+  museumX = Math.max(min, Math.min(0, x));
+  room.style.transform = "translateX(" + museumX + "px)";
+}
+
+function openMuseumRoom(i) {
+  if (!museumRooms || !museumRooms.length) return;
+  museumIdx = Math.max(0, Math.min(museumRooms.length - 1, i));
+  const theme = MUSEUM_THEMES[museumIdx % MUSEUM_THEMES.length];
+  const designs = museumRooms[museumIdx];
+  $("museum-name").textContent = "🏛️ " + theme.name +
+    "  ·  Room " + (museumIdx + 1) + " of " + museumRooms.length;
+  paintMuseumChips();
+  const room = $("museum-room");
+  room.style.setProperty("--m-wall", theme.wall);
+  room.style.setProperty("--m-floor", theme.floor);
+  room.style.setProperty("--m-frame", theme.frame);
+  room.style.setProperty("--m-mat", theme.mat);
+  room.style.setProperty("--m-glow", theme.glow);
+  room.innerHTML = "";
+  const wall = document.createElement("div");
+  wall.className = "m-wall";
+  room.appendChild(wall);
+  const floor = document.createElement("div");
+  floor.className = "m-floor";
+  room.appendChild(floor);
+  const stage = $("museum-stage");
+  const slotW = 300, n = designs.length;
+  const width = Math.max(stage.clientWidth, 210 + n * slotW + 190);
+  room.style.width = width + "px";
+  designs.forEach((d, k) => {
+    const cx = 150 + k * slotW;
+    const spot = document.createElement("div");
+    spot.className = "m-spot";
+    spot.style.left = cx + "px";
+    room.appendChild(spot);
+    const f = document.createElement("button");
+    f.className = "mframe";
+    f.style.left = cx + "px";
+    const img = document.createElement("img");
+    img.alt = "";
+    img.src = mediaUrl(d.image_file_id);
+    f.appendChild(img);
+    f.onclick = () => { if (museumMoved < 8) openDesignSheet(d); };
+    room.appendChild(f);
+    const plate = document.createElement("div");
+    plate.className = "mplate";
+    plate.style.left = cx + "px";
+    plate.textContent = (d.prompt || "Untitled").slice(0, 44);
+    room.appendChild(plate);
+  });
+  const bench = document.createElement("div");
+  bench.className = "m-bench";
+  bench.style.left = Math.round(width * 0.45) + "px";
+  room.appendChild(bench);
+  const mkDoor = (label, sub, target, leftPx) => {
+    const door = document.createElement("button");
+    door.className = "m-door";
+    door.style.left = leftPx + "px";
+    door.innerHTML = "";
+    door.appendChild(document.createTextNode(label));
+    const sm = document.createElement("span");
+    sm.textContent = sub;
+    door.appendChild(sm);
+    door.onclick = () => { if (museumMoved < 8) openMuseumRoom(target); };
+    room.appendChild(door);
+  };
+  if (museumIdx > 0)
+    mkDoor("← Room " + museumIdx,
+           MUSEUM_THEMES[(museumIdx - 1) % MUSEUM_THEMES.length].name,
+           museumIdx - 1, 18);
+  if (museumIdx < museumRooms.length - 1)
+    mkDoor("Room " + (museumIdx + 2) + " →",
+           MUSEUM_THEMES[(museumIdx + 1) % MUSEUM_THEMES.length].name,
+           museumIdx + 1, width - 122);
+  room.classList.remove("mfade");
+  void room.offsetWidth;
+  room.classList.add("mfade");
+  museumSetX(0);
+}
+
+// Walking: drag with mouse or finger, or scroll — the room pans.
+(() => {
+  const stage = $("museum-stage");
+  let drag = null;
+  stage.addEventListener("pointerdown", e => {
+    drag = { x: e.clientX, start: museumX };
+    museumMoved = 0;
+  });
+  window.addEventListener("pointermove", e => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x;
+    museumMoved = Math.max(museumMoved, Math.abs(dx));
+    museumSetX(drag.start + dx);
+  });
+  ["pointerup", "pointercancel"].forEach(ev =>
+    window.addEventListener(ev, () => { drag = null; }));
+  stage.addEventListener("wheel", e => {
+    e.preventDefault();
+    const d = Math.abs(e.deltaY) >= Math.abs(e.deltaX)
+      ? e.deltaY : e.deltaX;
+    museumSetX(museumX - d);
+  }, { passive: false });
+  // Keep the app-level pull-to-refresh out of museum drags.
+  stage.addEventListener("touchstart", e => e.stopPropagation(),
+                         { passive: true });
+  stage.addEventListener("touchmove", e => e.stopPropagation(),
+                         { passive: true });
+})();
+
 async function loadDesigns(reset) {
   paintDesignAccess();
   const grid = $("design-grid");
@@ -2920,6 +3091,7 @@ $("design-more").onclick = () => loadDesigns(false);
     messages: () => loadMessages(),
     profile: () => { if (me) openProfile(me.telegram_id); },
     admin: () => loadAdmin(),
+    museum: () => loadMuseum(true),
   };
   let startY = null, pull = 0, busy = false;
   const THRESH = 70;

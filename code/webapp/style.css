@@ -2036,3 +2036,63 @@ img { -webkit-user-drag: none; }
 #composer-progress-fill.done { background: #3DBE6C; }
 @keyframes upslide { from { background-position: 0 0; }
   to { background-position: 40px 0; } }
+
+/* Phase 86 (owner): the Museum — themed rooms of design
+   pictures. Drag or scroll to pan along the wall; a door at
+   each end walks to the next room; every room wears its own
+   theme (wall, floor, frame, mat, light). */
+.museum-name { font-weight: 800; font-size: 17px; color: var(--ink);
+  margin: 2px 0 8px; }
+.museum-rooms { display: flex; gap: 8px; flex-wrap: wrap;
+  margin-bottom: 12px; }
+.museum-chip { border: 1px solid var(--line); background: #FFFBFC;
+  color: var(--ink); border-radius: 999px; padding: 7px 13px;
+  font-size: 13px; font-weight: 600; }
+.museum-chip.on { background: linear-gradient(90deg, #FF8FBE, #E84393);
+  color: #fff; border-color: transparent; }
+#museum-stage { position: relative; overflow: hidden;
+  height: 64dvh; border-radius: 24px; touch-action: none;
+  background: #201826;
+  box-shadow: 0 18px 34px rgba(150, 60, 110, .25),
+    inset 0 2px 0 rgba(255, 255, 255, .5); }
+#museum-room { position: absolute; top: 0; bottom: 0; left: 0;
+  will-change: transform; }
+#museum-room.mfade { animation: mfadein .45s ease; }
+@keyframes mfadein { from { opacity: 0; } to { opacity: 1; } }
+.m-wall { position: absolute; left: 0; right: 0; top: 0; height: 76%;
+  background: var(--m-wall); }
+.m-wall::after { content: ""; position: absolute; inset: 0;
+  background: repeating-linear-gradient(90deg, transparent 0 298px,
+    rgba(0, 0, 0, .06) 298px 300px); }
+.m-floor { position: absolute; left: 0; right: 0; bottom: 0;
+  height: 24%; border-top: 6px solid rgba(255, 255, 255, .25);
+  background: linear-gradient(180deg, var(--m-floor), rgba(0,0,0,.4)); }
+.m-spot { position: absolute; top: 0; width: 300px; height: 48%;
+  transform: translateX(-50%); pointer-events: none;
+  background: radial-gradient(ellipse at 50% 0%, var(--m-glow),
+    transparent 65%); }
+.mframe { position: absolute; top: 15%; transform: translateX(-50%);
+  background: var(--m-mat); padding: 10px; cursor: pointer;
+  border: 9px solid var(--m-frame); border-radius: 4px;
+  box-shadow: 0 18px 30px rgba(0, 0, 0, .35); }
+.mframe img { display: block; height: 27dvh; max-width: 230px;
+  object-fit: cover; border-radius: 2px; pointer-events: none; }
+.mplate { position: absolute; top: calc(15% + 27dvh + 42px);
+  transform: translateX(-50%); width: 200px; text-align: center;
+  font-size: 11px; line-height: 1.35; color: #3A2A33;
+  background: rgba(255, 255, 255, .88); border-radius: 6px;
+  padding: 4px 8px; box-shadow: 0 4px 10px rgba(0,0,0,.18); }
+.m-bench { position: absolute; bottom: 8%; width: 180px; height: 42px;
+  transform: translateX(-50%);
+  background: repeating-linear-gradient(180deg, var(--m-frame) 0 10px,
+    transparent 10px 24px);
+  filter: drop-shadow(0 10px 10px rgba(0, 0, 0, .3)); }
+.m-door { position: absolute; top: 9%; width: 104px; height: 66%;
+  border: none; cursor: pointer; color: #FFE9B8; font-weight: 700;
+  font-size: 13px; padding: 20px 10px; border-radius: 52px 52px 6px 6px;
+  background: linear-gradient(180deg, rgba(0,0,0,.5), rgba(0,0,0,.8));
+  box-shadow: inset 0 0 0 4px var(--m-frame),
+    0 14px 24px rgba(0, 0, 0, .35); }
+.m-door span { display: block; font-weight: 400; font-size: 11px;
+  opacity: .85; margin-top: 6px; }
+.museum-hint { text-align: center; margin-top: 8px; }
