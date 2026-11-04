@@ -43,5 +43,5 @@ for bit in ("#museum-stage", ".m-wall", ".m-floor", ".m-spot",
             ".plan-room.on", "--m-frame", "touch-action: none",
             "@keyframes mfadein"):
     assert bit in CSS, bit
-assert "app.js?v=88" in HTML and "style.css?v=88" in HTML
+assert "app.js?v=89" in HTML and "style.css?v=89" in HTML
 print("PHASE 86 OK")

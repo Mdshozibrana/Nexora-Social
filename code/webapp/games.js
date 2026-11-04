@@ -1245,15 +1245,16 @@ registerGame({
 // --------------------------------------------------------------- Archery --
 // Phase 88 (owner, from the screenshot he shared): the
 // overthinker is still aiming — the doer is already shooting.
-// One stick archer, one SUCCESS target, grey bars drifting
-// between them. Drag to aim (dotted preview), release to loose.
-// Solo against your best, two players taking turns on one
-// phone, or invite a friend: a challenge sent as a normal DM.
+// Phase 89 (owner): make it prettier, give it LEVELS that get
+// harder step by step, and design each level change so the
+// player can SEE it is a new level — every level wears its own
+// sky, opens with a big LEVEL card naming what is new, and the
+// difficulty (bars, target, wind) is table-driven per level.
 registerGame({
   id: "archery", icon: "🏹", name: "Archery",
   title: "🏹 Archery — Aim Less, Shoot More",
-  desc: "The overthinker is still aiming. Thread your arrows past the moving bars and hit SUCCESS.",
-  help: "Drag on the field to aim — the dotted line previews your shot. Release to loose. Drifting bars block arrows. Bullseye 50 · ring 25 · edge 10. Solo: 10 arrows. 2 Players: 6 arrows each, taking turns.",
+  desc: "Level by level, sky by sky: thread the moving bars, hit SUCCESS, climb.",
+  help: "Drag to aim — the dotted line previews your shot. Release to loose. Solo is a level climb: score the quota in 10 arrows to advance. Bars speed up, multiply, the target shrinks, starts moving, and wind joins in. 2 Players: 6 arrows each on one phone. Invite: a challenge message to a friend.",
   start(stage, setScore) {
     const W = 340, H = 460, GY = H - 44;
     const cv = document.createElement("canvas");
@@ -1262,51 +1263,115 @@ registerGame({
     stage.appendChild(cv);
     const ctx = cv.getContext("2d");
     const TGT = { x: 252, y: 96, r: 46 };
+    const TGT_Y = 96;
     const HAND = { x: 64, y: GY - 60 };
     const PCOL = ["#FFFFFF", "#FF8FBE"];
+    const THEMES = [
+      { name: "Night Range", top: "#0B0B0E", bot: "#1A1A28", hill: "#0D0D14", stars: true },
+      { name: "Dawn Ridge", top: "#1B2340", bot: "#51386B", hill: "#120E24", stars: true },
+      { name: "Ember Dusk", top: "#2A1428", bot: "#7A3038", hill: "#180B18", stars: false },
+      { name: "Meadow Dark", top: "#0C241C", bot: "#22573E", hill: "#07170F", stars: false },
+      { name: "Storm Field", top: "#141C26", bot: "#3A5A68", hill: "#0B131B", stars: false },
+      { name: "Moonlight", top: "#0A1030", bot: "#2C3C7A", hill: "#090D22", stars: true },
+    ];
+    const NEW_AT = { 2: "The bars move faster", 3: "One more bar!",
+      4: "The target moves!", 5: "Faster bars, smaller target",
+      6: "Wind joins the game 💨", 7: "One more bar!",
+      8: "The wind picks up", 9: "One more bar!",
+      10: "Everything is faster now" };
+    function levelCfg(n) {
+      const spMul = Math.min(2.2, 1 + (n - 1) * 0.14);
+      const count = Math.min(5, 3 + Math.floor((n - 1) / 2));
+      const w = n >= 4 ? 84 : 70;
+      const base = [
+        { y: 180, x: 150, v: -0.7 }, { y: 232, x: 40, v: 0.9 },
+        { y: 282, x: 196, v: -1.1 }, { y: 148, x: 60, v: 1.2 },
+        { y: 258, x: 236, v: -1.45 },
+      ].slice(0, count).map(bb => ({ y: bb.y, x: bb.x, w, v: bb.v * spMul }));
+      return {
+        quota: Math.min(240, 50 + (n - 1) * 20),
+        bars: base,
+        tgtR: Math.max(30, 46 - (n - 1) * 2),
+        moveAmp: n >= 4 ? Math.min(34, 8 + (n - 4) * 5) : 0,
+        moveSp: 0.55 + Math.max(0, n - 4) * 0.09,
+        wind: n >= 6 ? (n % 2 ? 1 : -1) *
+          Math.min(0.055, 0.02 + (n - 6) * 0.008) : 0,
+      };
+    }
     let bars = [], arrow = null, stuck = [], aim = null;
+    let parts = [];                        // confetti / hit sparks
     let scores = [0, 0], shots = [0, 0], turn = 0;
-    let mode = "solo", state = "aim", note = "", noteT = 0;
-    let raf = 0, dead = false;
+    let mode = "solo", state = "intro", note = "", noteT = 0;
+    let frame = 0, raf = 0, dead = false;
+    let level = 1, cfg = levelCfg(1), banked = 0;
     let best = +(localStorage.getItem("nx_archery_best") || 0);
-
+    let bestLevel = +(localStorage.getItem("nx_archery_level") || 1);
+    const theme = () => THEMES[(level - 1) % THEMES.length];
     const perPlayer = () => (mode === "solo" ? 10 : 6);
-    const mkBars = () => ([
-      { y: 180, x: 150, w: 70, v: -0.7 },
-      { y: 232, x: 40,  w: 70, v: 0.9 },
-      { y: 282, x: 196, w: 70, v: -1.1 },
-    ]);
-    const reset = () => {
-      bars = mkBars(); arrow = null; stuck = []; aim = null;
-      scores = [0, 0]; shots = [0, 0]; turn = 0;
-      state = "aim"; note = ""; noteT = 0; showScore();
-    };
     const leftFor = p => perPlayer() - shots[p];
+
+    function startLevel(n, keepBanked) {
+      level = n; cfg = levelCfg(n);
+      if (!keepBanked) banked = 0;
+      TGT.r = cfg.tgtR; TGT.y = TGT_Y;
+      bars = cfg.bars.map(bb => ({ ...bb }));
+      arrow = null; stuck = []; aim = null; parts = [];
+      scores = [0, 0]; shots = [0, 0]; turn = 0;
+      state = mode === "solo" ? "intro" : "aim";
+      note = ""; noteT = 0;
+      if (n > bestLevel) {
+        bestLevel = n;
+        localStorage.setItem("nx_archery_level", bestLevel);
+      }
+      showScore();
+    }
+    const reset = () => startLevel(mode === "solo" ? 1 : 1, false);
     function showScore() {
       if (mode === "solo")
-        setScore("🎯 Score: " + scores[0] + " · Arrows: " +
-                 leftFor(0) + " · Best: " + best);
+        setScore("🏹 Level " + level + " · " + scores[0] + "/" +
+          cfg.quota + " · Arrows: " + leftFor(0) +
+          " · Total: " + (banked + scores[0]));
       else
         setScore("P1 " + scores[0] + " · P2 " + scores[1] +
-                 (state === "over" ? " · Finished" :
-                  " · Player " + (turn + 1) + " · Arrows: " +
-                  leftFor(turn)));
+          (state === "over" ? " · Finished" :
+            " · Player " + (turn + 1) + " · Arrows: " + leftFor(turn)));
     }
+    const burst = (x, y, cols, n) => {
+      for (let i = 0; i < n; i++)
+        parts.push({ x, y, vx: (Math.random() - 0.5) * 4.4,
+          vy: -Math.random() * 3.6 - 0.6, life: 46 + Math.random() * 26,
+          c: cols[i % cols.length], s: 2 + Math.random() * 3 });
+    };
     const finishShot = (pts, msg) => {
       scores[turn] += pts;
       shots[turn] += 1;
       note = msg; noteT = 55; state = "show";
-      if (arrow) { stuck.push(arrow); arrow = null; }
+      if (arrow) {
+        if (pts > 0)
+          burst(arrow.x, arrow.y, ["#FFD93D", "#FF8FBE", "#FFFFFF"], 16);
+        stuck.push(arrow); arrow = null;
+      }
       if (stuck.length > 14) stuck.shift();
       showScore();
       return true;
     };
     const advance = () => {
       if (mode === "solo") {
-        state = shots[0] >= perPlayer() ? "over" : "aim";
-        if (state === "over" && scores[0] > best) {
-          best = scores[0];
-          localStorage.setItem("nx_archery_best", best);
+        if (shots[0] < perPlayer()) { state = "aim"; showScore(); return; }
+        if (scores[0] >= cfg.quota) {
+          banked += scores[0];
+          if (banked > best) {
+            best = banked;
+            localStorage.setItem("nx_archery_best", best);
+          }
+          burst(TGT.x, TGT.y, ["#FFD93D", "#FF8FBE", "#7BE0A3", "#FFFFFF"], 70);
+          state = "clear"; noteT = 110;
+        } else {
+          if (banked + scores[0] > best) {
+            best = banked + scores[0];
+            localStorage.setItem("nx_archery_best", best);
+          }
+          state = "fail";
         }
       } else {
         const other = 1 - turn;
@@ -1326,8 +1391,8 @@ registerGame({
       const dy = Math.abs(yc - TGT.y);
       if (dy > TGT.r) return false;
       arrow.x = TGT.x; arrow.y = yc;
-      if (dy <= 15) return finishShot(50, "🎯 BULLSEYE! +50");
-      if (dy <= 30) return finishShot(25, "Great shot! +25");
+      if (dy <= TGT.r * 0.33) return finishShot(50, "🎯 BULLSEYE! +50");
+      if (dy <= TGT.r * 0.65) return finishShot(25, "Great shot! +25");
       return finishShot(10, "On target! +10");
     };
     const resolveHit = () => {
@@ -1344,24 +1409,24 @@ registerGame({
       const col = PCOL[turn];
       ctx.strokeStyle = col; ctx.fillStyle = col;
       ctx.lineWidth = 4; ctx.lineCap = "round";
-      const bx = 52, by = GY;              // feet point
-      ctx.beginPath();                      // legs
+      const bx = 52, by = GY;
+      ctx.beginPath();
       ctx.moveTo(bx, by - 34);
       ctx.lineTo(bx - 9, by); ctx.moveTo(bx, by - 34);
       ctx.lineTo(bx + 11, by);
-      ctx.moveTo(bx, by - 34);              // torso
+      ctx.moveTo(bx, by - 34);
       ctx.lineTo(bx + 3, by - 62);
       ctx.stroke();
-      ctx.beginPath();                      // head
+      ctx.beginPath();
       ctx.arc(bx + 5, by - 70, 8, 0, 7); ctx.fill();
-      const hx = bx + 12, hy = by - 60;     // bow hand
-      ctx.beginPath();                      // drawing arm
+      const hx = bx + 12, hy = by - 60;
+      ctx.beginPath();
       ctx.moveTo(bx + 3, by - 58);
       ctx.lineTo(hx + Math.cos(ang) * 14, hy + Math.sin(ang) * 14);
-      ctx.moveTo(bx + 3, by - 58);          // back arm
+      ctx.moveTo(bx + 3, by - 58);
       ctx.lineTo(bx - 8, by - 50);
       ctx.stroke();
-      ctx.save();                           // the bow itself
+      ctx.save();
       ctx.translate(hx, hy); ctx.rotate(ang);
       ctx.beginPath(); ctx.arc(10, 0, 20, -1.15, 1.15); ctx.stroke();
       ctx.lineWidth = 1.6;
@@ -1389,94 +1454,197 @@ registerGame({
                  a.y - Math.sin(ang - 2.6) * 8);
       ctx.closePath(); ctx.fill();
     };
-    const draw = () => {
-      ctx.fillStyle = "#0B0B0E";
-      ctx.fillRect(0, 0, W, H);
-      const g = ctx.createRadialGradient(W/2, H/2, 60, W/2, H/2, 300);
-      g.addColorStop(0, "rgba(255,255,255,.06)");
-      g.addColorStop(1, "rgba(255,255,255,0)");
-      ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-      ctx.fillStyle = "#F2F3F5"; ctx.textAlign = "center";
-      ctx.font = "bold 15px system-ui";
-      ctx.fillText("S U C C E S S", TGT.x, 30);
-      // target: white / dark / white / red
-      const rings = [[46, "#F2F3F5"], [36, "#17171C"],
-                     [27, "#F2F3F5"], [15, "#E23A3A"]];
-      rings.forEach(([r, c]) => {
-        ctx.fillStyle = c;
-        ctx.beginPath(); ctx.arc(TGT.x, TGT.y, r, 0, 7); ctx.fill();
+    const panel = (lines) => {
+      ctx.fillStyle = "rgba(6,6,12,.78)";
+      ctx.beginPath(); ctx.roundRect(28, H / 2 - 92, W - 56, 184, 18);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(255,143,190,.65)"; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.roundRect(28, H / 2 - 92, W - 56, 184, 18);
+      ctx.stroke();
+      ctx.textAlign = "center";
+      lines.forEach(([txt, font, col, dy]) => {
+        ctx.font = font; ctx.fillStyle = col;
+        ctx.fillText(txt, W / 2, H / 2 + dy);
       });
-      // drifting bars
+    };
+    const draw = () => {
+      const th = mode === "solo" ? theme() : THEMES[0];
+      const sky = ctx.createLinearGradient(0, 0, 0, H);
+      sky.addColorStop(0, th.top); sky.addColorStop(1, th.bot);
+      ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
+      if (th.stars) {
+        ctx.fillStyle = "rgba(255,255,255,.75)";
+        for (let i = 0; i < 26; i++) {
+          const sx = (i * 67 + 23) % W, sy = (i * 41 + 11) % 150;
+          ctx.fillRect(sx, sy, i % 3 === 0 ? 2 : 1, i % 3 === 0 ? 2 : 1);
+        }
+        ctx.fillStyle = "#F4F1DE";                    // the moon
+        ctx.beginPath(); ctx.arc(38, 40, 13, 0, 7); ctx.fill();
+        ctx.fillStyle = th.top;
+        ctx.beginPath(); ctx.arc(45, 36, 11, 0, 7); ctx.fill();
+      }
+      // distant hills + ground
+      ctx.fillStyle = th.hill;
+      ctx.beginPath();
+      ctx.moveTo(0, GY);
+      ctx.quadraticCurveTo(80, GY - 46, 170, GY);
+      ctx.quadraticCurveTo(255, GY - 34, W, GY);
+      ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = "rgba(255,255,255,.28)"; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(8, GY); ctx.lineTo(W - 8, GY);
+      ctx.stroke();
+      // HUD chip: level + theme name, so a new level is obvious
+      ctx.textAlign = "left";
+      ctx.font = "bold 12px system-ui";
+      const chip = mode === "solo"
+        ? "LEVEL " + level + " · " + th.name : "2 PLAYERS";
+      const cw = ctx.measureText(chip).width + 18;
+      ctx.fillStyle = "rgba(6,6,12,.55)";
+      ctx.beginPath(); ctx.roundRect(10, 10, cw, 22, 11); ctx.fill();
+      ctx.fillStyle = "#FFD9E8";
+      ctx.fillText(chip, 19, 25);
+      if (cfg.wind) {
+        ctx.textAlign = "right"; ctx.fillStyle = "#BFE3FF";
+        ctx.font = "bold 13px system-ui";
+        ctx.fillText("💨 WIND " + (cfg.wind > 0 ? "→" : "←"),
+                     W - 12, 25);
+      }
+      ctx.textAlign = "center";
+      ctx.fillStyle = "#F2F3F5";
+      ctx.font = "bold 15px system-ui";
+      ctx.fillText("S U C C E S S", TGT.x, TGT.y - TGT.r - 16);
+      // target on its pole, rings by the level's radius
+      ctx.strokeStyle = "rgba(0,0,0,.45)"; ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.moveTo(TGT.x, TGT.y + TGT.r);
+      ctx.lineTo(TGT.x, GY); ctx.stroke();
+      const rings = [[1, "#F2F3F5"], [0.78, "#17171C"],
+                     [0.58, "#F2F3F5"], [0.33, "#E23A3A"]];
+      rings.forEach(([f, c]) => {
+        ctx.fillStyle = c;
+        ctx.beginPath(); ctx.arc(TGT.x, TGT.y, TGT.r * f, 0, 7);
+        ctx.fill();
+      });
       ctx.fillStyle = "#C9CDD4";
       bars.forEach(b => {
         ctx.beginPath();
         ctx.roundRect(b.x, b.y, b.w, 7, 3.5); ctx.fill();
+        ctx.fillStyle = "rgba(255,255,255,.5)";
+        ctx.fillRect(b.x + 3, b.y + 1, b.w - 6, 2);
+        ctx.fillStyle = "#C9CDD4";
       });
-      // ground
-      ctx.strokeStyle = "#3A3A40"; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(8, GY); ctx.lineTo(W - 8, GY);
-      ctx.stroke();
       const ang = aim ? aim.ang
         : (arrow ? Math.atan2(arrow.vy, arrow.vx) : -0.72);
       drawArcher(state === "over" ? -0.72 : ang);
       stuck.forEach(a => drawArrowShape(a, "rgba(230,230,235,.75)"));
       if (arrow) drawArrowShape(arrow, "#FFFFFF");
-      // aim preview: dotted trajectory
       if (aim && state === "aim") {
         let px = HAND.x, py = HAND.y;
         let vx = Math.cos(aim.ang) * aim.sp,
             vy = Math.sin(aim.ang) * aim.sp;
         ctx.fillStyle = "rgba(255,255,255,.8)";
         for (let i = 0; i < 30; i++) {
-          vy += 0.35; px += vx; py += vy;
+          vy += 0.35; vx += cfg.wind; px += vx; py += vy;
           if (i % 2 === 0) {
             ctx.beginPath(); ctx.arc(px, py, 2.2, 0, 7); ctx.fill();
           }
           if (py > GY) break;
         }
       }
-      if (note) {
+      parts.forEach(pt => {
+        ctx.globalAlpha = Math.max(0, pt.life / 60);
+        ctx.fillStyle = pt.c;
+        ctx.fillRect(pt.x - pt.s / 2, pt.y - pt.s / 2, pt.s, pt.s);
+      });
+      ctx.globalAlpha = 1;
+      if (note && (state === "show" || state === "aim")) {
         ctx.font = "bold 17px system-ui"; ctx.textAlign = "center";
-        ctx.fillStyle = note.includes("+") ? "#FFD93D" : "#C9CDD4";
-        ctx.fillText(note, W / 2, 210);
+        ctx.fillStyle = note.includes("+") ? "#FFD93D" : "#E8E4DA";
+        ctx.fillText(note, W / 2, 336);
       }
-      if (state === "over") {
-        ctx.fillStyle = "rgba(5,5,10,.72)";
-        ctx.fillRect(0, H / 2 - 44, W, 88);
-        ctx.fillStyle = "#fff"; ctx.textAlign = "center";
-        ctx.font = "bold 19px system-ui";
-        let line;
-        if (mode === "solo")
-          line = "🏁 Final score: " + scores[0] +
-                 (scores[0] >= best && scores[0] > 0 ? " — new best!" : "");
-        else if (scores[0] === scores[1]) line = "🤝 It's a draw!";
-        else line = "🏆 Player " + (scores[0] > scores[1] ? 1 : 2) +
-                    " wins " + Math.max(...scores) + " – " +
-                    Math.min(...scores) + "!";
-        ctx.fillText(line, W / 2, H / 2 - 4);
-        ctx.font = "13px system-ui"; ctx.fillStyle = "#C9CDD4";
-        ctx.fillText("Press ↻ Restart to play again — or invite a friend",
-                     W / 2, H / 2 + 22);
+      // quota progress, solo only
+      if (mode === "solo" && state !== "intro") {
+        ctx.fillStyle = "rgba(255,255,255,.18)";
+        ctx.beginPath(); ctx.roundRect(60, H - 26, W - 120, 8, 4);
+        ctx.fill();
+        ctx.fillStyle = scores[0] >= cfg.quota ? "#7BE0A3" : "#FF8FBE";
+        ctx.beginPath();
+        ctx.roundRect(60, H - 26,
+          (W - 120) * Math.min(1, scores[0] / cfg.quota), 8, 4);
+        ctx.fill();
+      }
+      if (state === "intro") {
+        panel([
+          ["LEVEL " + level, "bold 40px system-ui", "#FFD93D", -52],
+          [th.name, "bold 17px system-ui", "#FFFFFF", -22],
+          ["Score " + cfg.quota + " in 10 arrows to advance",
+           "13px system-ui", "#E8E4DA", 8],
+          [NEW_AT[level] || (level === 1
+             ? "Thread the bars. Hit SUCCESS."
+             : "Faster, smaller, trickier…"),
+           "bold 13px system-ui", "#FF8FBE", 34],
+          ["Best level reached: " + bestLevel,
+           "12px system-ui", "#B9BDC7", 58],
+          ["— tap to start —", "bold 13px system-ui", "#FFFFFF", 80],
+        ]);
+      } else if (state === "clear") {
+        panel([
+          ["🎉 LEVEL " + level + " CLEARED!", "bold 24px system-ui",
+           "#7BE0A3", -34],
+          ["You scored " + scores[0] + " of " + cfg.quota + " needed",
+           "14px system-ui", "#FFFFFF", -4],
+          ["Total so far: " + banked, "13px system-ui", "#E8E4DA", 20],
+          ["— tap for Level " + (level + 1) + " —",
+           "bold 14px system-ui", "#FFD93D", 52],
+        ]);
+      } else if (state === "fail") {
+        panel([
+          ["Out of arrows", "bold 24px system-ui", "#FF9C9C", -34],
+          ["You scored " + scores[0] + " — the level needs " +
+           cfg.quota, "13px system-ui", "#FFFFFF", -4],
+          ["The doer shoots again 😉", "13px system-ui", "#E8E4DA", 20],
+          ["— tap to retry Level " + level + " —",
+           "bold 14px system-ui", "#FFD93D", 52],
+        ]);
+      } else if (state === "over") {
+        panel([
+          [scores[0] === scores[1] ? "🤝 It's a draw!"
+            : "🏆 Player " + (scores[0] > scores[1] ? 1 : 2) + " wins!",
+           "bold 22px system-ui", "#FFD93D", -26],
+          ["P1 " + scores[0] + " · P2 " + scores[1],
+           "15px system-ui", "#FFFFFF", 4],
+          ["— ↻ Restart to play again —", "13px system-ui",
+           "#E8E4DA", 34],
+        ]);
       }
     };
     const step = () => {
       if (dead) return;
+      frame++;
       bars.forEach(b => {
         b.x += b.v;
         if (b.x > W + 6) b.x = -b.w - 6;
         if (b.x + b.w < -6) b.x = W + 6;
+      });
+      if (cfg.moveAmp)
+        TGT.y = TGT_Y + Math.sin(frame * cfg.moveSp * 0.03) * cfg.moveAmp;
+      parts = parts.filter(pt => pt.life > 0);
+      parts.forEach(pt => {
+        pt.x += pt.vx; pt.y += pt.vy; pt.vy += 0.12; pt.life--;
       });
       if (state === "fly" && arrow) {
         let done = false;
         for (let k = 0; k < 2 && !done; k++) {   // sub-steps: no tunnelling
           arrow.px = arrow.x; arrow.py = arrow.y;
           arrow.vy += 0.35 / 2;
+          arrow.vx += cfg.wind / 2;
           arrow.x += arrow.vx / 2;
           arrow.y += arrow.vy / 2;
           done = planeHit() || resolveHit();
         }
       } else if (state === "show") {
         if (--noteT <= 0) { note = ""; advance(); }
+      } else if (state === "clear") {
+        if (--noteT <= 0) startLevel(level + 1, true);
       }
       draw();
       raf = requestAnimationFrame(step);
@@ -1496,8 +1664,11 @@ registerGame({
       aim = { ang, sp };
     };
     cv.addEventListener("pointerdown", e => {
-      if (state !== "aim") return;
       e.preventDefault();
+      if (state === "intro") { state = "aim"; return; }
+      if (state === "clear") { startLevel(level + 1, true); return; }
+      if (state === "fail") { startLevel(level, true); return; }
+      if (state !== "aim") return;
       setAim(e);
     });
     cv.addEventListener("pointermove", e => {
@@ -1521,8 +1692,8 @@ registerGame({
       b.textContent = label; b.onclick = fn;
       row.appendChild(b); return b;
     };
-    mkBtn("👤 Solo", () => { mode = "solo"; reset(); });
-    mkBtn("👥 2 Players", () => { mode = "2p"; reset(); });
+    mkBtn("👤 Solo", () => { mode = "solo"; startLevel(1, false); });
+    mkBtn("👥 2 Players", () => { mode = "2p"; startLevel(1, false); });
     const inviteBox = document.createElement("div");
     inviteBox.className = "arch-invite";
     inviteBox.hidden = true;
@@ -1539,7 +1710,7 @@ registerGame({
       const head = document.createElement("div");
       head.className = "arch-invite-head";
       head.textContent = users.length
-        ? "Challenge a friend — they get a message with your best score:"
+        ? "Challenge a friend — they get a message with your best:"
         : "You are not following anyone yet — follow a friend first, then invite them.";
       inviteBox.appendChild(head);
       users.slice(0, 12).forEach(u => {
@@ -1549,8 +1720,9 @@ registerGame({
         b.onclick = async () => {
           b.disabled = true;
           const text = "🏹 I challenge you to Archery on Nexora " +
-            "Social! My best score is " + best + " — open the " +
-            "Games page and beat it. The doer is already shooting 😉";
+            "Social! I reached Level " + bestLevel + " with a " +
+            "best total of " + best + " — open the Games page " +
+            "and beat it. The doer is already shooting 😉";
           try {
             await api("/messages/" + u.telegram_id,
               { method: "POST", body: JSON.stringify({ text }) });
@@ -1563,11 +1735,12 @@ registerGame({
         inviteBox.appendChild(b);
       });
     });
-    mkBtn("↻ Restart", reset);
+    mkBtn("↻ Restart", () => startLevel(mode === "solo" ? level : 1,
+                                        mode === "solo"));
     stage.appendChild(row);
     stage.appendChild(inviteBox);
 
-    reset();
+    startLevel(1, false);
     raf = requestAnimationFrame(step);
     return () => { dead = true; cancelAnimationFrame(raf); };
   }

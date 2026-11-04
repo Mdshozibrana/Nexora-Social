@@ -19,7 +19,7 @@ MAIN = open("app/main.py").read()
 assert 'id: "archery"' in GAMES and "🏹 Archery" in GAMES
 assert GAMES.count("registerGame({") == 11
 # the scene from the screenshot, rebuilt as our own game
-for bit in ("S U C C E S S", "mkBars", "planeHit", "BULLSEYE",
+for bit in ("S U C C E S S", "levelCfg", "planeHit", "BULLSEYE",
             "nx_archery_best"):
     assert bit in GAMES, bit
 # modes + invite over the normal DM route
@@ -31,5 +31,5 @@ for bit in (".arch-invite", ".arch-invite-row", ".arch-row"):
     assert bit in CSS, bit
 # Nexa knows the eleventh game
 assert "11 games" in MAIN and "Archery" in MAIN
-assert "app.js?v=88" in HTML and "games.js?v=88" in HTML
+assert "app.js?v=89" in HTML and "games.js?v=89" in HTML
 print("PHASE 88 OK")
