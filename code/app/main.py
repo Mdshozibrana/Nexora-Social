@@ -3485,9 +3485,12 @@ _NEXA_SYSTEM = (
     "Stories are photos that live for 24 hours, seen by "
     "followers and the official account. "
     "GAMES: open the Games page and pull the lamp cord to "
-    "light the room, then play 10 classics — Snake, Tetris, "
+    "light the room, then play 11 games — Snake, Tetris, "
     "Breakout, Memory Match, Pong, Space Invaders, "
-    "Minesweeper, Flappy Bird, 2048 and Pac-Man. Games give "
+    "Minesweeper, Flappy Bird, 2048, Pac-Man and Archery "
+    "(drag to aim past the drifting bars at the SUCCESS "
+    "target; solo, two players on one phone, or invite a "
+    "friend with a challenge message). Games give "
     "no points, they are just for fun. "
     "PROFILE: the round camera badges change your photo and "
     "cover. A bio can be up to 500 characters. Your name can "
@@ -3603,11 +3606,11 @@ def _nexa_fallback(text):
                 "5000 points and a 30-day check-in streak. Track "
                 "your progress on your profile!")
     if has("game", "গেম", "খেল"):
-        return ("Games পেজে ১০টা ক্লাসিক গেম আছে — Snake, 2048, "
-                "Pac-Man আরো অনেক! ল্যাম্পটা টেনে আলো জ্বালাও "
+        return ("Games পেজে ১১টা গেম আছে — Snake, 2048, "
+                "Pac-Man, Archery আরো অনেক! ল্যাম্পটা টেনে আলো জ্বালাও "
                 "প্রথমে।" if bn else
-                "The Games page has 10 classics — Snake, 2048, "
-                "Pac-Man and more! Pull the lamp cord to light "
+                "The Games page has 11 games — Snake, 2048, "
+                "Pac-Man, Archery and more! Pull the lamp cord to light "
                 "the room first.")
     if has("refer", "রেফার", "invite", "বন্ধু"):
         return ("তোমার রেফারেল লিংক প্রোফাইল থেকে শেয়ার করো — "

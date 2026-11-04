@@ -10,11 +10,11 @@ for gid in ('id: "flappy"', 'id: "g2048"', 'id: "pacman"',
             'id: "memory"', 'id: "pong"', 'id: "invaders"',
             'id: "mines"'):
     assert gid in JS, gid
-assert JS.count("registerGame({") == 10, JS.count("registerGame({")
+assert JS.count("registerGame({") == 11, JS.count("registerGame({")
 for marker in ("Flappy Bird", "Pac-Man", "chase the 2048 tile",
                "g2048-grid"):
     assert marker in JS or marker in CSS, marker
 assert ".g2048-cell" in CSS
-print("ten classics registered OK")
+print("eleven games registered OK")
 
 print("PHASE-52 TESTS PASSED")

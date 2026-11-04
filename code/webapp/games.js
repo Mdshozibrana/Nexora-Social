@@ -1242,6 +1242,337 @@ registerGame({
 });
 
 // ------------------------------------------------------------- game grid --
+// --------------------------------------------------------------- Archery --
+// Phase 88 (owner, from the screenshot he shared): the
+// overthinker is still aiming — the doer is already shooting.
+// One stick archer, one SUCCESS target, grey bars drifting
+// between them. Drag to aim (dotted preview), release to loose.
+// Solo against your best, two players taking turns on one
+// phone, or invite a friend: a challenge sent as a normal DM.
+registerGame({
+  id: "archery", icon: "🏹", name: "Archery",
+  title: "🏹 Archery — Aim Less, Shoot More",
+  desc: "The overthinker is still aiming. Thread your arrows past the moving bars and hit SUCCESS.",
+  help: "Drag on the field to aim — the dotted line previews your shot. Release to loose. Drifting bars block arrows. Bullseye 50 · ring 25 · edge 10. Solo: 10 arrows. 2 Players: 6 arrows each, taking turns.",
+  start(stage, setScore) {
+    const W = 340, H = 460, GY = H - 44;
+    const cv = document.createElement("canvas");
+    cv.width = W; cv.height = H;
+    cv.style.touchAction = "none";
+    stage.appendChild(cv);
+    const ctx = cv.getContext("2d");
+    const TGT = { x: 252, y: 96, r: 46 };
+    const HAND = { x: 64, y: GY - 60 };
+    const PCOL = ["#FFFFFF", "#FF8FBE"];
+    let bars = [], arrow = null, stuck = [], aim = null;
+    let scores = [0, 0], shots = [0, 0], turn = 0;
+    let mode = "solo", state = "aim", note = "", noteT = 0;
+    let raf = 0, dead = false;
+    let best = +(localStorage.getItem("nx_archery_best") || 0);
+
+    const perPlayer = () => (mode === "solo" ? 10 : 6);
+    const mkBars = () => ([
+      { y: 180, x: 150, w: 70, v: -0.7 },
+      { y: 232, x: 40,  w: 70, v: 0.9 },
+      { y: 282, x: 196, w: 70, v: -1.1 },
+    ]);
+    const reset = () => {
+      bars = mkBars(); arrow = null; stuck = []; aim = null;
+      scores = [0, 0]; shots = [0, 0]; turn = 0;
+      state = "aim"; note = ""; noteT = 0; showScore();
+    };
+    const leftFor = p => perPlayer() - shots[p];
+    function showScore() {
+      if (mode === "solo")
+        setScore("🎯 Score: " + scores[0] + " · Arrows: " +
+                 leftFor(0) + " · Best: " + best);
+      else
+        setScore("P1 " + scores[0] + " · P2 " + scores[1] +
+                 (state === "over" ? " · Finished" :
+                  " · Player " + (turn + 1) + " · Arrows: " +
+                  leftFor(turn)));
+    }
+    const finishShot = (pts, msg) => {
+      scores[turn] += pts;
+      shots[turn] += 1;
+      note = msg; noteT = 55; state = "show";
+      if (arrow) { stuck.push(arrow); arrow = null; }
+      if (stuck.length > 14) stuck.shift();
+      showScore();
+      return true;
+    };
+    const advance = () => {
+      if (mode === "solo") {
+        state = shots[0] >= perPlayer() ? "over" : "aim";
+        if (state === "over" && scores[0] > best) {
+          best = scores[0];
+          localStorage.setItem("nx_archery_best", best);
+        }
+      } else {
+        const other = 1 - turn;
+        if (shots[other] < perPlayer()) turn = other;
+        state = shots[0] >= perPlayer() && shots[1] >= perPlayer()
+          ? "over" : "aim";
+      }
+      showScore();
+    };
+    // The target is a board standing at x = TGT.x: the arrow
+    // scores where it crosses that plane, by height from the
+    // centre — not at the rim, where every shot would land.
+    const planeHit = () => {
+      if (!(arrow.px < TGT.x && arrow.x >= TGT.x)) return false;
+      const t = (TGT.x - arrow.px) / (arrow.x - arrow.px);
+      const yc = arrow.py + (arrow.y - arrow.py) * t;
+      const dy = Math.abs(yc - TGT.y);
+      if (dy > TGT.r) return false;
+      arrow.x = TGT.x; arrow.y = yc;
+      if (dy <= 15) return finishShot(50, "🎯 BULLSEYE! +50");
+      if (dy <= 30) return finishShot(25, "Great shot! +25");
+      return finishShot(10, "On target! +10");
+    };
+    const resolveHit = () => {
+      for (const b of bars)
+        if (arrow.x >= b.x && arrow.x <= b.x + b.w &&
+            arrow.y >= b.y - 4 && arrow.y <= b.y + 11)
+          return finishShot(0, "Blocked by a bar!");
+      if (arrow.y >= GY) return finishShot(0, "Into the ground.");
+      if (arrow.x > W + 12 || arrow.x < -12 || arrow.y < -24)
+        return finishShot(0, "Missed — it flew away.");
+      return false;
+    };
+    const drawArcher = (ang) => {
+      const col = PCOL[turn];
+      ctx.strokeStyle = col; ctx.fillStyle = col;
+      ctx.lineWidth = 4; ctx.lineCap = "round";
+      const bx = 52, by = GY;              // feet point
+      ctx.beginPath();                      // legs
+      ctx.moveTo(bx, by - 34);
+      ctx.lineTo(bx - 9, by); ctx.moveTo(bx, by - 34);
+      ctx.lineTo(bx + 11, by);
+      ctx.moveTo(bx, by - 34);              // torso
+      ctx.lineTo(bx + 3, by - 62);
+      ctx.stroke();
+      ctx.beginPath();                      // head
+      ctx.arc(bx + 5, by - 70, 8, 0, 7); ctx.fill();
+      const hx = bx + 12, hy = by - 60;     // bow hand
+      ctx.beginPath();                      // drawing arm
+      ctx.moveTo(bx + 3, by - 58);
+      ctx.lineTo(hx + Math.cos(ang) * 14, hy + Math.sin(ang) * 14);
+      ctx.moveTo(bx + 3, by - 58);          // back arm
+      ctx.lineTo(bx - 8, by - 50);
+      ctx.stroke();
+      ctx.save();                           // the bow itself
+      ctx.translate(hx, hy); ctx.rotate(ang);
+      ctx.beginPath(); ctx.arc(10, 0, 20, -1.15, 1.15); ctx.stroke();
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(10 + 20 * Math.cos(-1.15), 20 * Math.sin(-1.15));
+      ctx.lineTo(4, 0);
+      ctx.lineTo(10 + 20 * Math.cos(1.15), 20 * Math.sin(1.15));
+      ctx.stroke();
+      ctx.restore();
+      ctx.font = "bold 12px system-ui"; ctx.textAlign = "center";
+      ctx.fillText(mode === "solo" ? "" : "P" + (turn + 1), bx, by + 18);
+    };
+    const drawArrowShape = (a, col) => {
+      const ang = Math.atan2(a.vy, a.vx);
+      ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(a.x - Math.cos(ang) * 22, a.y - Math.sin(ang) * 22);
+      ctx.lineTo(a.x, a.y);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(a.x + Math.cos(ang) * 6, a.y + Math.sin(ang) * 6);
+      ctx.lineTo(a.x - Math.cos(ang + 2.6) * 8,
+                 a.y - Math.sin(ang + 2.6) * 8);
+      ctx.lineTo(a.x - Math.cos(ang - 2.6) * 8,
+                 a.y - Math.sin(ang - 2.6) * 8);
+      ctx.closePath(); ctx.fill();
+    };
+    const draw = () => {
+      ctx.fillStyle = "#0B0B0E";
+      ctx.fillRect(0, 0, W, H);
+      const g = ctx.createRadialGradient(W/2, H/2, 60, W/2, H/2, 300);
+      g.addColorStop(0, "rgba(255,255,255,.06)");
+      g.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = "#F2F3F5"; ctx.textAlign = "center";
+      ctx.font = "bold 15px system-ui";
+      ctx.fillText("S U C C E S S", TGT.x, 30);
+      // target: white / dark / white / red
+      const rings = [[46, "#F2F3F5"], [36, "#17171C"],
+                     [27, "#F2F3F5"], [15, "#E23A3A"]];
+      rings.forEach(([r, c]) => {
+        ctx.fillStyle = c;
+        ctx.beginPath(); ctx.arc(TGT.x, TGT.y, r, 0, 7); ctx.fill();
+      });
+      // drifting bars
+      ctx.fillStyle = "#C9CDD4";
+      bars.forEach(b => {
+        ctx.beginPath();
+        ctx.roundRect(b.x, b.y, b.w, 7, 3.5); ctx.fill();
+      });
+      // ground
+      ctx.strokeStyle = "#3A3A40"; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(8, GY); ctx.lineTo(W - 8, GY);
+      ctx.stroke();
+      const ang = aim ? aim.ang
+        : (arrow ? Math.atan2(arrow.vy, arrow.vx) : -0.72);
+      drawArcher(state === "over" ? -0.72 : ang);
+      stuck.forEach(a => drawArrowShape(a, "rgba(230,230,235,.75)"));
+      if (arrow) drawArrowShape(arrow, "#FFFFFF");
+      // aim preview: dotted trajectory
+      if (aim && state === "aim") {
+        let px = HAND.x, py = HAND.y;
+        let vx = Math.cos(aim.ang) * aim.sp,
+            vy = Math.sin(aim.ang) * aim.sp;
+        ctx.fillStyle = "rgba(255,255,255,.8)";
+        for (let i = 0; i < 30; i++) {
+          vy += 0.35; px += vx; py += vy;
+          if (i % 2 === 0) {
+            ctx.beginPath(); ctx.arc(px, py, 2.2, 0, 7); ctx.fill();
+          }
+          if (py > GY) break;
+        }
+      }
+      if (note) {
+        ctx.font = "bold 17px system-ui"; ctx.textAlign = "center";
+        ctx.fillStyle = note.includes("+") ? "#FFD93D" : "#C9CDD4";
+        ctx.fillText(note, W / 2, 210);
+      }
+      if (state === "over") {
+        ctx.fillStyle = "rgba(5,5,10,.72)";
+        ctx.fillRect(0, H / 2 - 44, W, 88);
+        ctx.fillStyle = "#fff"; ctx.textAlign = "center";
+        ctx.font = "bold 19px system-ui";
+        let line;
+        if (mode === "solo")
+          line = "🏁 Final score: " + scores[0] +
+                 (scores[0] >= best && scores[0] > 0 ? " — new best!" : "");
+        else if (scores[0] === scores[1]) line = "🤝 It's a draw!";
+        else line = "🏆 Player " + (scores[0] > scores[1] ? 1 : 2) +
+                    " wins " + Math.max(...scores) + " – " +
+                    Math.min(...scores) + "!";
+        ctx.fillText(line, W / 2, H / 2 - 4);
+        ctx.font = "13px system-ui"; ctx.fillStyle = "#C9CDD4";
+        ctx.fillText("Press ↻ Restart to play again — or invite a friend",
+                     W / 2, H / 2 + 22);
+      }
+    };
+    const step = () => {
+      if (dead) return;
+      bars.forEach(b => {
+        b.x += b.v;
+        if (b.x > W + 6) b.x = -b.w - 6;
+        if (b.x + b.w < -6) b.x = W + 6;
+      });
+      if (state === "fly" && arrow) {
+        let done = false;
+        for (let k = 0; k < 2 && !done; k++) {   // sub-steps: no tunnelling
+          arrow.px = arrow.x; arrow.py = arrow.y;
+          arrow.vy += 0.35 / 2;
+          arrow.x += arrow.vx / 2;
+          arrow.y += arrow.vy / 2;
+          done = planeHit() || resolveHit();
+        }
+      } else if (state === "show") {
+        if (--noteT <= 0) { note = ""; advance(); }
+      }
+      draw();
+      raf = requestAnimationFrame(step);
+    };
+    const pos = e => {
+      const r = cv.getBoundingClientRect();
+      return { x: (e.clientX - r.left) * W / r.width,
+               y: (e.clientY - r.top) * H / r.height };
+    };
+    const setAim = e => {
+      const p = pos(e);
+      const dx = p.x - HAND.x, dy = p.y - HAND.y;
+      let ang = Math.atan2(dy, dx);
+      ang = Math.max(-1.35, Math.min(0.12, ang));
+      const sp = Math.max(11, Math.min(27,
+        Math.hypot(dx, dy) / 8));
+      aim = { ang, sp };
+    };
+    cv.addEventListener("pointerdown", e => {
+      if (state !== "aim") return;
+      e.preventDefault();
+      setAim(e);
+    });
+    cv.addEventListener("pointermove", e => {
+      if (aim && state === "aim") setAim(e);
+    });
+    const release = () => {
+      if (!aim || state !== "aim") { aim = null; return; }
+      arrow = { x: HAND.x, y: HAND.y, px: HAND.x, py: HAND.y,
+                vx: Math.cos(aim.ang) * aim.sp,
+                vy: Math.sin(aim.ang) * aim.sp };
+      aim = null; state = "fly";
+    };
+    cv.addEventListener("pointerup", release);
+    cv.addEventListener("pointercancel", () => { aim = null; });
+
+    // controls row
+    const row = document.createElement("div");
+    row.className = "grow arch-row";
+    const mkBtn = (label, fn) => {
+      const b = document.createElement("button");
+      b.textContent = label; b.onclick = fn;
+      row.appendChild(b); return b;
+    };
+    mkBtn("👤 Solo", () => { mode = "solo"; reset(); });
+    mkBtn("👥 2 Players", () => { mode = "2p"; reset(); });
+    const inviteBox = document.createElement("div");
+    inviteBox.className = "arch-invite";
+    inviteBox.hidden = true;
+    mkBtn("🏹 Invite friend", async () => {
+      inviteBox.hidden = !inviteBox.hidden;
+      if (inviteBox.hidden) return;
+      inviteBox.textContent = "Loading friends…";
+      let users = [];
+      try {
+        const r = await api("/me/following");
+        users = r.users || [];
+      } catch (e) { users = []; }
+      inviteBox.innerHTML = "";
+      const head = document.createElement("div");
+      head.className = "arch-invite-head";
+      head.textContent = users.length
+        ? "Challenge a friend — they get a message with your best score:"
+        : "You are not following anyone yet — follow a friend first, then invite them.";
+      inviteBox.appendChild(head);
+      users.slice(0, 12).forEach(u => {
+        const b = document.createElement("button");
+        b.className = "arch-invite-row";
+        b.textContent = "🏹 " + (u.name || "Friend");
+        b.onclick = async () => {
+          b.disabled = true;
+          const text = "🏹 I challenge you to Archery on Nexora " +
+            "Social! My best score is " + best + " — open the " +
+            "Games page and beat it. The doer is already shooting 😉";
+          try {
+            await api("/messages/" + u.telegram_id,
+              { method: "POST", body: JSON.stringify({ text }) });
+            b.textContent = "✓ Challenge sent to " + (u.name || "friend");
+          } catch (e) {
+            b.disabled = false;
+            b.textContent = "Could not send — tap to retry";
+          }
+        };
+        inviteBox.appendChild(b);
+      });
+    });
+    mkBtn("↻ Restart", reset);
+    stage.appendChild(row);
+    stage.appendChild(inviteBox);
+
+    reset();
+    raf = requestAnimationFrame(step);
+    return () => { dead = true; cancelAnimationFrame(raf); };
+  }
+});
+
 // Built last: every game above must be registered first.
 (function buildGrid() {
   const grid = $("game-grid");

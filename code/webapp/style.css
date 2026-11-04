@@ -2118,3 +2118,16 @@ img { -webkit-user-drag: none; }
 .m-door span { display: block; font-weight: 400; font-size: 11px;
   opacity: .85; margin-top: 6px; }
 .museum-hint { text-align: center; margin-top: 8px; }
+/* Phase 88: Archery's invite picker (a friend list under the
+   game; tapping a name sends the challenge as a normal DM). */
+.arch-row { margin-top: 10px; flex-wrap: wrap;
+  justify-content: center; }
+.arch-invite { width: min(340px, 92vw); margin-top: 10px;
+  background: #FFFBFC; border-radius: 16px; padding: 10px;
+  box-shadow: 0 10px 24px rgba(150, 60, 110, .18); }
+.arch-invite-head { font-size: 13px; color: var(--ink);
+  margin-bottom: 8px; }
+.arch-invite-row { display: block; width: 100%; text-align: left;
+  border: 1px solid var(--line); background: #FDF3F7;
+  border-radius: 10px; padding: 9px 12px; margin-bottom: 6px;
+  font-size: 14px; color: var(--ink); cursor: pointer; }
