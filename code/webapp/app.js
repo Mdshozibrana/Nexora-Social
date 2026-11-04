@@ -2854,8 +2854,27 @@ const MUSEUM_THEMES = [
   { name: "Marble Hall", wall: "linear-gradient(180deg,#F4F4F6,#DCDCE2)",
     floor: "#9A9AA4", frame: "#23232A", mat: "#FFFFFF",
     glow: "rgba(255,255,255,.7)" },
+  { name: "Living Lounge", wall: "linear-gradient(180deg,#F6E3CE,#EBC49C)",
+    floor: "#A9714B", frame: "#B08D57", mat: "#FFFBF2",
+    glow: "rgba(255,220,160,.55)" },
+  { name: "The Library", wall: "linear-gradient(180deg,#5C6650,#3E4A38)",
+    floor: "#3A2A1C", frame: "#C9A227", mat: "#F7EFDA",
+    glow: "rgba(255,226,150,.5)" },
+  { name: "Studio Loft", wall: "linear-gradient(180deg,#D9A184,#B97A5C)",
+    floor: "#6E6E72", frame: "#23232A", mat: "#F5EFE8",
+    glow: "rgba(255,235,210,.5)" },
+  { name: "Garden Room", wall: "linear-gradient(180deg,#E4F4DC,#BEE3B0)",
+    floor: "#B0704F", frame: "#FFFFFF", mat: "#FFFFFF",
+    glow: "rgba(255,255,230,.6)" },
+  { name: "Attic Gallery", wall: "linear-gradient(180deg,#D9CFE8,#B4A6D4)",
+    floor: "#7A6248", frame: "#8A6D4A", mat: "#FBF7EE",
+    glow: "rgba(240,230,255,.55)" },
+  { name: "Terrace Hall", wall: "linear-gradient(180deg,#CDEFF7,#9FD8E8)",
+    floor: "#C2A878", frame: "#FFFFFF", mat: "#FFFFFF",
+    glow: "rgba(255,255,255,.65)" },
 ];
-let museumRooms = null, museumIdx = 0, museumX = 0, museumMoved = 0;
+let museumRooms = null, museumIdx = 0, museumX = 0, museumMoved = 0,
+    museumZ = 1;
 
 function openMuseum() { loadMuseum(false); }
 
@@ -2863,8 +2882,12 @@ async function loadMuseum(force) {
   if (museumRooms && !force) { openMuseumRoom(museumIdx); return; }
   let designs = [];
   try {
-    const r = await api("/designs?limit=30");
+    let r = await api("/designs?limit=40");
     designs = r.designs || [];
+    if (r.next_cursor) {
+      r = await api("/designs?limit=40&cursor=" + r.next_cursor);
+      designs = designs.concat(r.designs || []);
+    }
   } catch (e) { designs = []; }
   museumRooms = [];
   for (let i = 0; i < designs.length; i += 5)
@@ -2874,24 +2897,49 @@ async function loadMuseum(force) {
   openMuseumRoom(0);
 }
 
-function paintMuseumChips() {
+function paintMuseumPlan() {
   const wrap = $("museum-rooms");
   wrap.innerHTML = "";
   (museumRooms || []).forEach((room, i) => {
     const b = document.createElement("button");
-    b.className = "museum-chip" + (i === museumIdx ? " on" : "");
-    b.textContent = (i + 1) + " · " +
-      MUSEUM_THEMES[i % MUSEUM_THEMES.length].name;
+    b.className = "plan-room" + (i === museumIdx ? " on" : "");
+    b.innerHTML = "";
+    const nm = document.createElement("span");
+    nm.className = "plan-name";
+    nm.textContent = MUSEUM_THEMES[i % MUSEUM_THEMES.length].name;
+    const ct = document.createElement("span");
+    ct.className = "plan-count";
+    ct.textContent = room.length + " pictures";
+    b.appendChild(nm);
+    b.appendChild(ct);
     b.onclick = () => openMuseumRoom(i);
     wrap.appendChild(b);
   });
 }
 
-function museumSetX(x) {
+function museumApply() {
   const stage = $("museum-stage"), room = $("museum-room");
-  const min = Math.min(0, stage.clientWidth - room.scrollWidth);
-  museumX = Math.max(min, Math.min(0, x));
-  room.style.transform = "translateX(" + museumX + "px)";
+  const min = Math.min(0, stage.clientWidth -
+                           room.scrollWidth * museumZ);
+  museumX = Math.max(min, Math.min(0, museumX));
+  room.style.transform = "translateX(" + museumX + "px) scale(" +
+    museumZ + ")";
+  $("museum-zlabel").textContent = Math.round(museumZ * 100) + "%";
+}
+
+function museumSetX(x) { museumX = x; museumApply(); }
+
+// Phase 87 (owner): zoom in / out — buttons, pinch, double-tap
+// and Ctrl+scroll all land here. Zooms around a stage x (the
+// stage centre by default) so the wall point under it stays.
+function museumZoom(nz, cx) {
+  const stage = $("museum-stage");
+  if (cx === undefined) cx = stage.clientWidth / 2;
+  nz = Math.max(1, Math.min(2.5, nz));
+  const point = (cx - museumX) / museumZ;
+  museumZ = nz;
+  museumX = cx - point * museumZ;
+  museumApply();
 }
 
 function openMuseumRoom(i) {
@@ -2901,7 +2949,7 @@ function openMuseumRoom(i) {
   const designs = museumRooms[museumIdx];
   $("museum-name").textContent = "🏛️ " + theme.name +
     "  ·  Room " + (museumIdx + 1) + " of " + museumRooms.length;
-  paintMuseumChips();
+  paintMuseumPlan();
   const room = $("museum-room");
   room.style.setProperty("--m-wall", theme.wall);
   room.style.setProperty("--m-floor", theme.floor);
@@ -2967,31 +3015,69 @@ function openMuseumRoom(i) {
   room.classList.remove("mfade");
   void room.offsetWidth;
   room.classList.add("mfade");
+  museumZ = 1;
   museumSetX(0);
 }
 
-// Walking: drag with mouse or finger, or scroll — the room pans.
+// Walking: drag with mouse or finger, or scroll — the room
+// pans. Phase 87: pinch with two fingers zooms, a double-tap
+// toggles the zoom, Ctrl+scroll zooms, and the + / − buttons
+// on the stage zoom too.
 (() => {
   const stage = $("museum-stage");
   let drag = null;
+  const pointers = new Map();
+  let pinch = null;
   stage.addEventListener("pointerdown", e => {
-    drag = { x: e.clientX, start: museumX };
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointers.size === 2) {
+      const [p1, p2] = [...pointers.values()];
+      pinch = { d: Math.hypot(p1.x - p2.x, p1.y - p2.y), z: museumZ };
+      drag = null;
+    } else {
+      drag = { x: e.clientX, start: museumX };
+    }
     museumMoved = 0;
   });
   window.addEventListener("pointermove", e => {
+    if (pointers.has(e.pointerId))
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinch && pointers.size === 2) {
+      const [p1, p2] = [...pointers.values()];
+      const d = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+      museumMoved = 99;
+      if (pinch.d > 0) museumZoom(pinch.z * d / pinch.d);
+      return;
+    }
     if (!drag) return;
     const dx = e.clientX - drag.x;
     museumMoved = Math.max(museumMoved, Math.abs(dx));
     museumSetX(drag.start + dx);
   });
+  const drop = e => {
+    pointers.delete(e.pointerId);
+    if (pointers.size < 2) pinch = null;
+    if (pointers.size === 0) drag = null;
+  };
   ["pointerup", "pointercancel"].forEach(ev =>
-    window.addEventListener(ev, () => { drag = null; }));
+    window.addEventListener(ev, drop));
   stage.addEventListener("wheel", e => {
     e.preventDefault();
+    if (e.ctrlKey) {  // trackpad pinch arrives as Ctrl+scroll
+      museumZoom(museumZ * (e.deltaY < 0 ? 1.08 : 0.92));
+      return;
+    }
     const d = Math.abs(e.deltaY) >= Math.abs(e.deltaX)
       ? e.deltaY : e.deltaX;
     museumSetX(museumX - d);
   }, { passive: false });
+  stage.addEventListener("dblclick", e => {
+    const r = stage.getBoundingClientRect();
+    museumZoom(museumZ > 1.05 ? 1 : 1.8, e.clientX - r.left);
+  });
+  $("museum-zin").onclick = () => museumZoom(museumZ + 0.25);
+  $("museum-zout").onclick = () => museumZoom(museumZ - 0.25);
+  $("museum-zlabel").onclick = () => museumZoom(1);
   // Keep the app-level pull-to-refresh out of museum drags.
   stage.addEventListener("touchstart", e => e.stopPropagation(),
                          { passive: true });

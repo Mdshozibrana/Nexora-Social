@@ -22,9 +22,9 @@ assert "MUSEUM_THEMES" in JS
 for name in ("Rose Hall", "Midnight Gallery", "Emerald Room",
              "Sky Gallery", "Sunset Salon", "Marble Hall"):
     assert name in JS, name
-assert 'api("/designs?limit=30")' in JS
+assert 'api("/designs?limit=40")' in JS
 assert "i += 5" in JS  # five exhibits per room
-assert "openMuseumRoom" in JS and "paintMuseumChips" in JS
+assert "openMuseumRoom" in JS and "paintMuseumPlan" in JS
 assert "openDesignSheet(d)" in JS  # tap a picture -> its sheet
 assert "mediaUrl(d.image_file_id)" in JS
 # walking: drag + wheel pan, drag-vs-tap guard, PTR guard
@@ -40,8 +40,8 @@ for bit in ('id="museum-stage"', 'id="museum-room"',
     assert bit in HTML, bit
 for bit in ("#museum-stage", ".m-wall", ".m-floor", ".m-spot",
             ".mframe", ".mplate", ".m-bench", ".m-door",
-            ".museum-chip.on", "--m-frame", "touch-action: none",
+            ".plan-room.on", "--m-frame", "touch-action: none",
             "@keyframes mfadein"):
     assert bit in CSS, bit
-assert "app.js?v=86" in HTML and "style.css?v=86" in HTML
+assert "app.js?v=87" in HTML and "style.css?v=87" in HTML
 print("PHASE 86 OK")

@@ -48,5 +48,5 @@ assert 'nexaHist.push({ role: "nexa", text: reply });' in JS
 print("ephemeral OK")
 
 HTML = open("webapp/index.html").read()
-assert "app.js?v=86" in HTML and "style.css?v=86" in HTML
+assert "app.js?v=87" in HTML and "style.css?v=87" in HTML
 print("PHASE 73 OK")
