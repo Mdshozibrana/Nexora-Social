@@ -17,7 +17,7 @@ CSS = open("webapp/style.css").read()
 
 # dropdown machinery in the picker
 for bit in ("themeDropOpen", "theme-drop-btn", "theme-drop-list",
-            "theme-drop-item", "theme-caret", "Choose a shade…",
+            "theme-drop-item", "Choose a shade",
             '"Now: Background "'):
     assert bit in APP, bit
 # picking from the list applies and closes it
@@ -30,5 +30,5 @@ for bit in (".theme-drop {", ".theme-drop-btn", ".theme-drop-list",
             "max-height: 264px", "position: absolute"):
     assert bit in CSS, bit
 assert ".theme-grid" not in CSS
-assert "app.js?v=91" in HTML and "games.js?v=91" in HTML
+assert "app.js?v=92" in HTML and "games.js?v=92" in HTML
 print("PHASE 91 OK")

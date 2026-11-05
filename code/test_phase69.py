@@ -86,7 +86,7 @@ for bit in (".gb-nexa-img", ".nexa-stage", "@keyframes nexaTalk",
     assert bit in CSS, bit
 for pose in ("idle", "talk", "wave", "think"):
     assert os.path.exists(f"webapp/nexa/{pose}.webp"), pose
-assert "style.css?v=91" in HTML and "app.js?v=91" in HTML
+assert "style.css?v=92" in HTML and "app.js?v=92" in HTML
 print("client markers OK")
 
 # --- auth + fallback brain (no key) ------------------------------------

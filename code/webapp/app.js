@@ -1676,6 +1676,10 @@ function themeCard() {
     "buttons different shades. Text colours adjust on their " +
     "own so everything stays easy to read.";
   card.appendChild(hint);
+  const zLabel = document.createElement("div");
+  zLabel.className = "theme-label";
+  zLabel.textContent = "Apply the shade to:";
+  card.appendChild(zLabel);
   const zones = document.createElement("div");
   zones.className = "theme-zones";
   [["all", "🌈 All"], ["bg", "Background"], ["card", "Cards"],
@@ -1705,29 +1709,18 @@ function themeCard() {
          ? palById(themeState.picks.bg) : null)
     : palById(themeState.picks[z]);
   const cur = curFor(themeState.zone);
-  if (cur) {
-    const strip = document.createElement("span");
-    strip.className = "theme-strip";
-    strip.style.background = "linear-gradient(90deg," +
-      cur.stops.join(",") + ")";
-    const nm = document.createElement("span");
-    nm.className = "theme-name";
-    nm.textContent = cur.name;
-    dropBtn.append(strip, nm);
-  } else {
-    const nm = document.createElement("span");
-    nm.className = "theme-name";
-    nm.textContent = themeState.zone === "all" &&
-      (themeState.picks.bg || themeState.picks.card ||
-       themeState.picks.accent)
-      ? "Different shades per zone — pick to unify"
-      : "Choose a shade…";
-    dropBtn.appendChild(nm);
-  }
-  const caret = document.createElement("span");
-  caret.className = "theme-caret";
-  caret.textContent = themeDropOpen ? "▴" : "▾";
-  dropBtn.appendChild(caret);
+  const swatch = document.createElement("span");
+  swatch.className = "theme-drop-swatch";
+  swatch.style.background = cur
+    ? "linear-gradient(90deg," + cur.stops.join(",") + ")"
+    : "linear-gradient(90deg,#FF8FBE,#FBB931,#7BE0A3,#38BDF8)";
+  const dtext = document.createElement("span");
+  dtext.className = "theme-drop-text";
+  dtext.textContent = cur ? "Shade: " + cur.name : "Choose your shade";
+  const chev = document.createElement("span");
+  chev.className = "theme-drop-chev";
+  chev.textContent = themeDropOpen ? "▲" : "▼";
+  dropBtn.append(swatch, dtext, chev);
   dropBtn.onclick = () => {
     themeDropOpen = !themeDropOpen;
     card.replaceWith(themeCard());
@@ -1736,9 +1729,18 @@ function themeCard() {
   if (themeDropOpen) {
     const list = document.createElement("div");
     list.className = "theme-drop-list";
+    const lhead = document.createElement("div");
+    lhead.className = "theme-drop-head";
+    lhead.textContent = "🎨 Choose a shade";
+    list.appendChild(lhead);
     THEME_PALETTES.forEach(p => {
       const row = document.createElement("button");
-      row.className = "theme-drop-item";
+      const onThisZone = themeState.zone === "all"
+        ? themeState.picks.bg === p.id &&
+          themeState.picks.card === p.id &&
+          themeState.picks.accent === p.id
+        : themeState.picks[themeState.zone] === p.id;
+      row.className = "theme-drop-item" + (onThisZone ? " on" : "");
       const strip = document.createElement("span");
       strip.className = "theme-strip";
       strip.style.background = "linear-gradient(90deg," +

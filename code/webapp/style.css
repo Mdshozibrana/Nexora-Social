@@ -2156,12 +2156,31 @@ img { -webkit-user-drag: none; }
 .theme-name { font-size: 12.5px; font-weight: 700; }
 .theme-where { font-size: 11px; color: #1E7B45; font-weight: 700;
   margin-left: auto; white-space: nowrap; }
-/* Phase 91: the shades as one tidy dropdown */
+/* Phase 91: the shades as one tidy dropdown. Phase 92
+   (owner: the dropdown was not recognisable as one): the
+   button is now an unmistakable select field — inset well,
+   colour swatch, "Shade: X" / "Choose your shade" wording
+   and a big filled chevron badge. */
+.theme-label { font-size: 12px; font-weight: 800;
+  color: var(--ink-dim); margin: 8px 0 2px; }
 .theme-drop { position: relative; }
 .theme-drop-btn { display: flex; align-items: center; gap: 10px;
-  width: 100%; text-align: left; padding: 10px 12px; }
-.theme-drop-btn .theme-strip { flex: 1; }
-.theme-caret { font-size: 13px; color: var(--ink-dim); }
+  width: 100%; text-align: left; padding: 11px 12px;
+  background: var(--t-input, #FFF5F9);
+  box-shadow: var(--clay-inset); border-radius: 16px; }
+.theme-drop-swatch { flex: 0 0 42px; height: 24px;
+  border-radius: 999px; border: 2px solid #fff;
+  box-shadow: var(--clay-shadow-sm); }
+.theme-drop-text { font-size: 14px; font-weight: 700; }
+.theme-drop-chev { margin-left: auto; flex: none; width: 30px;
+  height: 30px; border-radius: 50%; display: flex;
+  align-items: center; justify-content: center;
+  background: linear-gradient(145deg, #FF8FBE, #E84393);
+  color: #fff; font-size: 13px;
+  box-shadow: 3px 5px 10px rgba(232,67,147,.4); }
+.theme-drop-head { padding: 8px 10px 4px; font-size: 13px;
+  font-weight: 800; color: var(--ink-dim); }
+.theme-drop-item.on { background: var(--t-chip, #FFE4F0); }
 .theme-drop-list { position: absolute; left: 0; right: 0;
   top: calc(100% + 6px); z-index: 40; max-height: 264px;
   overflow-y: auto; padding: 6px; border-radius: 18px;
@@ -2270,3 +2289,6 @@ html[data-theme] #reel-sheet, html[data-theme] .reel .comments {
 html[data-theme] .entry-disc {
   background: linear-gradient(145deg, var(--t-card, #FFFBFC), var(--t-chip, #FFE9F2)); }
 html[data-theme] .pick-send.sent { background: var(--t-chip, #F3DCE7); }
+html[data-theme] .theme-drop-chev {
+  background: linear-gradient(145deg, var(--t-acc1, #FF8FBE), var(--t-acc2, #E84393));
+  color: var(--t-onacc, #FFFFFF); }
