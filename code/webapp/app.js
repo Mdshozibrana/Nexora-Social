@@ -1436,6 +1436,296 @@ function searchTag(tag) {
   runSearch("#" + tag);
 }
 
+
+// ------------------------------------------------------------ themes -----
+// Phase 90 (owner): every member picks colour shades in the
+// Me section and the whole site takes those colours. One
+// shade can dress everything, or shades can be assigned per
+// zone (background / cards / accent) so different places
+// wear different colours. The palettes are the owner's own
+// screenshots (uiux.build / byo.ch colour posts, Nov 5).
+// Text can never blend into the background: the derivation
+// below darkens the ink until its WCAG contrast against the
+// card colour clears 7:1, dim text clears 4.2:1, and button
+// text picks whichever of white / near-black reads better
+// on the accent gradient.
+// THEME-ENGINE-BEGIN
+const THEME_PALETTES = [
+  { id: "navy-mirage", name: "Navy Mirage",
+    stops: ["#141E30", "#35577D"] },
+  { id: "emerald-depth", name: "Emerald Depth",
+    stops: ["#0F2027", "#28623A"] },
+  { id: "obsidian-plum", name: "Obsidian Plum",
+    stops: ["#2D1E2F", "#4E2A4F"] },
+  { id: "walnut-noir", name: "Walnut Noir",
+    stops: ["#2E1F1B", "#5E4B43"] },
+  { id: "crimson-velvet", name: "Crimson Velvet",
+    stops: ["#2C0F12", "#6B1E23"] },
+  { id: "marple", name: "Marple",
+    stops: ["#CA2851", "#FF6766", "#FFB173", "#FFE3B3"] },
+  { id: "sunset", name: "Sunset",
+    stops: ["#EA6113", "#F88F22", "#FBB931", "#FFE3B3"] },
+  { id: "forest-mist", name: "Forest Mist",
+    stops: ["#051F20", "#0B2B26", "#163832", "#235347",
+            "#8EB69B", "#DAF1DE"] },
+  { id: "berry-rose", name: "Berry Rose",
+    stops: ["#2A0F1E", "#5A1F3D", "#8E3560", "#C0628C",
+            "#E7A5BF", "#FAE3EC"] },
+  { id: "terracotta", name: "Terracotta",
+    stops: ["#2B1410", "#5C2A1E", "#9C4A2F", "#D07A4F",
+            "#EBB68A", "#F8E6D0"] },
+  { id: "copper-bordeaux", name: "Copper Bordeaux",
+    stops: ["#2B0A0F", "#5E1A22", "#8F2D35", "#C46A4A",
+            "#E8A988", "#FBE8DA"] },
+  { id: "mustard-anthracite", name: "Mustard Anthracite",
+    stops: ["#181818", "#3A3935", "#75705F", "#C29A2E",
+            "#E8CF7F", "#FAF3D6"] },
+  { id: "sage-cream", name: "Sage Cream",
+    stops: ["#A3B18A", "#F2E8CF"] },
+  { id: "rose-olive", name: "Rose Olive",
+    stops: ["#C9A0A0", "#8A8F68"] },
+  { id: "lavender-beige", name: "Lavender Beige",
+    stops: ["#A89BBE", "#D8C3A8"] },
+];
+const TH_WHITE = [255, 255, 255], TH_BLACK = [0, 0, 0];
+function thRgb(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function thHex(c) {
+  return "#" + c.map(v => Math.max(0, Math.min(255, Math.round(v)))
+    .toString(16).padStart(2, "0")).join("");
+}
+function thRgba(c, a) {
+  return "rgba(" + c.map(v => Math.round(v)).join(",") + "," + a + ")";
+}
+function thMix(a, b, t) {
+  return a.map((v, i) => v + (b[i] - v) * t);
+}
+function thLum(c) {
+  const f = v => {
+    v /= 255;
+    return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+  };
+  return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]);
+}
+function thContrast(a, b) {
+  const x = thLum(a), y = thLum(b);
+  return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+}
+function thSat(c) {
+  const mx = Math.max(...c) / 255, mn = Math.min(...c) / 255;
+  if (mx === mn) return 0;
+  const l = (mx + mn) / 2;
+  return (mx - mn) / (1 - Math.abs(2 * l - 1) || 1);
+}
+function deriveTheme(stops) {
+  const rgbs = stops.map(thRgb);
+  const byLum = [...rgbs].sort((a, b) => thLum(a) - thLum(b));
+  const dark = byLum[0], light = byLum[byLum.length - 1];
+  // Cards are always a light surface: ramps that end in a
+  // pale stop use it as-is, while the dark pairs (Navy
+  // Mirage and friends) get lifted toward white until the
+  // surface is light enough for dark text — the palette's
+  // deep colour then lives in the ink and the accents.
+  let card = light;
+  for (let i = 0; i < 12 && thLum(card) < 0.72; i++)
+    card = thMix(card, TH_WHITE, 0.12);
+  const bgDeep = byLum.length > 2 ? byLum[byLum.length - 2] : dark;
+  const bg = thMix(card, bgDeep, byLum.length > 2 ? 0.18 : 0.12);
+  const input = thMix(card, TH_WHITE, 0.45);
+  let ink = dark;
+  for (let i = 0; i < 16 && thContrast(ink, card) < 7; i++)
+    ink = thMix(ink, TH_BLACK, 0.14);
+  let dim = thMix(ink, card, 0.36);
+  for (let i = 0; i < 10 && thContrast(dim, card) < 4.2; i++)
+    dim = thMix(dim, ink, 0.22);
+  const faint = thMix(ink, card, 0.58);
+  const bySat = [...rgbs].sort((a, b) => thSat(b) - thSat(a));
+  let accDeep = bySat.find(c => thLum(c) <= 0.45) || thMix(bySat[0], TH_BLACK, 0.25);
+  let accLight = bySat.find(c => c !== accDeep && thLum(c) > thLum(accDeep));
+  if (!accLight) accLight = thMix(accDeep, TH_WHITE, 0.30);
+  const accMid = thMix(accLight, accDeep, 0.5);
+  const nearBlack = thRgb("#14090F");
+  const onAcc = thContrast(TH_WHITE, accMid) >= thContrast(nearBlack, accMid)
+    ? "#FFFFFF" : "#14090F";
+  let accText = accDeep;
+  for (let i = 0; i < 12 && thContrast(accText, card) < 4.5; i++)
+    accText = thMix(accText, TH_BLACK, 0.12);
+  const tint = thMix(dark, accDeep, 0.3);
+  return {
+    bg: thHex(bg), glow1: thRgba(accLight, 0.50),
+    glow2: thRgba(accDeep, 0.38),
+    card: thHex(card), cardA: thRgba(card, 0.92),
+    input: thHex(input), line: thRgba(ink, 0.10),
+    ink: thHex(ink), dim: thHex(dim), faint: thHex(faint),
+    acc1: thHex(accLight), acc2: thHex(accDeep), onAcc,
+    accText: thHex(accText), chip: thHex(thMix(accLight, TH_WHITE, 0.78)),
+    tile: thHex(thMix(card, accDeep, 0.12)),
+    shadow: thRgba(tint, 0.38), shadowIn: thRgba(tint, 0.30),
+  };
+}
+// THEME-ENGINE-END
+
+let themeState = { zone: "all",
+                   picks: { bg: null, card: null, accent: null } };
+try {
+  const saved = JSON.parse(localStorage.getItem("nx_theme") || "null");
+  if (saved && saved.picks) themeState = saved;
+} catch (e) { /* a fresh member starts on the default pink */ }
+function palById(id) {
+  return THEME_PALETTES.find(p => p.id === id) || null;
+}
+function saveTheme() {
+  try { localStorage.setItem("nx_theme", JSON.stringify(themeState)); }
+  catch (e) { /* private mode: the theme lasts for the session */ }
+}
+const TH_CARD_VARS = ["--t-card", "--t-carda", "--t-input", "--t-line",
+  "--t-tile", "--ink", "--ink-dim", "--ink-faint", "--glass-bg",
+  "--clay-shadow", "--clay-shadow-sm", "--clay-inset"];
+const TH_ACC_VARS = ["--t-acc1", "--t-acc2", "--t-onacc", "--t-chip",
+  "--t-acctext"];
+function applyUserTheme() {
+  const root = document.documentElement;
+  const st = root.style;
+  const any = themeState.picks.bg || themeState.picks.card ||
+              themeState.picks.accent;
+  if (!any) {
+    delete root.dataset.theme;
+    ["--t-bg", "--t-glow1", "--t-glow2", ...TH_CARD_VARS,
+     ...TH_ACC_VARS].forEach(v => st.removeProperty(v));
+    return;
+  }
+  root.dataset.theme = "on";
+  const bgP = palById(themeState.picks.bg);
+  if (bgP) {
+    const d = deriveTheme(bgP.stops);
+    st.setProperty("--t-bg", d.bg);
+    st.setProperty("--t-glow1", d.glow1);
+    st.setProperty("--t-glow2", d.glow2);
+  } else {
+    ["--t-bg", "--t-glow1", "--t-glow2"]
+      .forEach(v => st.removeProperty(v));
+  }
+  const cardP = palById(themeState.picks.card);
+  if (cardP) {
+    const d = deriveTheme(cardP.stops);
+    st.setProperty("--t-card", d.card);
+    st.setProperty("--t-carda", d.cardA);
+    st.setProperty("--t-input", d.input);
+    st.setProperty("--t-line", d.line);
+    st.setProperty("--t-tile", d.tile);
+    st.setProperty("--ink", d.ink);
+    st.setProperty("--ink-dim", d.dim);
+    st.setProperty("--ink-faint", d.faint);
+    st.setProperty("--glass-bg", d.cardA);
+    st.setProperty("--clay-shadow",
+      "10px 14px 28px " + d.shadow +
+      ", -6px -6px 14px rgba(255,255,255,.9)" +
+      ", inset 2px 2px 4px rgba(255,255,255,.95)" +
+      ", inset -6px -8px 12px " + d.shadowIn);
+    st.setProperty("--clay-shadow-sm",
+      "6px 8px 16px " + d.shadow +
+      ", -4px -4px 10px rgba(255,255,255,.85)" +
+      ", inset 1px 1px 3px rgba(255,255,255,.9)" +
+      ", inset -4px -5px 9px " + d.shadowIn);
+    st.setProperty("--clay-inset",
+      "inset 5px 6px 12px " + d.shadow +
+      ", inset -5px -5px 10px rgba(255,255,255,.95)");
+  } else {
+    TH_CARD_VARS.forEach(v => st.removeProperty(v));
+  }
+  const accP = palById(themeState.picks.accent);
+  if (accP) {
+    const d = deriveTheme(accP.stops);
+    st.setProperty("--t-acc1", d.acc1);
+    st.setProperty("--t-acc2", d.acc2);
+    st.setProperty("--t-onacc", d.onAcc);
+    st.setProperty("--t-chip", d.chip);
+    st.setProperty("--t-acctext", d.accText);
+  } else {
+    TH_ACC_VARS.forEach(v => st.removeProperty(v));
+  }
+}
+applyUserTheme();
+
+// The picker card that lives in the Me section (own profile).
+function themeCard() {
+  const card = document.createElement("div");
+  card.className = "card theme-card";
+  const head = document.createElement("div");
+  head.className = "theme-head";
+  const title = document.createElement("b");
+  title.textContent = "🎨 Theme Colours";
+  const reset = document.createElement("button");
+  reset.className = "theme-reset";
+  reset.textContent = "Reset";
+  reset.onclick = () => {
+    themeState.picks = { bg: null, card: null, accent: null };
+    saveTheme(); applyUserTheme();
+    card.replaceWith(themeCard());
+  };
+  head.append(title, reset);
+  card.appendChild(head);
+  const hint = document.createElement("p");
+  hint.className = "hint";
+  hint.textContent = "Pick a shade and the whole app wears it. " +
+    "Choose a zone first to give the background, cards and " +
+    "buttons different shades. Text colours adjust on their " +
+    "own so everything stays easy to read.";
+  card.appendChild(hint);
+  const zones = document.createElement("div");
+  zones.className = "theme-zones";
+  [["all", "🌈 All"], ["bg", "Background"], ["card", "Cards"],
+   ["accent", "Accent"]].forEach(([z, label]) => {
+    const b = document.createElement("button");
+    b.className = "theme-zone" + (themeState.zone === z ? " on" : "");
+    b.textContent = label;
+    b.onclick = () => {
+      themeState.zone = z; saveTheme();
+      card.replaceWith(themeCard());
+    };
+    zones.appendChild(b);
+  });
+  card.appendChild(zones);
+  const grid = document.createElement("div");
+  grid.className = "theme-grid";
+  THEME_PALETTES.forEach(p => {
+    const b = document.createElement("button");
+    b.className = "theme-pal";
+    const strip = document.createElement("span");
+    strip.className = "theme-strip";
+    strip.style.background = "linear-gradient(90deg," +
+      p.stops.join(",") + ")";
+    const nm = document.createElement("span");
+    nm.className = "theme-name";
+    nm.textContent = p.name;
+    b.append(strip, nm);
+    const where = [];
+    if (themeState.picks.bg === p.id) where.push("Background");
+    if (themeState.picks.card === p.id) where.push("Cards");
+    if (themeState.picks.accent === p.id) where.push("Accent");
+    if (where.length) {
+      const w = document.createElement("span");
+      w.className = "theme-where";
+      w.textContent = "✓ " + where.join(" · ");
+      b.appendChild(w);
+      b.classList.add("picked");
+    }
+    b.onclick = () => {
+      const z = themeState.zone;
+      if (z === "all")
+        themeState.picks = { bg: p.id, card: p.id, accent: p.id };
+      else themeState.picks[z] = p.id;
+      saveTheme(); applyUserTheme();
+      card.replaceWith(themeCard());
+    };
+    grid.appendChild(b);
+  });
+  card.appendChild(grid);
+  return card;
+}
+
 // -------------------------------------------------------------- profile ---
 async function openProfile(userId) {
   profileId = userId;
@@ -1886,6 +2176,10 @@ async function myExtras() {
     }
     wrap.appendChild(card);
   } catch (e) { /* verification card is optional decoration */ }
+  // Phase 90 (owner): the theme-shade picker lives in the Me
+  // section, under the points and monetization cards. It is
+  // purely local, so it renders even if the cards above fail.
+  wrap.appendChild(themeCard());
   return wrap;
 }
 

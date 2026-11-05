@@ -2131,3 +2131,128 @@ img { -webkit-user-drag: none; }
   border: 1px solid var(--line); background: #FDF3F7;
   border-radius: 10px; padding: 9px 12px; margin-bottom: 6px;
   font-size: 14px; color: var(--ink); cursor: pointer; }
+
+/* ==========================================================================
+   USER THEME SHADES (Phase 90, owner): the Me section carries a
+   shade picker; the chosen palette(s) recolour the whole app
+   through the --t-* variables the theme engine sets on <html>
+   (zones: background / cards / accent, or one shade for all).
+   Text colours are derived with a contrast floor, so words
+   never blend into the colours behind them. With no shade
+   picked, html has no data-theme and none of this applies —
+   the clay default above is untouched.
+   ========================================================================== */
+.theme-card { margin-top: 14px; }
+.theme-head { display: flex; align-items: center;
+  justify-content: space-between; }
+.theme-reset { font-size: 12px; padding: 5px 12px; }
+.theme-zones { display: flex; gap: 6px; flex-wrap: wrap;
+  margin: 8px 0 10px; }
+.theme-zone { font-size: 12.5px; padding: 7px 12px; }
+.theme-zone.on { background: linear-gradient(145deg, #FF8FBE, #E84393);
+  color: #fff; font-weight: 800; }
+.theme-grid { display: grid; grid-template-columns: 1fr 1fr;
+  gap: 8px; }
+.theme-pal { display: flex; flex-direction: column; gap: 6px;
+  align-items: stretch; text-align: left; padding: 9px; }
+.theme-strip { display: block; height: 26px; border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.75); }
+.theme-name { font-size: 12.5px; font-weight: 700; }
+.theme-where { font-size: 11px; color: #1E7B45; font-weight: 700; }
+.theme-pal.picked { outline: 3px solid #E84393; }
+
+html[data-theme] body {
+  background-color: var(--t-bg, #F8EAF1);
+  background-image:
+    radial-gradient(640px 420px at -10% 4%, var(--t-glow1, rgba(255,183,213,.55)), rgba(255,255,255,0) 60%),
+    radial-gradient(720px 520px at 108% 18%, var(--t-glow2, rgba(178,240,200,.5)), rgba(255,255,255,0) 60%);
+  color: var(--ink);
+}
+html[data-theme] #entry-screen {
+  background-color: var(--t-bg, #F8EAF1);
+  background-image:
+    radial-gradient(700px 500px at 88% 0%, var(--t-glow1, rgba(255,183,213,.55)), rgba(255,255,255,0) 60%),
+    radial-gradient(700px 600px at 0% 100%, var(--t-glow2, rgba(206,196,255,.5)), rgba(255,255,255,0) 60%);
+}
+html[data-theme] .hero {
+  background: linear-gradient(135deg, var(--t-chip, #FFD9E8), var(--t-card, #FFC4DA));
+  color: var(--ink);
+}
+html[data-theme] .hero .icon-btn { background: var(--t-card, #FFFBFC); }
+html[data-theme] .post, html[data-theme] .card,
+html[data-theme] .task-card, html[data-theme] .mon-card,
+html[data-theme] .rank-row, html[data-theme] .game-card,
+html[data-theme] .user-row { background: var(--t-card, #FFFBFC); }
+html[data-theme] button { background: var(--t-card, #FFFBFC); }
+html[data-theme] .tabs { background: var(--t-chip, #F6D9E7); }
+html[data-theme] .tabs button.active {
+  background: var(--t-card, #FFFBFC);
+  color: var(--t-acctext, #E84393); }
+html[data-theme] .composer button, html[data-theme] .task-claim,
+html[data-theme] .pick-send, html[data-theme] .game-card .g-play,
+html[data-theme] .entry-btn, html[data-theme] .entry-logo,
+html[data-theme] .drawer-logo, html[data-theme] .drawer-item.active,
+html[data-theme] #design-post,
+html[data-theme] .entry-remember input:checked + .pill {
+  background: linear-gradient(145deg, var(--t-acc1, #FF8FBE), var(--t-acc2, #E84393));
+  color: var(--t-onacc, #FFFFFF); }
+html[data-theme] #design-post {
+  box-shadow: 0 8px 22px var(--t-glow2, rgba(232,67,147,.45)); }
+html[data-theme] .searchbar input, html[data-theme] .composer textarea,
+html[data-theme] input, html[data-theme] textarea,
+html[data-theme] .entry-field {
+  background: var(--t-input, #FFF5F9); color: var(--ink); }
+html[data-theme] .composer textarea { background: transparent; }
+html[data-theme] ::placeholder { color: var(--ink-faint); }
+html[data-theme] .chip { background: var(--t-chip, #FFE4F0);
+  color: var(--t-acctext, #D6336C); border-color: var(--t-line, rgba(0,0,0,.08)); }
+html[data-theme] .attach-chip { background: var(--t-chip, #FBE3EE);
+  color: var(--ink); }
+html[data-theme] .attach-chip .attach-x { color: var(--t-acctext, #E84393); }
+html[data-theme] .actions button.liked {
+  background: var(--t-chip, #FFE0EC); color: var(--t-acctext, #E84393); }
+html[data-theme] .reel-act button.liked { background: var(--t-acc2, #E84393); }
+html[data-theme] .bar { background: var(--t-chip, #F3D3E2); }
+html[data-theme] .bar > div {
+  background: linear-gradient(90deg, var(--t-acc1, #FF8FBE), var(--t-acc2, #E84393)); }
+html[data-theme] .task-points { background: var(--t-chip, #FFE9A8);
+  color: var(--ink); }
+html[data-theme] .mon-badge { background: var(--t-chip, #E9E2FA);
+  color: var(--ink-dim); }
+html[data-theme] .rank-num, html[data-theme] .rank-points,
+html[data-theme] .game-head #game-score { color: var(--t-acctext, #E84393); }
+html[data-theme] .extras a, html[data-theme] .entry-switch a {
+  color: var(--t-acctext, #D6336C); }
+html[data-theme] .rank-me { outline-color: var(--t-acc1, #F79AC0); }
+html[data-theme] .post-media { background: var(--t-chip, #F6D9E7); }
+html[data-theme] .post-media .play-badge { color: var(--t-acctext, #E84393); }
+html[data-theme] .game-card:nth-child(4n+1),
+html[data-theme] .game-card:nth-child(4n+2),
+html[data-theme] .game-card:nth-child(4n+3),
+html[data-theme] .game-card:nth-child(4n+4) {
+  background: var(--t-tile, #FFFBFC); }
+html[data-theme] .mem-card {
+  background: linear-gradient(145deg, var(--t-acc1, #CFC2FF), var(--t-acc2, #A78BFA));
+  color: var(--t-onacc, #FFFFFF); }
+html[data-theme] .mem-card.open { background: var(--t-card, #FFFBFC);
+  color: var(--ink); }
+html[data-theme] .bottom-nav { background: var(--t-card, #FFFBFC); }
+html[data-theme] #nav-pill {
+  background: linear-gradient(160deg, var(--t-acc1, #FF9CC6), var(--t-acc2, #E84393));
+  box-shadow: 5px 9px 18px var(--t-glow2, rgba(232,67,147,.45)),
+              inset 2px 2px 4px rgba(255,255,255,.65),
+              inset -4px -6px 10px rgba(0,0,0,.18); }
+html[data-theme] #drawer { background: var(--t-card, #FFF7FA); }
+html[data-theme] #drawer-backdrop { background: var(--t-line, rgba(96,42,72,.30)); }
+html[data-theme] .drawer-item { color: var(--ink-dim); }
+html[data-theme] .drawer-item:active { background: var(--t-chip, #FBE9F2); }
+html[data-theme] .drawer-badge { background: var(--t-acc2, #E84393);
+  color: var(--t-onacc, #FFFFFF); }
+html[data-theme] #glassbar {
+  background: linear-gradient(165deg, var(--t-carda, rgba(255,251,252,.78)), var(--t-chip, rgba(255,213,233,.58))); }
+html[data-theme] .gb-item.active .gb-label { color: var(--ink); }
+html[data-theme] #reel-sheet, html[data-theme] .reel .comments {
+  background: var(--t-card, #FFFBFC); }
+html[data-theme] .entry-disc {
+  background: linear-gradient(145deg, var(--t-card, #FFFBFC), var(--t-chip, #FFE9F2)); }
+html[data-theme] .pick-send.sent { background: var(--t-chip, #F3DCE7); }
