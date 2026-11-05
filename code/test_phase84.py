@@ -69,7 +69,7 @@ assert '[:1024]' not in MAIN.split("def edit_design")[1].split(
 assert "wireCharCount" in JS
 assert 'id="design-prompt-count"' in HTML
 assert 'id="ds-edit-count"' in HTML
-assert "app.js?v=92" in HTML and "style.css?v=92" in HTML
+assert "app.js?v=93" in HTML and "style.css?v=93" in HTML
 print("caps OK")
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64

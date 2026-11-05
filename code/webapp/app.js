@@ -1486,6 +1486,25 @@ const THEME_PALETTES = [
     stops: ["#C9A0A0", "#8A8F68"] },
   { id: "lavender-beige", name: "Lavender Beige",
     stops: ["#A89BBE", "#D8C3A8"] },
+  // Phase 93: eight more from the owner's second batch
+  // (uxintace combos, dopely wedding sets, aayudesigns103
+  // pairs) — none duplicated the first fifteen.
+  { id: "milk-plum", name: "Milk & Plum",
+    stops: ["#381932", "#FFF3E6"] },
+  { id: "night-kiwi", name: "Night & Kiwi",
+    stops: ["#222222", "#89E900"] },
+  { id: "black-gold", name: "Black & Gold",
+    stops: ["#050505", "#2B2B2B", "#C9B27A", "#F7F1E6", "#FFFFFF"] },
+  { id: "peach-bloom", name: "Peach Bloom",
+    stops: ["#FFB4A2", "#E5989B", "#FDE2D2", "#FFF8F0", "#5C4034"] },
+  { id: "champagne-slate", name: "Champagne & Slate",
+    stops: ["#5A5D64", "#E7D28F"] },
+  { id: "cocoa-cloud", name: "Cocoa & Cloud",
+    stops: ["#53332A", "#B8CDE3"] },
+  { id: "meadow-violet", name: "Meadow & Violet",
+    stops: ["#5E397F", "#9FB354"] },
+  { id: "winter-cherry", name: "Winter & Cherry",
+    stops: ["#C10015", "#93B4D7"] },
 ];
 const TH_WHITE = [255, 255, 255], TH_BLACK = [0, 0, 0];
 function thRgb(hex) {
