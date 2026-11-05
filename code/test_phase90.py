@@ -42,16 +42,16 @@ for bit in ("nx_theme", "applyUserTheme", '"bg"', '"card"',
             '"accent"', "themeState.picks", "dataset.theme"):
     assert bit in APP, bit
 # the picker card lives in the own-profile extras
-for bit in ("themeCard()", "🎨 Theme Colours", "theme-grid",
+for bit in ("themeCard()", "🎨 Theme Colours", "theme-drop",
             "theme-where", "wrap.appendChild(themeCard())"):
     assert bit in APP, bit
 # the override layer re-skins the app only under data-theme
 for bit in ("html[data-theme] body", "html[data-theme] #nav-pill",
             "html[data-theme] .hero", "html[data-theme] #glassbar",
             "html[data-theme] #design-post", "--t-acc1", "--t-onacc",
-            ".theme-grid", ".theme-strip"):
+            ".theme-drop-list", ".theme-strip"):
     assert bit in CSS, bit
 # Nexa can explain the feature
 assert "THEME COLOURS" in MAIN and "never blend" in MAIN
-assert "app.js?v=90" in HTML and "games.js?v=90" in HTML
+assert "app.js?v=91" in HTML and "games.js?v=91" in HTML
 print("PHASE 90 OK")

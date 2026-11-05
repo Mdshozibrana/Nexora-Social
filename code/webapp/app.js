@@ -1569,6 +1569,7 @@ function deriveTheme(stops) {
 
 let themeState = { zone: "all",
                    picks: { bg: null, card: null, accent: null } };
+let themeDropOpen = false;
 try {
   const saved = JSON.parse(localStorage.getItem("nx_theme") || "null");
   if (saved && saved.picks) themeState = saved;
@@ -1662,6 +1663,7 @@ function themeCard() {
   reset.textContent = "Reset";
   reset.onclick = () => {
     themeState.picks = { bg: null, card: null, accent: null };
+    themeDropOpen = false;
     saveTheme(); applyUserTheme();
     card.replaceWith(themeCard());
   };
@@ -1682,47 +1684,100 @@ function themeCard() {
     b.className = "theme-zone" + (themeState.zone === z ? " on" : "");
     b.textContent = label;
     b.onclick = () => {
-      themeState.zone = z; saveTheme();
+      themeState.zone = z; themeDropOpen = false; saveTheme();
       card.replaceWith(themeCard());
     };
     zones.appendChild(b);
   });
   card.appendChild(zones);
-  const grid = document.createElement("div");
-  grid.className = "theme-grid";
-  THEME_PALETTES.forEach(p => {
-    const b = document.createElement("button");
-    b.className = "theme-pal";
+  // Phase 91 (owner): the fifteen shades as one tidy
+  // dropdown instead of the long grid — a button showing
+  // the current shade for the chosen zone, opening a neat
+  // scrollable list; picking applies at once and closes it.
+  const drop = document.createElement("div");
+  drop.className = "theme-drop";
+  const dropBtn = document.createElement("button");
+  dropBtn.className = "theme-drop-btn";
+  const curFor = z => z === "all"
+    ? (themeState.picks.bg &&
+       themeState.picks.bg === themeState.picks.card &&
+       themeState.picks.bg === themeState.picks.accent
+         ? palById(themeState.picks.bg) : null)
+    : palById(themeState.picks[z]);
+  const cur = curFor(themeState.zone);
+  if (cur) {
     const strip = document.createElement("span");
     strip.className = "theme-strip";
     strip.style.background = "linear-gradient(90deg," +
-      p.stops.join(",") + ")";
+      cur.stops.join(",") + ")";
     const nm = document.createElement("span");
     nm.className = "theme-name";
-    nm.textContent = p.name;
-    b.append(strip, nm);
-    const where = [];
-    if (themeState.picks.bg === p.id) where.push("Background");
-    if (themeState.picks.card === p.id) where.push("Cards");
-    if (themeState.picks.accent === p.id) where.push("Accent");
-    if (where.length) {
-      const w = document.createElement("span");
-      w.className = "theme-where";
-      w.textContent = "✓ " + where.join(" · ");
-      b.appendChild(w);
-      b.classList.add("picked");
-    }
-    b.onclick = () => {
-      const z = themeState.zone;
-      if (z === "all")
-        themeState.picks = { bg: p.id, card: p.id, accent: p.id };
-      else themeState.picks[z] = p.id;
-      saveTheme(); applyUserTheme();
-      card.replaceWith(themeCard());
-    };
-    grid.appendChild(b);
-  });
-  card.appendChild(grid);
+    nm.textContent = cur.name;
+    dropBtn.append(strip, nm);
+  } else {
+    const nm = document.createElement("span");
+    nm.className = "theme-name";
+    nm.textContent = themeState.zone === "all" &&
+      (themeState.picks.bg || themeState.picks.card ||
+       themeState.picks.accent)
+      ? "Different shades per zone — pick to unify"
+      : "Choose a shade…";
+    dropBtn.appendChild(nm);
+  }
+  const caret = document.createElement("span");
+  caret.className = "theme-caret";
+  caret.textContent = themeDropOpen ? "▴" : "▾";
+  dropBtn.appendChild(caret);
+  dropBtn.onclick = () => {
+    themeDropOpen = !themeDropOpen;
+    card.replaceWith(themeCard());
+  };
+  drop.appendChild(dropBtn);
+  if (themeDropOpen) {
+    const list = document.createElement("div");
+    list.className = "theme-drop-list";
+    THEME_PALETTES.forEach(p => {
+      const row = document.createElement("button");
+      row.className = "theme-drop-item";
+      const strip = document.createElement("span");
+      strip.className = "theme-strip";
+      strip.style.background = "linear-gradient(90deg," +
+        p.stops.join(",") + ")";
+      const nm = document.createElement("span");
+      nm.className = "theme-name";
+      nm.textContent = p.name;
+      row.append(strip, nm);
+      const where = [];
+      if (themeState.picks.bg === p.id) where.push("Bg");
+      if (themeState.picks.card === p.id) where.push("Cards");
+      if (themeState.picks.accent === p.id) where.push("Accent");
+      if (where.length) {
+        const w = document.createElement("span");
+        w.className = "theme-where";
+        w.textContent = "✓ " + where.join(" · ");
+        row.appendChild(w);
+      }
+      row.onclick = () => {
+        const z = themeState.zone;
+        if (z === "all")
+          themeState.picks = { bg: p.id, card: p.id, accent: p.id };
+        else themeState.picks[z] = p.id;
+        themeDropOpen = false;
+        saveTheme(); applyUserTheme();
+        card.replaceWith(themeCard());
+      };
+      list.appendChild(row);
+    });
+    drop.appendChild(list);
+  }
+  card.appendChild(drop);
+  const now = document.createElement("p");
+  now.className = "hint theme-now";
+  const nmOf = id => (palById(id) || {}).name || "Default pink";
+  now.textContent = "Now: Background " + nmOf(themeState.picks.bg) +
+    " · Cards " + nmOf(themeState.picks.card) +
+    " · Accent " + nmOf(themeState.picks.accent);
+  card.appendChild(now);
   return card;
 }
 
