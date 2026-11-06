@@ -15,7 +15,8 @@ from typing import Optional
 import httpx
 from fastapi import (Depends, FastAPI, File, Form, Header, HTTPException,
                      Request, UploadFile)
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, RedirectResponse, \
+    StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy import func, inspect, or_, text
@@ -416,6 +417,11 @@ def current_user(x_init_data: str = Header(default=""),
     return user
 
 
+@app.get("/")
+def root():
+    return RedirectResponse(url="/webapp/", status_code=302)
+
+
 @app.get("/health")
 def health():
     return {"ok": True, "app": settings.APP_NAME}
@@ -516,6 +522,7 @@ def suggested_users(limit: int = 10, user: models.User = Depends(current_user),
     posts, then most points — so the card feels personal,
     not just a popularity list. The reason string says WHY
     each person is suggested, in plain words."""
+    _enforce_rate("suggested", f"u{user.telegram_id}")
     limit = max(1, min(int(limit or 10), 20))
     hidden = _block_related_ids(db, user.telegram_id)
     following_ids = {f.following_id for f in db.query(models.Follow)
@@ -1825,6 +1832,7 @@ def save_my_theme(body: ThemeIn, user: models.User = Depends(current_user),
                   db: Session = Depends(get_db)):
     """Phase 96: save THIS member's Theme Colours picks on their own
     account. Only the caller's row is touched."""
+    _enforce_rate("theme", f"u{user.telegram_id}")
     picks = {"bg": None, "card": None, "accent": None}
     incoming = body.picks or {}
     for zone in picks:

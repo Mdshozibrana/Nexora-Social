@@ -67,6 +67,11 @@ RATE_LIMITS = {
     "assistant_chat": (30, 3600),
     "location": (300, 3600),
     "assistant_speak": (60, 3600),
+    # Phase 97 (audit): the two newest endpoints get budgets too —
+    # suggestions run the heaviest read queries in the app, and a
+    # theme save writes the member's row.
+    "suggested": (120, 3600),
+    "theme": (120, 3600),
 }
 
 # Points economy (PRD section 5). PLACEHOLDER defaults — these are product

@@ -151,6 +151,29 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 db,
                 {"id": tg_user.id, "username": tg_user.username,
                  "first_name": tg_user.first_name})
+            banned = user.is_banned
+        finally:
+            db.close()
+        # Phase 97 (audit): this branch skipped BOTH guards the
+        # posting route has — a suspended account could still set a
+        # profile picture, and the photo became an avatar everywhere
+        # without the Phase 81 screening every other upload passes.
+        if banned:
+            await update.message.reply_text("This account is suspended.")
+            return
+        if context is not None and moderation.active():
+            verdict = await _screen_via_bot(
+                context, "photo", update.message.photo[-1].file_id)
+            if verdict != "clean":
+                await update.message.reply_text(
+                    moderation.block_message("photo", verdict))
+                return
+        db = SessionLocal()
+        try:
+            user, _ = get_or_create_user(
+                db,
+                {"id": tg_user.id, "username": tg_user.username,
+                 "first_name": tg_user.first_name})
             user.photo_file_id = update.message.photo[-1].file_id
             db.commit()
         finally:

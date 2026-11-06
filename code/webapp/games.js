@@ -4,6 +4,35 @@
 const GameRegistry = [];
 function registerGame(def) { GameRegistry.push(def); }
 
+// Phase 97 (audit): saved game progress belongs to ONE account,
+// like the theme (Phase 96) — the old plain keys were shared by
+// every Telegram account on the same phone, so a second account
+// inherited the first account's Archery run and best scores. The
+// old shared value is claimed once by the account signed in now.
+function nxUid() {
+  try {
+    return (typeof me !== "undefined" && me && me.telegram_id)
+      ? String(me.telegram_id) : "anon";
+  } catch (e) { return "anon"; }
+}
+function nxGet(k) {
+  try {
+    const mine = localStorage.getItem(k + "_" + nxUid());
+    if (mine !== null) return mine;
+    if (nxUid() === "anon") return null;
+    const legacy = localStorage.getItem(k);
+    if (legacy !== null) {
+      localStorage.setItem(k + "_" + nxUid(), legacy);
+      localStorage.removeItem(k);
+      return legacy;
+    }
+  } catch (e) { /* storage blocked */ }
+  return null;
+}
+function nxSet(k, v) {
+  try { localStorage.setItem(k + "_" + nxUid(), v); } catch (e) {}
+}
+
 let gameCleanup = null;
 function stopGame() {
   if (gameCleanup) {
@@ -1304,8 +1333,8 @@ registerGame({
     let mode = "solo", state = "intro", note = "", noteT = 0;
     let frame = 0, raf = 0, dead = false;
     let level = 1, cfg = levelCfg(1), banked = 0;
-    let best = +(localStorage.getItem("nx_archery_best") || 0);
-    let bestLevel = +(localStorage.getItem("nx_archery_level") || 1);
+    let best = +(nxGet("nx_archery_best") || 0);
+    let bestLevel = +(nxGet("nx_archery_level") || 1);
     // Phase 94 (owner: "যে লেভেলে রেখে আসবো সেখান থেকে পরে
     // আসে না কেনো"): bestLevel above is only a display
     // record — the run itself always restarted at Level 1.
@@ -1314,15 +1343,14 @@ registerGame({
     let resumed = false;
     const loadRun = () => {
       try {
-        const r = JSON.parse(
-          localStorage.getItem("nx_archery_run") || "null");
+        const r = JSON.parse(nxGet("nx_archery_run") || "null");
         return r && r.level >= 1 ? r : null;
       } catch (e) { return null; }
     };
     const saveRun = (lv, bk) => {
       if (mode !== "solo") return;
       try {
-        localStorage.setItem("nx_archery_run",
+        nxSet("nx_archery_run",
           JSON.stringify({ level: lv, banked: bk }));
       } catch (e) { /* storage full/blocked: play on */ }
     };
@@ -1341,7 +1369,7 @@ registerGame({
       note = ""; noteT = 0;
       if (n > bestLevel) {
         bestLevel = n;
-        localStorage.setItem("nx_archery_level", bestLevel);
+        nxSet("nx_archery_level", bestLevel);
       }
       saveRun(level, banked);
       showScore();
@@ -1384,7 +1412,7 @@ registerGame({
           banked += scores[0];
           if (banked > best) {
             best = banked;
-            localStorage.setItem("nx_archery_best", best);
+            nxSet("nx_archery_best", best);
           }
           burst(TGT.x, TGT.y, ["#FFD93D", "#FF8FBE", "#7BE0A3", "#FFFFFF"], 70);
           state = "clear"; noteT = 110;
@@ -1392,7 +1420,7 @@ registerGame({
         } else {
           if (banked + scores[0] > best) {
             best = banked + scores[0];
-            localStorage.setItem("nx_archery_best", best);
+            nxSet("nx_archery_best", best);
           }
           state = "fail";
         }
