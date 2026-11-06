@@ -1623,6 +1623,20 @@ const THEME_PALETTES = [
     stops: ["#5E397F", "#9FB354"] },
   { id: "winter-cherry", name: "Winter & Cherry",
     stops: ["#C10015", "#93B4D7"] },
+  // Phase 98: four more from the owner's third batch of Pinterest
+  // screenshots — Natural Leaf sampled from the leaf board's flat
+  // discs, Teal Ribbon sampled from the infographic bands, Modern
+  // Palette read from its printed hex labels, Copper Pay read from
+  // the Rel-Pay brand sheet's printed hex labels (two cross-checked
+  // by sampling). None duplicates the existing twenty-three.
+  { id: "natural-leaf", name: "Natural Leaf",
+    stops: ["#1E4634", "#459566", "#84BB71", "#B19468", "#F5DC9A"] },
+  { id: "teal-ribbon", name: "Teal Ribbon",
+    stops: ["#155F7A", "#49AEC0", "#FFEFCE", "#EA781E", "#131723"] },
+  { id: "modern-palette", name: "Modern Palette",
+    stops: ["#051A2D", "#A60E35", "#FEA24F", "#10BBC3", "#068187"] },
+  { id: "copper-pay", name: "Copper Pay",
+    stops: ["#100F0F", "#653615", "#B66120", "#FFFFFF"] },
 ];
 const TH_WHITE = [255, 255, 255], TH_BLACK = [0, 0, 0];
 function thRgb(hex) {
