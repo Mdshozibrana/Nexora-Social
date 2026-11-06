@@ -3,8 +3,10 @@ referrals, points, search, reports, media proxy, and the Mini App host.
 Only the PRD section-8 admin endpoints remain for a later phase."""
 import asyncio
 import contextvars
+import json
 import logging
 import os
+import re
 import tempfile
 import time
 from pathlib import Path
@@ -51,6 +53,7 @@ def _migrate():
               "cover_file_id": "VARCHAR(256)",
               "name_changed_at": "TIMESTAMP",
               "share_location": "BOOLEAN", "lat": "FLOAT",
+              "theme": "VARCHAR(256)",
               "lon": "FLOAT", "loc_at": "TIMESTAMP"}
     with engine.begin() as conn:
         for name, ddl in wanted.items():
@@ -329,6 +332,32 @@ class AuthIn(BaseModel):
     initData: str = Field(max_length=16384)
 
 
+_THEME_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
+
+
+def _theme_picks(user):
+    """Phase 96: the member's own Theme Colours picks, or all-null.
+    Stored per account (users.theme JSON) so one member's theme can
+    never change another member's app."""
+    picks = {"bg": None, "card": None, "accent": None}
+    raw = getattr(user, "theme", None)
+    if raw:
+        try:
+            saved = json.loads(raw)
+            if isinstance(saved, dict):
+                for zone in picks:
+                    v = saved.get(zone)
+                    if isinstance(v, str) and _THEME_ID_RE.match(v):
+                        picks[zone] = v
+        except Exception:
+            pass
+    return picks
+
+
+class ThemeIn(BaseModel):
+    picks: dict = Field(default_factory=dict)
+
+
 def _resolve_act_as(db, real_user, x_act_as):
     """Phase 20: the owner can operate a MANAGED account (one he
     created in the Admin Panel) as if he were that member. Hard rules:
@@ -438,6 +467,7 @@ async def auth(body: AuthIn, request: Request,
         "bot_username": settings.BOT_USERNAME,
         "is_admin": user.telegram_id in settings.ADMIN_IDS,
         "is_moderator": user.telegram_id in settings.MODERATOR_IDS,
+        "theme": _theme_picks(user),
         "media_token": _media_token(),
         "adsgram_block_id": settings.ADSGRAM_BLOCK_ID,
     }
@@ -1789,6 +1819,25 @@ def apply_verification(user: models.User = Depends(current_user),
 # Phase 19: usage analytics — heartbeat time tracking + ad impressions.
 # The dashboard reads user_activity / ad_events; see /admin/dashboard.
 # ---------------------------------------------------------------------------
+
+@app.post("/me/theme")
+def save_my_theme(body: ThemeIn, user: models.User = Depends(current_user),
+                  db: Session = Depends(get_db)):
+    """Phase 96: save THIS member's Theme Colours picks on their own
+    account. Only the caller's row is touched."""
+    picks = {"bg": None, "card": None, "accent": None}
+    incoming = body.picks or {}
+    for zone in picks:
+        v = incoming.get(zone)
+        if v is None:
+            continue
+        if not isinstance(v, str) or not _THEME_ID_RE.match(v):
+            raise HTTPException(422, "Invalid theme shade")
+        picks[zone] = v
+    user.theme = None if not any(picks.values()) else json.dumps(picks)
+    db.commit()
+    return {"ok": True, "theme": picks}
+
 
 @app.post("/me/heartbeat")
 def heartbeat(user: models.User = Depends(current_user),
@@ -3582,7 +3631,10 @@ _NEXA_SYSTEM = (
     "recolour the whole app, or you can assign different "
     "shades to the background, the cards and the accent "
     "buttons. Text colours adjust automatically so they "
-    "never blend into the background. "
+    "never blend into the background. Your theme is saved "
+    "on your own account only — changing yours never "
+    "changes anyone else's app, and theirs never changes "
+    "yours. "
     "SEARCH: from the sidebar or the search button — type and "
     "press Enter. Usernames are shown so members with the "
     "same name can be told apart. "

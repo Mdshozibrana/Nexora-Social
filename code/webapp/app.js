@@ -1707,16 +1707,52 @@ function deriveTheme(stops) {
 let themeState = { zone: "all",
                    picks: { bg: null, card: null, accent: null } };
 let themeDropOpen = false;
-try {
-  const saved = JSON.parse(localStorage.getItem("nx_theme") || "null");
-  if (saved && saved.picks) themeState = saved;
-} catch (e) { /* a fresh member starts on the default pink */ }
+// Phase 96: a theme belongs to ONE account, never to the device.
+// The server stores each member's picks on their own account (sent
+// back by /auth); locally they are cached under a per-account key.
+// Before Phase 96 one shared "nx_theme" key was used, so on a phone
+// with two Telegram accounts the second account saw the first
+// account's theme — it looked like everyone's theme changed.
+function themeKey() {
+  return "nx_theme_" + (me && me.telegram_id ? me.telegram_id : "anon");
+}
+function loadAccountTheme() {
+  let picks = null;
+  if (me && me.theme && (me.theme.bg || me.theme.card ||
+      me.theme.accent)) picks = me.theme;
+  if (!picks) {
+    try {
+      const s = JSON.parse(localStorage.getItem(themeKey()) || "null");
+      if (s && s.picks) picks = s.picks;
+    } catch (e) { /* no cache for this account yet */ }
+  }
+  if (!picks) {
+    // One-time migration: claim the old shared key for the account
+    // that is signed in now, then delete it for everyone else.
+    try {
+      const legacy = JSON.parse(
+        localStorage.getItem("nx_theme") || "null");
+      if (legacy && legacy.picks) picks = legacy.picks;
+    } catch (e) { /* nothing to migrate */ }
+  }
+  try { localStorage.removeItem("nx_theme"); } catch (e) {}
+  themeState = { zone: "all", picks: {
+    bg: (picks && picks.bg) || null,
+    card: (picks && picks.card) || null,
+    accent: (picks && picks.accent) || null } };
+  applyUserTheme();
+  saveTheme();
+}
 function palById(id) {
   return THEME_PALETTES.find(p => p.id === id) || null;
 }
 function saveTheme() {
-  try { localStorage.setItem("nx_theme", JSON.stringify(themeState)); }
+  try { localStorage.setItem(themeKey(), JSON.stringify(themeState)); }
   catch (e) { /* private mode: the theme lasts for the session */ }
+  if (me && me.telegram_id) {
+    api("/me/theme", { method: "POST", body: JSON.stringify(
+      { picks: themeState.picks }) }).catch(() => {});
+  }
 }
 const TH_CARD_VARS = ["--t-card", "--t-carda", "--t-input", "--t-line",
   "--t-tile", "--ink", "--ink-dim", "--ink-faint", "--glass-bg",
@@ -2457,6 +2493,7 @@ function startHeartbeat() {
 async function loadMe() {
   me = await api("/auth", { method: "POST", body: JSON.stringify({ initData }) });
   if (me.media_token) mediaToken = me.media_token;
+  loadAccountTheme();
   startHeartbeat();
   // Phase 53 (owner): the hero identity strip (name, counts,
   // points chip) is gone — it sat on every user's screen and

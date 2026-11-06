@@ -40,6 +40,10 @@ class User(Base):
     # Phase 78 (Nearby): opt-in live location sharing. Coordinates
     # exist only while sharing is on; turning it off clears them.
     share_location = Column(Boolean, default=False)
+    # Phase 96: the member's own Theme Colours picks, stored per
+    # ACCOUNT as JSON ({"bg": ..., "card": ..., "accent": ...}) so a
+    # theme change touches only that member — never anyone else.
+    theme = Column(String(256), nullable=True)
     lat = Column(Float, nullable=True)
     lon = Column(Float, nullable=True)
     loc_at = Column(DateTime, nullable=True)
