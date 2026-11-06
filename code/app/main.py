@@ -474,6 +474,77 @@ def feed(tab: str = "explore", type: str = "", cursor: int = 0,
     return {"posts": out, "next_cursor": rows[-1].id if len(rows) == 20 else None}
 
 
+@app.get("/suggested-users")
+def suggested_users(limit: int = 10, user: models.User = Depends(current_user),
+                    db: Session = Depends(get_db)):
+    """Phase 95 (owner): the bot suggests people to follow,
+    a little way down the Feed while scrolling. Candidates are
+    members the viewer does NOT follow yet (never the viewer,
+    never banned, never anyone in a block relation either way).
+    Ranking: people followed by people YOU follow first
+    (mutual connections), then most followers, then most
+    posts, then most points — so the card feels personal,
+    not just a popularity list. The reason string says WHY
+    each person is suggested, in plain words."""
+    limit = max(1, min(int(limit or 10), 20))
+    hidden = _block_related_ids(db, user.telegram_id)
+    following_ids = {f.following_id for f in db.query(models.Follow)
+                     .filter_by(follower_id=user.telegram_id).all()}
+    rows = db.query(models.User).filter_by(is_banned=False).all()
+    out = []
+    for cand in rows:
+        if cand.telegram_id == user.telegram_id:
+            continue
+        if cand.telegram_id in following_ids:
+            continue
+        if cand.telegram_id in hidden:
+            continue
+        followers = db.query(models.Follow).filter_by(
+            following_id=cand.telegram_id).count()
+        if cand.telegram_id == OFFICIAL_ID:
+            followers += OFFICIAL_FOLLOWER_BASE
+        posts = db.query(models.Post).filter_by(
+            user_id=cand.telegram_id, is_deleted=False).count()
+        mutual_ids = []
+        if following_ids:
+            mutual_ids = [f.follower_id for f in db.query(models.Follow)
+                          .filter_by(following_id=cand.telegram_id).all()
+                          if f.follower_id in following_ids]
+        mutual_name = ""
+        if mutual_ids:
+            mu = db.get(models.User, mutual_ids[0])
+            mutual_name = mu.first_name if mu else ""
+        if mutual_ids and mutual_name:
+            reason = ("Followed by " + mutual_name
+                      if len(mutual_ids) == 1 else
+                      f"Followed by {mutual_name} +{len(mutual_ids) - 1}")
+        elif cand.is_verified:
+            reason = "Verified member"
+        elif followers >= 10:
+            reason = "Popular on Nexora"
+        elif posts > 0:
+            reason = "Active on Nexora"
+        else:
+            reason = "New on Nexora"
+        out.append({
+            "telegram_id": cand.telegram_id,
+            "first_name": cand.first_name,
+            "username": cand.username,
+            "bio": cand.bio or "",
+            "is_verified": bool(cand.is_verified),
+            "is_official": cand.telegram_id == OFFICIAL_ID,
+            "photo_file_id": cand.photo_file_id,
+            "followers": followers,
+            "posts": posts,
+            "points": cand.points_balance or 0,
+            "mutual_count": len(mutual_ids),
+            "reason": reason,
+        })
+    out.sort(key=lambda u: (-u["mutual_count"], -u["followers"],
+                            -u["posts"], -u["points"], u["telegram_id"]))
+    return {"users": out[:limit]}
+
+
 # ---------------------------------------------------------------------------
 # Posts, likes, comments (PRD section 4, MVP items 3-5)
 # ---------------------------------------------------------------------------
@@ -3451,7 +3522,11 @@ _NEXA_SYSTEM = (
     "comment, save, or open the menu for Share, Copy link, "
     "Download, View profile, Follow, Not interested or Report; "
     "your own posts also have Edit and Delete there. Views "
-    "count once per person. "
+    "count once per person. A little way down the Explore "
+    "feed, a Suggested for you card suggests people to "
+    "follow — tap Follow on anyone there, or tap their "
+    "photo or name to open their profile first; the cross "
+    "hides the card for now. "
     "POSTING: write from the Feed composer, or send a photo or "
     "video directly to @NexoraSocial_bot in chat with a "
     "caption and it becomes your post — the most reliable way "
@@ -3623,6 +3698,14 @@ def _nexa_fallback(text):
                 "The Games page has 11 games — Snake, 2048, "
                 "Pac-Man, Archery and more! Pull the lamp cord to light "
                 "the room first.")
+    if has("suggest", "who to follow", "কাকে ফলো", "সাজেস্ট",
+           "follow করব", "new people"):
+        return ("Feed-টা একটু নিচে স্ক্রল করলেই 'Suggested for "
+                "you' কার্ডে ফলো করার মতো মানুষ পাবে — Follow "
+                "চাপলেই হয়ে যাবে!" if bn else
+                "Scroll a little way down the Feed and the "
+                "Suggested for you card shows people to follow "
+                "— just tap Follow on anyone there!")
     if has("refer", "রেফার", "invite", "বন্ধু"):
         return ("তোমার রেফারেল লিংক প্রোফাইল থেকে শেয়ার করো — "
                 "বন্ধু যোগ দিয়ে প্রথম পোস্ট করলেই তুমি ২০ "

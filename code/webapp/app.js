@@ -828,16 +828,134 @@ function commentRow(cm) {
 }
 
 // ----------------------------------------------------------------- feed ---
+// Phase 95 (owner): the bot suggests people to follow, in
+// the Feed, while scrolling — a little way down, after the
+// 4th post (not at the very top, not buried at the bottom).
+const SUGGEST_AFTER_POSTS = 4;
+let suggestInserted = false;
+let suggestDismissed = false;
+let feedPostCount = 0;
+
 async function loadFeed(reset) {
   try {
     const url = "/feed?tab=" + tab + (reset || !feedCursor ? "" : "&cursor=" + feedCursor);
     const data = await api(url);
-    if (reset) $("feed-list").innerHTML = "";
-    data.posts.forEach(p => $("feed-list").appendChild(postCard(p)));
+    if (reset) {
+      $("feed-list").innerHTML = "";
+      feedPostCount = 0;
+      suggestInserted = false;
+    }
+    let suggestSlot = null;
+    data.posts.forEach(p => {
+      $("feed-list").appendChild(postCard(p));
+      feedPostCount += 1;
+      if (reset && tab === "explore" && !suggestInserted &&
+          !suggestDismissed && feedPostCount === SUGGEST_AFTER_POSTS) {
+        suggestSlot = document.createElement("div");
+        suggestSlot.className = "suggest-slot";
+        $("feed-list").appendChild(suggestSlot);
+        suggestInserted = true;
+      }
+    });
+    // A short feed (fewer posts than the slot position)
+    // still gets the card — at the end, after the last post.
+    if (reset && tab === "explore" && !suggestInserted &&
+        !suggestDismissed && data.posts.length > 0) {
+      suggestSlot = document.createElement("div");
+      suggestSlot.className = "suggest-slot";
+      $("feed-list").appendChild(suggestSlot);
+      suggestInserted = true;
+    }
+    if (suggestSlot) loadSuggestedInto(suggestSlot);
     feedCursor = data.next_cursor;
     $("feed-more").hidden = !feedCursor;
     $("feed-empty").hidden = data.posts.length > 0 || !reset;
   } catch (e) { setStatus("Could not load the feed."); }
+}
+
+async function loadSuggestedInto(slot) {
+  try {
+    const data = await api("/suggested-users?limit=10");
+    if (!slot.isConnected) return;
+    if (!data.users || !data.users.length) { slot.remove(); return; }
+    slot.replaceWith(suggestCard(data.users));
+  } catch (e) { if (slot.isConnected) slot.remove(); }
+}
+
+function suggestCard(users) {
+  const el = document.createElement("section");
+  el.className = "suggest-card";
+  el.id = "suggest-card";
+  const head = document.createElement("div");
+  head.className = "suggest-head";
+  const hcol = document.createElement("div");
+  const title = document.createElement("div");
+  title.className = "suggest-title";
+  title.textContent = "👥 Suggested for you";
+  const sub = document.createElement("div");
+  sub.className = "suggest-sub";
+  sub.textContent = "People you may like to follow";
+  hcol.append(title, sub);
+  const close = document.createElement("button");
+  close.className = "suggest-close";
+  close.textContent = "✕";
+  close.title = "Hide suggestions";
+  close.onclick = () => { suggestDismissed = true; el.remove(); };
+  head.append(hcol, close);
+  el.appendChild(head);
+  const scroll = document.createElement("div");
+  scroll.className = "suggest-scroll";
+  users.forEach(u => {
+    const person = document.createElement("div");
+    person.className = "suggest-person";
+    const avBtn = document.createElement("button");
+    avBtn.className = "suggest-ava";
+    avBtn.appendChild(avatarEl(u.first_name, u.telegram_id, true,
+                               u.photo_file_id));
+    avBtn.onclick = () => openProfile(u.telegram_id);
+    person.appendChild(avBtn);
+    const nm = document.createElement("div");
+    nm.className = "suggest-name";
+    const nmText = document.createElement("span");
+    nmText.className = "suggest-name-text";
+    nmText.textContent = u.first_name;
+    nm.appendChild(nmText);
+    if (u.is_verified) nm.appendChild(verifiedBadge());
+    nm.onclick = () => openProfile(u.telegram_id);
+    person.appendChild(nm);
+    const sub2 = document.createElement("div");
+    sub2.className = "suggest-user";
+    sub2.textContent = u.username ? "@" + String(u.username).replace(/^@+/, "") : "";
+    person.appendChild(sub2);
+    const reason = document.createElement("div");
+    reason.className = "suggest-reason";
+    reason.textContent = u.reason || (u.followers + " followers");
+    person.appendChild(reason);
+    const fBtn = document.createElement("button");
+    fBtn.className = "suggest-follow";
+    let following = false;
+    const paint = () => {
+      fBtn.textContent = following ? "Following ✓" : "Follow";
+      fBtn.classList.toggle("on", following);
+    };
+    paint();
+    fBtn.onclick = async () => {
+      fBtn.disabled = true;
+      try {
+        const r = await api("/users/" + u.telegram_id + "/follow",
+                            { method: "POST" });
+        following = !!r.following;
+        paint();
+        setStatus(following ? "Following " + u.first_name + "."
+                            : "Unfollowed " + u.first_name + ".");
+      } catch (e) { setStatus("Could not update follow."); }
+      fBtn.disabled = false;
+    };
+    person.appendChild(fBtn);
+    scroll.appendChild(person);
+  });
+  el.appendChild(scroll);
+  return el;
 }
 
 function setTab(next) {
