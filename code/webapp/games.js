@@ -1306,6 +1306,26 @@ registerGame({
     let level = 1, cfg = levelCfg(1), banked = 0;
     let best = +(localStorage.getItem("nx_archery_best") || 0);
     let bestLevel = +(localStorage.getItem("nx_archery_level") || 1);
+    // Phase 94 (owner: "যে লেভেলে রেখে আসবো সেখান থেকে পরে
+    // আসে না কেনো"): bestLevel above is only a display
+    // record — the run itself always restarted at Level 1.
+    // Now the solo run is saved as {level, banked} and
+    // RESUMED on open; a 🆕 New run button starts over.
+    let resumed = false;
+    const loadRun = () => {
+      try {
+        const r = JSON.parse(
+          localStorage.getItem("nx_archery_run") || "null");
+        return r && r.level >= 1 ? r : null;
+      } catch (e) { return null; }
+    };
+    const saveRun = (lv, bk) => {
+      if (mode !== "solo") return;
+      try {
+        localStorage.setItem("nx_archery_run",
+          JSON.stringify({ level: lv, banked: bk }));
+      } catch (e) { /* storage full/blocked: play on */ }
+    };
     const theme = () => THEMES[(level - 1) % THEMES.length];
     const perPlayer = () => (mode === "solo" ? 10 : 6);
     const leftFor = p => perPlayer() - shots[p];
@@ -1323,9 +1343,11 @@ registerGame({
         bestLevel = n;
         localStorage.setItem("nx_archery_level", bestLevel);
       }
+      saveRun(level, banked);
       showScore();
     }
-    const reset = () => startLevel(mode === "solo" ? 1 : 1, false);
+    const reset = () => (mode === "solo" ? startSolo()
+                                         : startLevel(1, false));
     function showScore() {
       if (mode === "solo")
         setScore("🏹 Level " + level + " · " + scores[0] + "/" +
@@ -1366,6 +1388,7 @@ registerGame({
           }
           burst(TGT.x, TGT.y, ["#FFD93D", "#FF8FBE", "#7BE0A3", "#FFFFFF"], 70);
           state = "clear"; noteT = 110;
+          saveRun(level + 1, banked);
         } else {
           if (banked + scores[0] > best) {
             best = banked + scores[0];
@@ -1582,8 +1605,10 @@ registerGame({
              ? "Thread the bars. Hit SUCCESS."
              : "Faster, smaller, trickier…"),
            "bold 13px system-ui", "#FF8FBE", 34],
-          ["Best level reached: " + bestLevel,
-           "12px system-ui", "#B9BDC7", 58],
+          [resumed
+             ? "↩ Resumed — your saved run continues here"
+             : "Best level reached: " + bestLevel,
+           "12px system-ui", resumed ? "#7BE0A3" : "#B9BDC7", 58],
           ["— tap to start —", "bold 13px system-ui", "#FFFFFF", 80],
         ]);
       } else if (state === "clear") {
@@ -1665,7 +1690,7 @@ registerGame({
     };
     cv.addEventListener("pointerdown", e => {
       e.preventDefault();
-      if (state === "intro") { state = "aim"; return; }
+      if (state === "intro") { state = "aim"; resumed = false; return; }
       if (state === "clear") { startLevel(level + 1, true); return; }
       if (state === "fail") { startLevel(level, true); return; }
       if (state !== "aim") return;
@@ -1684,6 +1709,20 @@ registerGame({
     cv.addEventListener("pointerup", release);
     cv.addEventListener("pointercancel", () => { aim = null; });
 
+    // Solo entry: resume the saved run when there is one,
+    // otherwise a fresh Level 1 (Phase 94).
+    const startSolo = () => {
+      mode = "solo";
+      const r = loadRun();
+      if (r && (r.level > 1 || r.banked > 0)) {
+        banked = r.banked; resumed = true;
+        startLevel(r.level, true);
+      } else {
+        resumed = false;
+        startLevel(1, false);
+      }
+    };
+
     // controls row
     const row = document.createElement("div");
     row.className = "grow arch-row";
@@ -1692,7 +1731,7 @@ registerGame({
       b.textContent = label; b.onclick = fn;
       row.appendChild(b); return b;
     };
-    mkBtn("👤 Solo", () => { mode = "solo"; startLevel(1, false); });
+    mkBtn("👤 Solo", startSolo);
     mkBtn("👥 2 Players", () => { mode = "2p"; startLevel(1, false); });
     const inviteBox = document.createElement("div");
     inviteBox.className = "arch-invite";
@@ -1737,10 +1776,15 @@ registerGame({
     });
     mkBtn("↻ Restart", () => startLevel(mode === "solo" ? level : 1,
                                         mode === "solo"));
+    mkBtn("🆕 New run", () => {
+      if (mode !== "solo") return;
+      resumed = false;
+      startLevel(1, false);
+    });
     stage.appendChild(row);
     stage.appendChild(inviteBox);
 
-    startLevel(1, false);
+    startSolo();
     raf = requestAnimationFrame(step);
     return () => { dead = true; cancelAnimationFrame(raf); };
   }
