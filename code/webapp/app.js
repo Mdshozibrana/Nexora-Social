@@ -3349,6 +3349,12 @@ function designCard(d) {
   like.textContent = (d.liked ? "❤️ " : "🤍 ") + d.like_count;
   like.onclick = e => { e.stopPropagation(); if (lpFired) return;
     toggleDesignLike(d); };
+  // Phase 99 (owner): a tap that starts on the react button belongs
+  // to the button alone — it must never arm the card's long-press
+  // (a slow careful tap used to pop the whole-post menu instead of
+  // liking) and never fall through to the card.
+  like.addEventListener("pointerdown", e => e.stopPropagation());
+  like.addEventListener("pointerup", e => e.stopPropagation());
   // Phase 31: like + unique views share one compact stats row,
   // Pinterest-style, under the prompt snippet.
   const stats = document.createElement("div");
@@ -3364,7 +3370,10 @@ function designCard(d) {
   // (Pinterest-style). A fired long-press swallows the tap that
   // would otherwise open the sheet.
   attachLongPress(el, () => showDesignPop(d, el));
-  el.onclick = () => { if (lpFired) return; openDesignSheet(d); };
+  el.onclick = e => { if (lpFired) return;
+    if (e.target && e.target.closest &&
+        e.target.closest(".design-like")) return;
+    openDesignSheet(d); };
   return el;
 }
 

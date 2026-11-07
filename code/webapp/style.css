@@ -1048,6 +1048,11 @@ body { padding: 0; overflow: hidden; }
   -webkit-box-orient: vertical; overflow: hidden; }
 .design-like { border-radius: 999px; padding: 5px 12px;
   font-size: 13px; font-weight: 700; }
+/* Phase 99 (owner): the react button was a ~28px sliver — taps
+   missed it and landed on the whole card, opening the sheet instead
+   of liking. Now a proper 44px touch target. */
+.design-like { min-height: 44px; padding: 10px 18px;
+  font-size: 15px; display: inline-flex; align-items: center; }
 .design-like.liked { color: #E84393; }
 .design-up-title { font-weight: 800; margin-bottom: 8px; }
 /* Phase 85 (owner picked sample A — Gradient Glow): the Post

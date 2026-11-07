@@ -18,7 +18,7 @@ CSS = open("webapp/style.css").read()
 
 # gallery card: media wrapper + shield around the image
 at = JS.index("function designCard(d)")
-block = JS[at:at + 1800]
+block = JS[at:at + 2600]  # widened in Phase 99: designCard grew
 assert 'media.className = "design-media"' in block
 assert 'shield.className = "img-shield"' in block
 assert "media.append(img, shield)" in block
