@@ -41,5 +41,5 @@ for hexv in ("#381932", "#FFF3E6", "#222222", "#89E900",
              "#E7D28F", "#53332A", "#B8CDE3", "#5E397F",
              "#9FB354", "#C10015", "#93B4D7"):
     assert hexv in APP, hexv
-assert "app.js?v=100" in HTML and "games.js?v=100" in HTML
+assert "app.js?v=101" in HTML and "games.js?v=101" in HTML
 print("PHASE 93 OK")

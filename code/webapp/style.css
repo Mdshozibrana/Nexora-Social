@@ -2363,3 +2363,14 @@ html[data-theme] .suggest-follow {
   color: var(--t-onacc, #FFFFFF); }
 html[data-theme] .suggest-follow.on { background: var(--t-chip, #F3DCE7);
   color: var(--ink-dim); }
+
+/* Phase 101: After Rain Effect — the rain-on-glass canvas sits
+   above the Me page, below the bottom nav (65) and the sidebar
+   (80), and never takes a tap. The soft mist at the top is the
+   canvas element's own background. */
+#rain-fx { position: fixed; inset: 0; z-index: 60;
+  pointer-events: none;
+  background: linear-gradient(180deg,
+    rgba(170,205,245,.12), rgba(170,205,245,0) 42%); }
+#rain-fx[hidden] { display: none; }
+.rain-card .rain-toggle { width: 100%; }

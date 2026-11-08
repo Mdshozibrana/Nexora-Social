@@ -14,5 +14,5 @@ assert "nm.onclick = () => openProfile(r.telegram_id);" in JS
 assert "btn.onclick = () => openProfile(r.telegram_id);" in JS
 # the tap affordance
 assert ".rank-link { cursor: pointer; }" in CSS
-assert "app.js?v=100" in HTML and "style.css?v=100" in HTML
+assert "app.js?v=101" in HTML and "style.css?v=101" in HTML
 print("PHASE 82 OK")

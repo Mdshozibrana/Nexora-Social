@@ -252,6 +252,7 @@ function showView(name, viaBack) {
   if (name === "museum") openMuseum();
   if (name === "nearby") openNearby();
   if (name !== "nearby") stopNearby();
+  syncRainFx();
   moveNavPill();
   updateBackButton();
 }
@@ -1951,6 +1952,145 @@ function dataCard() {
   return card;
 }
 
+// ---------- Phase 101: After Rain Effect (Me view) ----------
+// Owner (Nov 8): "Bot এ Me তে After Rain Effect এড করো" — an
+// after-rain look on the Me screen: droplets resting on glass,
+// gathering and growing, and now and then one slides down leaving
+// a fading trail, under a soft post-rain mist. Purely local and
+// per-account (the choice is saved under nx_rain_<telegram_id>,
+// the Phase 96/97 pattern), OFF by default, and the canvas runs
+// only while the Me (profile) view is on screen. pointer-events
+// are off, so it never blocks a tap; prefers-reduced-motion keeps
+// it still. No server state, no other member sees it.
+let rainRAF = null;
+let rainDrops = [];
+let rainDpr = 1;
+function rainKey() {
+  return "nx_rain_" + (me && me.telegram_id ? me.telegram_id : "anon");
+}
+function rainEnabled() {
+  try { return localStorage.getItem(rainKey()) === "1"; }
+  catch (e) { return false; }
+}
+function rainCanvas() {
+  let c = $("rain-fx");
+  if (!c) {
+    c = document.createElement("canvas");
+    c.id = "rain-fx";
+    c.hidden = true;
+    document.body.appendChild(c);
+  }
+  return c;
+}
+function rainResize(c) {
+  rainDpr = Math.min(window.devicePixelRatio || 1, 2);
+  c.width = Math.floor(window.innerWidth * rainDpr);
+  c.height = Math.floor(window.innerHeight * rainDpr);
+}
+function rainSpawn(w, h) {
+  return { x: Math.random() * w, y: Math.random() * h,
+           r: (0.8 + Math.random() * 2.2) * rainDpr, slide: 0,
+           vy: 0, a: 0.25 + Math.random() * 0.4 };
+}
+function rainStep() {
+  const c = rainCanvas();
+  if (c.width !== Math.floor(window.innerWidth * rainDpr))
+    rainResize(c);
+  const ctx = c.getContext("2d");
+  const w = c.width, h = c.height;
+  ctx.clearRect(0, 0, w, h);
+  const maxDrops = Math.min(110, Math.floor(w / 9));
+  if (rainDrops.length < maxDrops && Math.random() < 0.5)
+    rainDrops.push(rainSpawn(w, h));
+  rainDrops = rainDrops.filter(d => d.y - d.r < h + 8);
+  const trail = [];
+  for (const d of rainDrops) {
+    if (!d.slide) {
+      if (d.r < 4.6 * rainDpr) d.r += (0.006 + Math.random() * 0.01) * rainDpr;
+      if (d.r > 3.4 * rainDpr && Math.random() < 0.004) {
+        d.slide = 1; d.vy = 0.4;
+      }
+    } else {
+      d.vy = Math.min(d.vy + 0.06, 3.2);
+      d.y += d.vy * rainDpr * 1.4;
+      d.r = Math.max(1.1 * rainDpr, d.r - 0.012 * rainDpr);
+      if (Math.random() < 0.35)
+        trail.push({ x: d.x + (Math.random() - 0.5) * 3 * rainDpr,
+          y: d.y - d.r * 2, r: Math.max(0.7 * rainDpr, d.r * 0.4),
+          slide: 0, vy: 0, a: d.a * 0.8 });
+    }
+    const g = ctx.createRadialGradient(
+      d.x - d.r * 0.35, d.y - d.r * 0.35, d.r * 0.1,
+      d.x, d.y, d.r);
+    g.addColorStop(0, "rgba(255,255,255," + (d.a * 0.9) + ")");
+    g.addColorStop(0.55, "rgba(190,220,250," + (d.a * 0.45) + ")");
+    g.addColorStop(1, "rgba(150,190,235," + (d.a * 0.12) + ")");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  if (trail.length) rainDrops = rainDrops.concat(trail);
+  rainRAF = requestAnimationFrame(rainStep);
+}
+function rainStart() {
+  if (rainRAF !== null) return;
+  if (window.matchMedia &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches)
+    return;
+  const c = rainCanvas();
+  rainResize(c);
+  c.hidden = false;
+  rainDrops = [];
+  rainRAF = requestAnimationFrame(rainStep);
+}
+function rainStop() {
+  if (rainRAF !== null) cancelAnimationFrame(rainRAF);
+  rainRAF = null;
+  const c = $("rain-fx");
+  if (c) {
+    c.hidden = true;
+    const ctx = c.getContext("2d");
+    if (ctx) ctx.clearRect(0, 0, c.width, c.height);
+  }
+}
+function syncRainFx() {
+  if (currentView === "profile" && rainEnabled()) rainStart();
+  else rainStop();
+}
+function rainCard() {
+  const card = document.createElement("div");
+  card.className = "card data-card rain-card";
+  const title = document.createElement("b");
+  title.textContent = "🌧️ After Rain Effect";
+  card.appendChild(title);
+  const hint = document.createElement("p");
+  hint.className = "hint";
+  hint.textContent = "Raindrops rest on the glass over your Me " +
+    "screen — they gather, grow, and slide down, like the moments " +
+    "just after rain. Only on this screen, and only for you.";
+  card.appendChild(hint);
+  const btn = document.createElement("button");
+  btn.className = "data-btn rain-toggle";
+  const paint = () => {
+    btn.textContent = rainEnabled()
+      ? "🌧️ Rain is ON — tap to turn off"
+      : "🌦️ Turn on the rain";
+  };
+  paint();
+  btn.onclick = () => {
+    try {
+      localStorage.setItem(rainKey(), rainEnabled() ? "0" : "1");
+    } catch (e) { /* storage unavailable; the card still paints */ }
+    paint();
+    syncRainFx();
+    setStatus(rainEnabled() ? "After Rain Effect on 🌧️"
+                            : "After Rain Effect off");
+  };
+  card.appendChild(btn);
+  return card;
+}
+
 function themeCard() {
   const card = document.createElement("div");
   card.className = "card theme-card";
@@ -2540,6 +2680,9 @@ async function myExtras() {
   // Phase 100: Data Control sits under Theme Colours and renders
   // unconditionally, like the theme card.
   wrap.appendChild(dataCard());
+  // Phase 101: the After Rain toggle sits under Data
+  // Control and, like the cards above, always renders.
+  wrap.appendChild(rainCard());
   return wrap;
 }
 

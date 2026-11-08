@@ -72,7 +72,7 @@ assert "async def send_document(" in open(
 assert "def _export_payload(" in MAIN
 assert '@app.post("/me/export/send")' in MAIN
 assert "Data Control card" in MAIN  # Nexa manual tells the truth now
-assert "app.js?v=100" in HTML and "style.css?v=100" in HTML
+assert "app.js?v=101" in HTML and "style.css?v=101" in HTML
 print("static contract OK")
 
 def make_init_data(user):
