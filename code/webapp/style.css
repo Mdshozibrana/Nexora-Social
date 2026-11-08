@@ -2148,6 +2148,23 @@ img { -webkit-user-drag: none; }
    the clay default above is untouched.
    ========================================================================== */
 .theme-card { margin-top: 14px; }
+/* Phase 100: Data Control card (profile extras). */
+.data-card { margin-top: 14px; }
+.data-actions { display: flex; gap: 10px; flex-wrap: wrap;
+  margin-top: 10px; }
+.data-btn { min-height: 44px; padding: 10px 16px; border: none;
+  cursor: pointer; border-radius: 999px; font-weight: 700;
+  font-size: 14px; color: #fff;
+  background: linear-gradient(90deg, #FF8FBE, #E84393);
+  box-shadow: 0 6px 16px rgba(232, 67, 147, .35); }
+.data-btn:active { transform: scale(.96); }
+.data-btn:disabled { opacity: .55; box-shadow: none; }
+.data-btn.danger { background: linear-gradient(90deg, #D6455B, #B91C3A);
+  box-shadow: 0 6px 16px rgba(185, 28, 58, .3); margin-top: 12px; }
+.data-del-box { margin-top: 10px; }
+.data-del-box input { width: 100%; box-sizing: border-box;
+  min-height: 44px; padding: 10px 14px; border-radius: 12px;
+  border: 2px solid #E9B7C6; font-size: 15px; margin-bottom: 4px; }
 .theme-head { display: flex; align-items: center;
   justify-content: space-between; }
 .theme-reset { font-size: 12px; padding: 5px 12px; }

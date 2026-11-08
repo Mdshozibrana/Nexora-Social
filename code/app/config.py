@@ -72,6 +72,9 @@ RATE_LIMITS = {
     # theme save writes the member's row.
     "suggested": (120, 3600),
     "theme": (120, 3600),
+    # Phase 100: data export (download + send-to-Telegram) — a full
+    # account dump is heavy and sensitive; a small hourly budget.
+    "export": (10, 3600),
 }
 
 # Points economy (PRD section 5). PLACEHOLDER defaults — these are product

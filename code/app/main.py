@@ -3156,11 +3156,9 @@ def admin_audit_log(limit: int = 100,
     } for r in rows]}
 
 
-@app.get("/me/export")
-def my_export(user: models.User = Depends(current_user),
-              db: Session = Depends(get_db)):
-    """Everything the platform holds about the caller, as JSON —
-    the member's copy of their own data (§11)."""
+def _export_payload(db: Session, user: models.User) -> dict:
+    """Everything the platform holds about the caller (§11),
+    shared by the download and send-to-Telegram routes."""
     me = db.get(models.User, user.telegram_id)
     posts = db.query(models.Post).filter_by(
         user_id=user.telegram_id).order_by(models.Post.id).all()
@@ -3205,10 +3203,37 @@ def my_export(user: models.User = Depends(current_user),
         "followers": [f.follower_id for f in db.query(
             models.Follow).filter_by(following_id=user.telegram_id)],
     }
+    return payload
+
+
+@app.get("/me/export")
+def my_export(user: models.User = Depends(current_user),
+              db: Session = Depends(get_db)):
+    """The member's copy of their own data, as a JSON download."""
+    _enforce_rate("export", f"u{user.telegram_id}")
     return JSONResponse(
-        content=payload,
+        content=_export_payload(db, user),
         headers={"Content-Disposition":
                  "attachment; filename=nexora-export.json"})
+
+
+@app.post("/me/export/send")
+async def my_export_send(user: models.User = Depends(current_user),
+                         db: Session = Depends(get_db)):
+    """Phase 100 (owner: "Data Control থেকে ডাটা এক্সপোর্ট হয়না"):
+    the export endpoints existed since Phase 28 but the app never
+    had a single export button — this route plus the Download
+    button in the new Data Control card are the member-facing fix.
+    Sending the file through the bot chat is the reliable route on
+    phones, where a WebView blob download can silently fail."""
+    _enforce_rate("export", f"u{user.telegram_id}")
+    data = json.dumps(_export_payload(db, user), ensure_ascii=False,
+                      indent=1).encode("utf-8")
+    sent = await notify.send_document(
+        user.telegram_id, "nexora-export.json", data,
+        caption="🗂️ Your Nexora data export — everything Nexora "
+                "holds about your account.")
+    return {"sent": bool(sent)}
 
 
 class DeleteAccountIn(BaseModel):
@@ -3653,9 +3678,11 @@ _NEXA_SYSTEM = (
     "from their menu. The official account Nexora Social "
     "(@nexora, verified) is followed by everyone and cannot "
     "be unfollowed or blocked. "
-    "ACCOUNT: from your profile you can export your data or "
-    "delete your account by typing DELETE. Log out is in the "
-    "sidebar. "
+    "ACCOUNT: your profile has a Data Control card — there "
+    "you can download everything Nexora holds about you as a "
+    "JSON file, or have the bot send that file to your Telegram "
+    "chat (best on phones). Deleting your account is asked "
+    "there too, by typing DELETE. Log out is in the sidebar. "
     "YOU: you live in the sidebar; members chat with you by text. "
     "RULES: reply in the same language the member writes in "
     "(English or Bengali). Keep answers short and friendly: "

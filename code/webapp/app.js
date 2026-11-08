@@ -1838,6 +1838,119 @@ function applyUserTheme() {
 applyUserTheme();
 
 // The picker card that lives in the Me section (own profile).
+// Phase 100 (owner: "Data Control থেকে ডাটা এক্সপোর্ট হয়না"): the
+// /me/export endpoint has existed since Phase 28, but the app never
+// had ANY export button — Nexa even promised one in the profile.
+// This card is the missing Data Control: two routes to the same
+// JSON file. Download suits desktop browsers; sending the file
+// through the bot chat is the reliable route on phones, where a
+// WebView blob download can silently do nothing.
+function dataCard() {
+  const card = document.createElement("div");
+  card.className = "card data-card";
+  const title = document.createElement("b");
+  title.textContent = "🗂️ Data Control";
+  card.appendChild(title);
+  const hint = document.createElement("p");
+  hint.className = "hint";
+  hint.textContent = "Download everything Nexora holds about " +
+    "your account — profile, posts, comments, points history, " +
+    "followers and following — as one JSON file.";
+  card.appendChild(hint);
+  const row = document.createElement("div");
+  row.className = "data-actions";
+  const dl = document.createElement("button");
+  dl.className = "data-btn";
+  dl.textContent = "⬇️ Download my data";
+  dl.onclick = async () => {
+    dl.disabled = true;
+    setStatus("Preparing your export…");
+    try {
+      const data = await api("/me/export");
+      const blob = new Blob([JSON.stringify(data, null, 1)],
+                            { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = "nexora-export.json";
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+      setStatus("Export downloaded ✓");
+    } catch (e) {
+      setStatus("Download did not work here — try \u201cSend to " +
+                "my Telegram\u201d instead.");
+    }
+    dl.disabled = false;
+  };
+  const send = document.createElement("button");
+  send.className = "data-btn";
+  send.textContent = "📩 Send to my Telegram";
+  send.onclick = async () => {
+    send.disabled = true;
+    setStatus("Sending your export to the bot chat…");
+    try {
+      const r = await api("/me/export/send", { method: "POST" });
+      if (r.sent) setStatus("Sent ✓ — check your chat with the " +
+                            "bot for nexora-export.json.");
+      else setStatus("The bot could not message you (it may be " +
+                     "blocked) — use Download instead.");
+    } catch (e) { setStatus("Could not send the export."); }
+    send.disabled = false;
+  };
+  row.append(dl, send);
+  card.appendChild(row);
+  // The delete endpoint has existed since Phase 28 with the same
+  // problem — no button anywhere. It lives here, behind a typed
+  // DELETE confirmation exactly as the server demands: the first
+  // tap only reveals the confirmation; nothing is sent until the
+  // member types DELETE and taps the final button.
+  const delBtn = document.createElement("button");
+  delBtn.className = "data-btn danger";
+  delBtn.textContent = "🗑️ Delete my account";
+  const delBox = document.createElement("div");
+  delBox.className = "data-del-box";
+  delBox.hidden = true;
+  const delHint = document.createElement("p");
+  delHint.className = "hint";
+  delHint.textContent = "This permanently deletes your account, " +
+    "posts, comments and points. It cannot be undone. Type " +
+    "DELETE to confirm.";
+  const delInput = document.createElement("input");
+  delInput.type = "text";
+  delInput.placeholder = "Type DELETE";
+  delInput.autocomplete = "off";
+  const delGo = document.createElement("button");
+  delGo.className = "data-btn danger";
+  delGo.textContent = "Permanently delete";
+  delGo.disabled = true;
+  delInput.oninput = () => {
+    delGo.disabled = delInput.value !== "DELETE";
+  };
+  delBtn.onclick = () => {
+    delBox.hidden = !delBox.hidden;
+    if (!delBox.hidden) delInput.focus();
+  };
+  delGo.onclick = async () => {
+    delGo.disabled = true;
+    try {
+      await api("/me/delete-account", { method: "POST",
+        body: JSON.stringify({ confirm: "DELETE" }) });
+      localStorage.removeItem("nx_remember");
+      sessionStorage.removeItem("nx_entered");
+      sessionStorage.removeItem("nx_actas");
+      sessionStorage.removeItem("nx_actas_name");
+      entryMode = "login";
+      paintEntry();
+      setStatus("Your account has been deleted.");
+    } catch (e) {
+      setStatus("Could not delete the account.");
+      delGo.disabled = false;
+    }
+  };
+  delBox.append(delHint, delInput, delGo);
+  card.append(delBtn, delBox);
+  return card;
+}
+
 function themeCard() {
   const card = document.createElement("div");
   card.className = "card theme-card";
@@ -2424,6 +2537,9 @@ async function myExtras() {
   // section, under the points and monetization cards. It is
   // purely local, so it renders even if the cards above fail.
   wrap.appendChild(themeCard());
+  // Phase 100: Data Control sits under Theme Colours and renders
+  // unconditionally, like the theme card.
+  wrap.appendChild(dataCard());
   return wrap;
 }
 

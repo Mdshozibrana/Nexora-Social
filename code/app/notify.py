@@ -26,6 +26,24 @@ async def send_message(chat_id: int, text: str) -> bool:
         return False
 
 
+async def send_document(chat_id: int, filename: str, data: bytes,
+                        caption: str = "") -> bool:
+    """One Bot API sendDocument (Phase 100: the data-export file).
+    False (never raises) when there is no live token or Telegram
+    rejects the send (e.g. the user blocked the bot)."""
+    if not settings.BOT_TOKEN:
+        return False
+    url = f"https://api.telegram.org/bot{settings.BOT_TOKEN}/sendDocument"
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            r = await client.post(
+                url, data={"chat_id": str(chat_id), "caption": caption},
+                files={"document": (filename, data, "application/json")})
+        return r.status_code == 200
+    except httpx.HTTPError:
+        return False
+
+
 async def notify_user(db, user_id: int, ntype: str, text: str) -> bool:
     """Send + log a notification, respecting the hourly cap."""
     if user_id is None:
