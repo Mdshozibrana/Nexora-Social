@@ -34,5 +34,5 @@ for bit in (".theme-drop-btn", ".theme-drop-swatch",
             ".theme-drop-item.on", ".theme-label",
             "box-shadow: var(--clay-inset)"):
     assert bit in CSS, bit
-assert "app.js?v=102" in HTML and "games.js?v=102" in HTML
+assert "app.js?v=103" in HTML and "games.js?v=103" in HTML
 print("PHASE 92 OK")
