@@ -30,5 +30,5 @@ for bit in (".theme-drop {", ".theme-drop-btn", ".theme-drop-list",
             "max-height: 264px", "position: absolute"):
     assert bit in CSS, bit
 assert ".theme-grid" not in CSS
-assert "app.js?v=101" in HTML and "games.js?v=101" in HTML
+assert "app.js?v=102" in HTML and "games.js?v=102" in HTML
 print("PHASE 91 OK")

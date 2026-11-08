@@ -1962,15 +1962,58 @@ function dataCard() {
 // only while the Me (profile) view is on screen. pointer-events
 // are off, so it never blocks a tap; prefers-reduced-motion keeps
 // it still. No server state, no other member sees it.
+//
+// Phase 102 (owner: "আরো এড করো After rain effect theme"):
+// five rain THEMES under the same card — Drizzle, Classic,
+// Monsoon, Golden and Night — picked with chips in the card.
+// The stored value is now the theme id ("0" = off); the Phase
+// 101 value "1" still reads as Classic, so nobody's toggle
+// breaks.
+const RAIN_THEMES = {
+  drizzle: { label: "🌦️ Drizzle", cap: 48, div: 16, spawn: 0.3,
+    size: 0.7, grow: 0.5, slide: 0.002, alpha: 0.85,
+    stops: [[255, 255, 255], [190, 220, 250], [150, 190, 235]],
+    mist: "linear-gradient(180deg, rgba(170,205,245,.07), rgba(170,205,245,0) 42%)" },
+  classic: { label: "🌧️ Classic", cap: 110, div: 9, spawn: 0.5,
+    size: 1, grow: 1, slide: 0.004, alpha: 1,
+    stops: [[255, 255, 255], [190, 220, 250], [150, 190, 235]],
+    mist: "linear-gradient(180deg, rgba(170,205,245,.12), rgba(170,205,245,0) 42%)" },
+  monsoon: { label: "⛈️ Monsoon", cap: 200, div: 5, spawn: 0.85,
+    size: 1.25, grow: 1.6, slide: 0.011, alpha: 1.1,
+    stops: [[255, 255, 255], [175, 210, 245], [130, 175, 230]],
+    mist: "linear-gradient(180deg, rgba(140,180,230,.18), rgba(140,180,230,0) 50%)" },
+  golden: { label: "🌅 Golden", cap: 110, div: 9, spawn: 0.5,
+    size: 1, grow: 1, slide: 0.004, alpha: 1,
+    stops: [[255, 252, 240], [250, 215, 140], [240, 180, 90]],
+    mist: "linear-gradient(180deg, rgba(255,205,120,.13), rgba(255,205,120,0) 42%)" },
+  night: { label: "🌙 Night", cap: 90, div: 11, spawn: 0.45,
+    size: 1, grow: 0.9, slide: 0.004, alpha: 0.6,
+    stops: [[215, 228, 255], [150, 175, 235], [100, 125, 200]],
+    mist: "linear-gradient(180deg, rgba(90,110,180,.16), rgba(90,110,180,0) 45%)" },
+};
 let rainRAF = null;
 let rainDrops = [];
 let rainDpr = 1;
+let rainCfg = RAIN_THEMES.classic;
 function rainKey() {
   return "nx_rain_" + (me && me.telegram_id ? me.telegram_id : "anon");
 }
+function rainTheme() {
+  let v = null;
+  try { v = localStorage.getItem(rainKey()); } catch (e) { /* none */ }
+  if (v === "1") return "classic";
+  if (v && RAIN_THEMES[v]) return v;
+  return null;
+}
 function rainEnabled() {
-  try { return localStorage.getItem(rainKey()) === "1"; }
-  catch (e) { return false; }
+  return rainTheme() !== null;
+}
+function setRainTheme(id) {
+  try {
+    localStorage.setItem(rainKey(), id || "0");
+  } catch (e) { /* storage unavailable; visual state only */ }
+  rainStop();
+  syncRainFx();
 }
 function rainCanvas() {
   let c = $("rain-fx");
@@ -1989,8 +2032,8 @@ function rainResize(c) {
 }
 function rainSpawn(w, h) {
   return { x: Math.random() * w, y: Math.random() * h,
-           r: (0.8 + Math.random() * 2.2) * rainDpr, slide: 0,
-           vy: 0, a: 0.25 + Math.random() * 0.4 };
+           r: (0.8 + Math.random() * 2.2) * rainDpr * rainCfg.size,
+           slide: 0, vy: 0, a: 0.25 + Math.random() * 0.4 };
 }
 function rainStep() {
   const c = rainCanvas();
@@ -1998,16 +2041,18 @@ function rainStep() {
     rainResize(c);
   const ctx = c.getContext("2d");
   const w = c.width, h = c.height;
+  const cfg = rainCfg;
   ctx.clearRect(0, 0, w, h);
-  const maxDrops = Math.min(110, Math.floor(w / 9));
-  if (rainDrops.length < maxDrops && Math.random() < 0.5)
+  const maxDrops = Math.min(cfg.cap, Math.floor(w / cfg.div));
+  if (rainDrops.length < maxDrops && Math.random() < cfg.spawn)
     rainDrops.push(rainSpawn(w, h));
   rainDrops = rainDrops.filter(d => d.y - d.r < h + 8);
   const trail = [];
   for (const d of rainDrops) {
     if (!d.slide) {
-      if (d.r < 4.6 * rainDpr) d.r += (0.006 + Math.random() * 0.01) * rainDpr;
-      if (d.r > 3.4 * rainDpr && Math.random() < 0.004) {
+      if (d.r < 4.6 * rainDpr * cfg.size)
+        d.r += (0.006 + Math.random() * 0.01) * rainDpr * cfg.grow;
+      if (d.r > 3.4 * rainDpr * cfg.size && Math.random() < cfg.slide) {
         d.slide = 1; d.vy = 0.4;
       }
     } else {
@@ -2019,12 +2064,16 @@ function rainStep() {
           y: d.y - d.r * 2, r: Math.max(0.7 * rainDpr, d.r * 0.4),
           slide: 0, vy: 0, a: d.a * 0.8 });
     }
+    const s = cfg.stops;
     const g = ctx.createRadialGradient(
       d.x - d.r * 0.35, d.y - d.r * 0.35, d.r * 0.1,
       d.x, d.y, d.r);
-    g.addColorStop(0, "rgba(255,255,255," + (d.a * 0.9) + ")");
-    g.addColorStop(0.55, "rgba(190,220,250," + (d.a * 0.45) + ")");
-    g.addColorStop(1, "rgba(150,190,235," + (d.a * 0.12) + ")");
+    g.addColorStop(0, "rgba(" + s[0][0] + "," + s[0][1] + "," +
+      s[0][2] + "," + (d.a * cfg.alpha * 0.9) + ")");
+    g.addColorStop(0.55, "rgba(" + s[1][0] + "," + s[1][1] + "," +
+      s[1][2] + "," + (d.a * cfg.alpha * 0.45) + ")");
+    g.addColorStop(1, "rgba(" + s[2][0] + "," + s[2][1] + "," +
+      s[2][2] + "," + (d.a * cfg.alpha * 0.12) + ")");
     ctx.fillStyle = g;
     ctx.beginPath();
     ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2);
@@ -2038,8 +2087,12 @@ function rainStart() {
   if (window.matchMedia &&
       window.matchMedia("(prefers-reduced-motion: reduce)").matches)
     return;
+  const theme = rainTheme();
+  if (!theme) return;
+  rainCfg = RAIN_THEMES[theme];
   const c = rainCanvas();
   rainResize(c);
+  c.style.background = rainCfg.mist;
   c.hidden = false;
   rainDrops = [];
   rainRAF = requestAnimationFrame(rainStep);
@@ -2068,22 +2121,48 @@ function rainCard() {
   hint.className = "hint";
   hint.textContent = "Raindrops rest on the glass over your Me " +
     "screen — they gather, grow, and slide down, like the moments " +
-    "just after rain. Only on this screen, and only for you.";
+    "just after rain. Only on this screen, and only for you. " +
+    "Pick a rain theme:";
   card.appendChild(hint);
+  const chips = document.createElement("div");
+  chips.className = "rain-chips";
+  const paintChips = () => {
+    chips.querySelectorAll(".rain-chip").forEach(ch => {
+      ch.classList.toggle("active",
+        ch.dataset.theme === (rainTheme() || "off"));
+    });
+  };
+  const mkChip = (id, label) => {
+    const ch = document.createElement("button");
+    ch.className = "rain-chip";
+    ch.dataset.theme = id;
+    ch.textContent = label;
+    ch.onclick = () => {
+      setRainTheme(id === "off" ? null : id);
+      paintChips();
+      paintBtn();
+      setStatus(id === "off" ? "After Rain Effect off"
+        : RAIN_THEMES[id].label + " rain on 🌧️");
+    };
+    chips.appendChild(ch);
+  };
+  mkChip("off", "🚫 Off");
+  Object.keys(RAIN_THEMES).forEach(id =>
+    mkChip(id, RAIN_THEMES[id].label));
+  card.appendChild(chips);
   const btn = document.createElement("button");
   btn.className = "data-btn rain-toggle";
-  const paint = () => {
+  const paintBtn = () => {
     btn.textContent = rainEnabled()
       ? "🌧️ Rain is ON — tap to turn off"
       : "🌦️ Turn on the rain";
   };
-  paint();
+  paintBtn();
+  paintChips();
   btn.onclick = () => {
-    try {
-      localStorage.setItem(rainKey(), rainEnabled() ? "0" : "1");
-    } catch (e) { /* storage unavailable; the card still paints */ }
-    paint();
-    syncRainFx();
+    setRainTheme(rainEnabled() ? null : "classic");
+    paintBtn();
+    paintChips();
     setStatus(rainEnabled() ? "After Rain Effect on 🌧️"
                             : "After Rain Effect off");
   };

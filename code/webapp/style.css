@@ -2374,3 +2374,15 @@ html[data-theme] .suggest-follow.on { background: var(--t-chip, #F3DCE7);
     rgba(170,205,245,.12), rgba(170,205,245,0) 42%); }
 #rain-fx[hidden] { display: none; }
 .rain-card .rain-toggle { width: 100%; }
+
+/* Phase 102: After Rain theme chips — the active rain theme is
+   the pink pill, so the current choice reads at a glance. */
+.rain-chips { display: flex; flex-wrap: wrap; gap: 8px;
+  margin: 2px 0 12px; }
+.rain-chip { min-height: 38px; padding: 7px 13px; border: none;
+  cursor: pointer; border-radius: 999px; font-weight: 700;
+  font-size: 13px; color: #472A3E; background: #F6DCE9;
+  box-shadow: 0 2px 6px rgba(232,67,147,.12); }
+.rain-chip.active { color: #fff;
+  background: linear-gradient(90deg, #FF8FBE, #E84393);
+  box-shadow: 0 4px 12px rgba(232,67,147,.35); }

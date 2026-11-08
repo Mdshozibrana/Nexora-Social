@@ -53,7 +53,7 @@ assert len(set(ids)) == 27
 import re as _re2
 for pid in NEW:
     assert _re2.match(r"^[a-z0-9][a-z0-9-]{0,39}$", pid)
-assert "app.js?v=101" in HTML and "style.css?v=101" in HTML
+assert "app.js?v=102" in HTML and "style.css?v=102" in HTML
 print("static contract OK")
 
 def make_init_data(user):

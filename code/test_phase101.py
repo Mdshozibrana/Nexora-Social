@@ -37,7 +37,10 @@ print("rain card mounted OK")
 assert '"nx_rain_" +' in JS or '"nx_rain_"' in JS
 assert "function rainKey()" in JS
 assert "function rainEnabled()" in JS
-assert 'localStorage.getItem(rainKey()) === "1"' in JS
+# Phase 102 re-pinned: the stored value is now the theme id
+# ("0" = off, "1" still reads as Classic); rainEnabled() is
+# rainTheme() !== null.
+assert "return rainTheme() !== null;" in JS
 print("per-account toggle OK")
 
 # --- the effect engine + lifecycle -------------------------------------
@@ -63,7 +66,9 @@ assert "#rain-fx[hidden]" in CSS
 print("canvas layering OK")
 
 # --- the toggle flips the saved value and re-syncs immediately ---------
-assert 'localStorage.setItem(rainKey(), rainEnabled() ? "0" : "1")' in JS
+# Phase 102 re-pinned: writes go through setRainTheme().
+assert "function setRainTheme(id)" in JS
+assert 'localStorage.setItem(rainKey(), id || "0")' in JS
 print("toggle behaviour OK")
 
 # --- Nexa's manual knows the card ---------------------------------------
@@ -71,7 +76,7 @@ assert "Rain Effect card" in MAIN
 print("nexa manual OK")
 
 # --- asset version -------------------------------------------------------
-assert "app.js?v=101" in HTML and "style.css?v=101" in HTML
+assert "app.js?v=102" in HTML and "style.css?v=102" in HTML
 print("asset version OK")
 
 print("PHASE 101 OK")
