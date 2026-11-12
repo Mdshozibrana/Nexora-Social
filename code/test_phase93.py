@@ -25,8 +25,8 @@ APP = open("webapp/app.js").read()
 
 block = APP[APP.index("const THEME_PALETTES"):APP.index("];", APP.index("const THEME_PALETTES"))]
 ids = re.findall(r'id: "([a-z0-9-]+)"', block)
-assert len(ids) == 27, ids  # 23 at Phase 93; 27 since Phase 98
-assert len(set(ids)) == 27, "duplicate palette ids"
+assert len(ids) == 33, ids  # 23 at Phase 93; 27 since Phase 98; 33 since Phase 104
+assert len(set(ids)) == 33, "duplicate palette ids"
 for pid in ("milk-plum", "night-kiwi", "black-gold",
             "peach-bloom", "champagne-slate", "cocoa-cloud",
             "meadow-violet", "winter-cherry"):
@@ -41,5 +41,5 @@ for hexv in ("#381932", "#FFF3E6", "#222222", "#89E900",
              "#E7D28F", "#53332A", "#B8CDE3", "#5E397F",
              "#9FB354", "#C10015", "#93B4D7"):
     assert hexv in APP, hexv
-assert "app.js?v=103" in HTML and "games.js?v=103" in HTML
+assert "app.js?v=104" in HTML and "games.js?v=104" in HTML
 print("PHASE 93 OK")

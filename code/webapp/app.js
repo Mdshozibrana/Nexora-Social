@@ -1638,6 +1638,31 @@ const THEME_PALETTES = [
     stops: ["#051A2D", "#A60E35", "#FEA24F", "#10BBC3", "#068187"] },
   { id: "copper-pay", name: "Copper Pay",
     stops: ["#100F0F", "#653615", "#B66120", "#FFFFFF"] },
+  // Phase 104: six more from the owner's fourth batch of
+  // screenshots — Instagram colour posts by
+  // illustrator.blog_artist (Nov 12), each a nature photo
+  // with its printed hex labels below it. Labels used
+  // as printed and cross-checked by sampling the pills'
+  // own fills (band order and hues match within JPEG
+  // tolerance). None duplicates the existing twenty-seven.
+  { id: "pink-hibiscus", name: "Pink Hibiscus",
+    stops: ["#8B004E", "#E91584", "#FF6BB1", "#FFB6D9",
+            "#FFE4F1", "#6B8E23", "#2D4D1E"] },
+  { id: "blue-hibiscus", name: "Blue Hibiscus",
+    stops: ["#8B0022", "#E11D48", "#58B0E6", "#8ED4F7",
+            "#D4F0FF", "#4F8F2D", "#1B4D2E"] },
+  { id: "ripe-mango", name: "Ripe Mango",
+    stops: ["#E30A17", "#F57C00", "#F4A261", "#F7D117",
+            "#A4C639", "#4E8F2D", "#1F4D1F"] },
+  { id: "red-rose", name: "Red Rose",
+    stops: ["#6B0013", "#A80D22", "#E1223B", "#2E5D2F",
+            "#4F8F3A", "#A7C957", "#D7E7B8"] },
+  { id: "autumn-maple", name: "Autumn Maple",
+    stops: ["#8B0D0D", "#D71919", "#F04A20", "#F7931E",
+            "#FFD43B", "#8FB326", "#4E3F0C"] },
+  { id: "avocado", name: "Avocado",
+    stops: ["#0E2010", "#253C1B", "#3E5B2E", "#5B7F49",
+            "#83A56D", "#E5EDDE"] },
 ];
 const TH_WHITE = [255, 255, 255], TH_BLACK = [0, 0, 0];
 function thRgb(hex) {
