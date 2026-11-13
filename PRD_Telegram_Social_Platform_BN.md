@@ -1034,3 +1034,13 @@ Owner তাঁর দেখা একটি ফেসবুক স্ক্র�
 - Phase 108-এর স্ক্রল লকে কোনো হাত দেওয়া হয়নি।
 
 যাচাই: test_phase109 — বাটন শিটের .ds-actions-এর ভেতরে Copy Prompt-এর পাশে, ওয়্যারিংয়ে mediaUrl + download + click, Phase 108-এর চিহ্ন অক্ষত, ?v=109। পূর্ণ রিগ্রেশনে সব ১০৫টি স্যুট সবুজ এবং লাইভে যাচাই করা হয়েছে।
+
+## Phase 110 — Design Download, Telegram Native (Nov 13, 2026)
+
+মালিকের রিপোর্ট (Phase 109 লাইভের পর ফোন থেকে): Download বাটন চাপলে কিছুই হয় না ("হয়না")। আর ডাউনলোড হলে যেন বোঝা যায়।
+
+আসল কারণ: Phase 109-এর anchor-download প্যাটার্ন Telegram WebView-তে নীরবে উপেক্ষা হয় — WebView `<a download>` ক্লিককে ফাইল ডাউনলোডে রূপান্তর করে না, তাই বাটন চাপলেও কিছু ঘটে না।
+
+ফিক্স: Telegram-এর নিজের `WebApp.downloadFile` (WebApp 8.0+) — বাটন চাপলে প্রথমে "⬇️ Downloading…" দেখায়, ছবির mime ধরতে /media-তে HEAD চেক করে সঠিক এক্সটেনশন (jpg/png/webp/gif) দিয়ে `nexora-design-<id>.<ext>` নামে ডাউনলোড চালায়; শেষ হলে বাটন "✅ Downloaded!" হয় আর স্ট্যাটাসে "Image downloaded ✓ — check your gallery / Downloads." লেখা ওঠে, ৪ সেকেন্ড পর লেবেল আগের অবস্থায় ফিরে আসে; বাতিল করলে আগের লেখা ফিরে আসে আর "Download cancelled." জানায়। পুরনো Telegram-এ (8.0-এর নিচে) downloadFile না থাকলে `tg.openLink` দিয়ে ছবি ব্রাউজারে খুলে দেয় — "Opened in your browser — save the image from there."; Telegram-এর বাইরে (ডেস্কটপ) আগের anchor-downloadই চলে। ডবল-ট্যাপে একই ডাউনলোড দুবার শুরু হয় না।
+
+যাচাই: test_phase110 — downloadFile ওয়্যারিং, Downloading…/Downloaded!/cancelled স্ট্যাটাস, এক্সটেনশন ধরা, openLink ও anchor ফলব্যাক, ডবল-ট্যাপ গার্ড, শিট খুললে লেবেল রিসেট, Phase 108/109-এর চিহ্ন অক্ষত, ?v=110। পূর্ণ রিগ্রেশনে সব ১০৬টি স্যুট সবুজ এবং লাইভে যাচাই করা হয়েছে।

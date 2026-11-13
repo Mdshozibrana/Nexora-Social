@@ -4093,6 +4093,7 @@ function openDesignSheet(d) {
   $("ds-edit-status").textContent = "";
   dsEditFile = null;
   $("ds-copy").textContent = "📋 Copy Prompt";
+  $("ds-download").textContent = "⬇️ Download";
   $("design-sheet-wrap").hidden = false;
   $("app-scroll").classList.add("sheet-open");
   updateBackButton();
@@ -4146,15 +4147,62 @@ $("ds-copy").onclick = async () => {
   if (ok) setStatus("Prompt copied 📋 — paste it anywhere.");
 };
 
-// Phase 109 (owner): download the design image, like Copy Prompt.
-$("ds-download").onclick = () => {
+// Phase 110 (owner: the anchor download silently does nothing
+// in the Telegram WebView): use Telegram's native downloadFile
+// (WebApp 8.0+) — the client shows its own download popup and
+// reports back whether the download started — and show the
+// outcome on the button. Fallbacks: openLink on old Telegram,
+// the anchor on desktop browsers.
+$("ds-download").onclick = async () => {
   if (!currentDesign) return;
-  const a = document.createElement("a");
-  a.href = mediaUrl(currentDesign.image_file_id);
-  a.download = "";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
+  const btn = $("ds-download");
+  if (btn.textContent !== "⬇️ Download") return;
+  const url = location.origin + mediaUrl(currentDesign.image_file_id);
+  const done = () => {
+    btn.textContent = "✅ Downloaded!";
+    setStatus("Image downloaded ✓ — check your gallery / Downloads.");
+    setTimeout(() => { btn.textContent = "⬇️ Download"; }, 4000);
+  };
+  const anchorDownload = () => {
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    done();
+  };
+  const openInBrowser = () => {
+    if (window.Telegram && tg && tg.openLink) {
+      tg.openLink(url);
+      btn.textContent = "⬇️ Download";
+      setStatus("Opened in your browser — save the image from there.");
+    } else anchorDownload();
+  };
+  btn.textContent = "⬇️ Downloading…";
+  try {
+    if (window.Telegram && tg && tg.downloadFile) {
+      let ext = "jpg";
+      try {
+        const head = await fetch(url, { method: "HEAD" });
+        const ct = (head.headers.get("content-type") || "").toLowerCase();
+        if (ct.includes("png")) ext = "png";
+        else if (ct.includes("webp")) ext = "webp";
+        else if (ct.includes("gif")) ext = "gif";
+      } catch (e) {}
+      tg.downloadFile(
+        { url, file_name: "nexora-design-" + currentDesign.id + "." + ext },
+        (downloading) => {
+          if (downloading) done();
+          else {
+            btn.textContent = "⬇️ Download";
+            setStatus("Download cancelled.");
+          }
+        });
+    } else openInBrowser();
+  } catch (e) {
+    openInBrowser();
+  }
 };
 $("ds-remove").onclick = async () => {
   if (!currentDesign) return;
