@@ -3533,6 +3533,13 @@ async def media_proxy(file_id: str, request: Request):
                 "accept-ranges"):
         if resp.headers.get(key):
             headers[key] = resp.headers[key]
+    # Phase 111 (owner: Design page loads slowly): /media never sent
+    # a Cache-Control, so every Design visit re-downloaded every
+    # image from Telegram through this proxy. A file_id's bytes never
+    # change, and the signed ?mt= token already bounds access to 7
+    # days, so a private 7-day cache is safe: repeat visits serve
+    # from the browser cache instead of re-fetching.
+    headers["cache-control"] = "private, max-age=604800, immutable"
     return StreamingResponse(body(), status_code=resp.status_code,
                              headers=headers,
                              media_type=resp.headers.get("content-type"))
