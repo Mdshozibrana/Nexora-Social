@@ -2449,3 +2449,8 @@ html[data-theme] .suggest-follow.on { background: var(--t-chip, #F3DCE7);
   margin-bottom: 12px; }
 .qr-actions { display: flex; gap: 10px; justify-content: center; }
 .qr-note { margin-top: 12px; }
+
+/* --------------------------------- Phase 115: related designs ------ */
+#ds-related { margin-top: 16px; }
+#ds-related-grid { margin-top: 10px; }
+#ds-related-grid .design-card { cursor: pointer; }

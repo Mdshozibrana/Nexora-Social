@@ -4237,6 +4237,7 @@ $("design-more").onclick = () => loadDesigns(false);
 })();
 
 function openDesignSheet(d) {
+  const isNew = !currentDesign || currentDesign.id !== d.id;
   currentDesign = d;
   $("ds-img").src = mediaUrl(d.image_file_id);
   // Phase 31 (owner request): the caption opens PARTLY — a few
@@ -4265,6 +4266,13 @@ function openDesignSheet(d) {
     $("ds-more").hidden =
       promptEl.scrollHeight <= promptEl.clientHeight + 2;
   });
+  // Phase 115: a new design starts at the top of the sheet and
+  // earns its own related set below; a refresh of the SAME design
+  // (like / edit save) keeps its scroll place and its set.
+  if (isNew) {
+    $("design-sheet").scrollTop = 0;
+    loadRelatedDesigns(d);
+  }
   // Opening the sheet is the design's view (unique per member).
   markViewed("designs", d.id, views => {
     d.views = views;
@@ -4279,6 +4287,43 @@ function closeDesignSheet() {
   $("app-scroll").classList.remove("sheet-open");
   updateBackButton();
   currentDesign = null;
+}
+
+// Phase 115 (owner: Pinterest-style related designs under an opened
+// design): the sheet's "More like this" strip — the server's
+// similar_to ranking (prompt-word overlap, the same engine as the
+// 🔍 Similar button) — as image-only thumbnails; tapping one opens
+// that design in the sheet, which then loads its own related set.
+let dsRelatedSeq = 0;
+async function loadRelatedDesigns(d) {
+  const box = $("ds-related");
+  const grid = $("ds-related-grid");
+  const token = ++dsRelatedSeq;
+  grid.innerHTML = "";
+  box.hidden = true;
+  try {
+    const r = await api("/designs?similar_to=" + d.id + "&limit=12");
+    if (token !== dsRelatedSeq || !currentDesign ||
+        currentDesign.id !== d.id) return;
+    (r.designs || []).forEach(rel => {
+      const card = document.createElement("div");
+      card.className = "design-card";
+      const media = document.createElement("div");
+      media.className = "design-media";
+      const img = document.createElement("img");
+      img.src = mediaUrl(rel.image_file_id);
+      img.loading = "lazy";
+      img.alt = "Design";
+      img.draggable = false;
+      const shield = document.createElement("div");
+      shield.className = "img-shield";
+      media.append(img, shield);
+      card.append(media);
+      card.onclick = () => openDesignSheet(rel);
+      grid.appendChild(card);
+    });
+    box.hidden = grid.children.length === 0;
+  } catch (e) { /* related is a bonus, never the view itself */ }
 }
 $("design-sheet-backdrop").onclick = closeDesignSheet;
 $("ds-close").onclick = closeDesignSheet;
