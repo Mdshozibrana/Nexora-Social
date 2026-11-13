@@ -1033,4 +1033,4 @@ Owner তাঁর দেখা একটি ফেসবুক স্ক্র�
 - পোস্টের ⋮ মেনুর Download (Phase 54)-এর মতোই anchor-download প্যাটার্ন: `mediaUrl(currentDesign.image_file_id)`-এ `<a download>` ক্লিক — সাইন করা /media লিংক, তাই ছবি ডাউনলোড হয়।
 - Phase 108-এর স্ক্রল লকে কোনো হাত দেওয়া হয়নি।
 
-যাচাই: test_phase109 — বাটন শিটের .ds-actions-এর ভেতরে Copy Prompt-এর পাশে, ওয়্যারিংয়ে mediaUrl + download + click, Phase 108-এর চিহ্ন অক্ষত, ?v=109। পূর্ণ রিগ্রেশনে সব ১০৫টি স্যুট সবুজ।
+যাচাই: test_phase109 — বাটন শিটের .ds-actions-এর ভেতরে Copy Prompt-এর পাশে, ওয়্যারিংয়ে mediaUrl + download + click, Phase 108-এর চিহ্ন অক্ষত, ?v=109। পূর্ণ রিগ্রেশনে সব ১০৫টি স্যুট সবুজ এবং লাইভে যাচাই করা হয়েছে।
