@@ -33,9 +33,10 @@ def register_post(db, author, ptype, media_file_id, caption,
                   thumb_file_id=None):
     """Create a post for author (a models.User). Returns
     (post, is_first_post, referral_qualified_now).
-    On the author's FIRST post ever: author earns post points, and a
-    pending referral qualifies, paying the referrer (PRD section 5).
-    Soft-deleted posts still count toward 'first ever'."""
+    Every post earns post points (Phase 113); on the author's FIRST
+    post ever a pending referral qualifies, paying the referrer
+    (PRD section 5). Soft-deleted posts still count toward
+    'first ever'."""
     author_id = author.telegram_id
     is_first = db.query(models.Post).filter_by(user_id=author_id).count() == 0
     post = models.Post(user_id=author_id, type=ptype,
@@ -47,13 +48,15 @@ def register_post(db, author, ptype, media_file_id, caption,
     db.commit()
     db.refresh(post)
     qualified = False
+    # Phase 113 (owner): every post earns 10 points, not just the
+    # first. Referral qualification stays first-post-only below.
+    award_points(db, author_id, POINTS["post"], "post", ref_id=post.id)
     if is_first:
-        award_points(db, author_id, POINTS["post"], "post", ref_id=post.id)
         ref = db.query(models.Referral).filter_by(new_user_id=author_id).first()
         if ref is not None and not ref.qualified:
             ref.qualified = True
             qualified = True
             award_points(db, ref.referrer_id, POINTS["referral"],
                          "referral", ref_id=ref.id)
-        db.commit()
+    db.commit()
     return post, is_first, qualified

@@ -758,7 +758,7 @@ async def _send_to_telegram(user, filename, data, content_type):
 # post died with it. Now the request only receives the file: the
 # transcode + Telegram send run as a background job (one at a time —
 # the free instance has ~512 MB), and the member hears the outcome
-# from the bot. The post, with its +5 points, appears when it is ready.
+# from the bot. The post, with its +10 points, appears when it is ready.
 _video_jobs = set()
 _transcode_sem = asyncio.Semaphore(1)
 
@@ -1659,6 +1659,14 @@ def _task_progress(db, user_id, task, day_start, claimed):
         return db.query(models.Comment).filter(
             models.Comment.user_id == user_id,
             models.Comment.created_at >= day_start).count()
+    if metric == "reactions":
+        return db.query(models.Like).filter(
+            models.Like.user_id == user_id,
+            models.Like.created_at >= day_start).count()
+    if metric == "ads":
+        return db.query(models.AdEvent).filter(
+            models.AdEvent.user_id == user_id,
+            models.AdEvent.created_at >= day_start).count()
     return 0
 
 
@@ -3833,7 +3841,7 @@ _NEXA_SYSTEM = (
     "POSTING: write from the Feed composer, or send a photo or "
     "video directly to @NexoraSocial_bot in chat with a "
     "caption and it becomes your post — the most reliable way "
-    "to post videos. A post earns 5 points. "
+    "to post videos. A post earns 10 points. "
     "VIDEOS: the Videos tab is full-screen reels — swipe to "
     "move, tap to pause, the speaker button toggles sound; "
     "liking, commenting and the menu work like the Feed. "
@@ -3843,10 +3851,11 @@ _NEXA_SYSTEM = (
     "designs are ordered by your taste. Only the admin adds "
     "designs. "
     "POINTS: daily tasks on the Tasks page — check-in 20 "
-    "points, the follow task 5, the comment task 5, each once "
-    "a day, press Claim. The balance and history are on the "
-    "profile in the My Points card. A referral earns 20 points "
-    "when the friend makes their first post. "
+    "points, the follow task 10, the comment task 5, the react "
+    "task 10, the ad task 20, each once a day, press Claim. The "
+    "balance and history are on the profile in the My Points "
+    "card. A referral earns 20 points when the friend makes "
+    "their first post. "
     "REFERRALS: your invite link is on your profile. A "
     "referral is qualified when the friend joins AND makes a "
     "first post. "

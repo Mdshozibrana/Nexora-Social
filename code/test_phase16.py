@@ -140,7 +140,7 @@ with TestClient(app) as c:
     assert r.headers["content-type"] == "image/jpeg"
     print("/media streams bytes intact OK (token-gated since Phase 28)")
 
-    # --- in-app photo upload creates a media post (+5 points) ---
+    # --- in-app photo upload creates a media post (+10 points, Phase 113) ---
     before = c.post("/auth", json={"initData": AMY["X-Init-Data"]}).json()["points"]
     r = c.post("/posts/upload", headers=AMY, data={"caption": "hello #sun"},
                files={"file": ("pic.jpg", b"\xff\xd8\xff\xe0jpegbytes",
@@ -150,7 +150,7 @@ with TestClient(app) as c:
     assert post["type"] == "photo" and post["media_file_id"] == FAKE_ID, post
     assert post["caption"] == "hello #sun"
     after = c.post("/auth", json={"initData": AMY["X-Init-Data"]}).json()["points"]
-    assert after == before + 5, (before, after)
+    assert after == before + 10, (before, after)
     print("photo upload post + points OK")
 
     # --- video upload accepted (Phase 27: 202 background path) ---

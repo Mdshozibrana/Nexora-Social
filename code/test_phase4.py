@@ -50,7 +50,7 @@ with TestClient(app) as c:
     assert post.hashtags == "first"
     alice = db.get(models.User, 111)
     bob = db.get(models.User, 222)
-    assert bob.points_balance == 5 and alice.points_balance == 20, (
+    assert bob.points_balance == 10 and alice.points_balance == 20, (
         bob.points_balance, alice.points_balance)
     post2, is_first2, _ = register_post(db, bob, "text", None, "second")
     assert not is_first2

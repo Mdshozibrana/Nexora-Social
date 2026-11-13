@@ -2507,7 +2507,10 @@ async function myExtras() {
     const REASON_META = {
       "task:checkin": ["📅", "Daily check-in"],
       "task:follow2": ["👥", "Follow task"],
+      "task:follow3": ["👥", "Follow task"],
       "task:comment5": ["💬", "Comment task"],
+      "task:react6": ["❤️", "React task"],
+      "task:adwatch": ["📺", "Ad task"],
       "referral": ["🔗", "Referral bonus"],
       "post": ["📝", "New post"],
       "admin_adjust": ["🛡️", "Admin adjustment"],
@@ -2806,6 +2809,13 @@ async function loadTasks() {
             loadTasks();
           } catch (e) { setStatus("Could not claim this task."); }
         };
+      } else if (t.key === "adwatch") {
+        // Phase 113 (owner): the ad task is done by tapping to watch
+        // an ad — a real completed show reports /ads/shown, which is
+        // what unlocks the claim. No fill, no points.
+        btn.textContent = "▶️ Watch ad";
+        btn.className = "task-claim btn";
+        btn.onclick = () => showTaskAd(btn);
       } else {
         btn.textContent = "In progress";
         btn.disabled = true;
@@ -5241,6 +5251,33 @@ function maybeShowAd() {
       api("/ads/shown", { method: "POST" }).catch(() => {});
     }).catch(() => {});
   } catch (e) {}
+}
+
+// Phase 113 (owner): the ad task's explicit "Watch ad" button. Unlike
+// the once-per-session auto ad above, this is user-initiated, so it
+// shows on demand; a completed show reports /ads/shown (awaited, so
+// the task list refreshes only after the report lands) and that is
+// the progress the task counts. No fill means no report, no points.
+async function showTaskAd(btn) {
+  if (!adController) {
+    setStatus("Ads are not available right now.");
+    return;
+  }
+  btn.disabled = true;
+  btn.textContent = "Loading ad…";
+  try {
+    const p = adController.show();
+    if (p && p.then) {
+      await p;
+      await api("/ads/shown", { method: "POST" }).catch(() => {});
+      setStatus("Ad finished — you can claim the task now.");
+    } else {
+      setStatus("No ad available right now — try again later.");
+    }
+  } catch (e) {
+    setStatus("No ad available right now — try again later.");
+  }
+  loadTasks();
 }
 
 // ------------------------------------------- Phase 36: messages + stories --

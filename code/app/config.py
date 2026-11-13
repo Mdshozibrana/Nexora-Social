@@ -85,20 +85,27 @@ RATE_LIMITS = {
 # Points economy (PRD section 5). PLACEHOLDER defaults — these are product
 # policy numbers the owner can adjust freely, not secrets. Likes deliberately
 # earn nothing here (anti-farming rule for this phase).
-POINTS = {"post": 5, "referral": 20}
+POINTS = {"post": 10, "referral": 20}
 
-# Daily tasks (owner request, Oct 31): each can be claimed ONCE per day.
+# Daily tasks (owner request, Oct 31; values revised Nov 13, Phase 113):
+# each can be claimed ONCE per day.
 # metric = how progress is counted for the current day:
-#   checkin  -> the claim itself is the check-in
-#   follows  -> Follow rows the user created today
-#   comments -> Comment rows the user wrote today
+#   checkin   -> the claim itself is the check-in
+#   follows   -> Follow rows the user created today
+#   comments  -> Comment rows the user wrote today
+#   reactions -> Like rows the user created today (one per post)
+#   ads       -> AdEvent rows today (only real completed ad shows)
 DAILY_TASKS = [
     {"key": "checkin", "title": "Daily check-in", "icon": "📅",
      "target": 1, "points": 20, "metric": "checkin"},
-    {"key": "follow2", "title": "Follow 2 people", "icon": "👥",
-     "target": 2, "points": 5, "metric": "follows"},
+    {"key": "follow3", "title": "Follow 3 people", "icon": "👥",
+     "target": 3, "points": 10, "metric": "follows"},
     {"key": "comment5", "title": "Write 5 comments", "icon": "💬",
      "target": 5, "points": 5, "metric": "comments"},
+    {"key": "react6", "title": "React to 6 posts", "icon": "❤️",
+     "target": 6, "points": 10, "metric": "reactions"},
+    {"key": "adwatch", "title": "Watch an ad", "icon": "📺",
+     "target": 1, "points": 20, "metric": "ads"},
 ]
 
 # Monetization gate (owner request, Oct 31): ALL targets must be met

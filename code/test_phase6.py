@@ -1,7 +1,8 @@
-"""Phase-6 tests: daily tasks (check-in 20 / follow-2 5 / comment-5 5,
-once per day), the 30-day unbroken check-in streak, and the monetization
-gate (followers 500, posts 25, age 14d, lifetime points 5000, streak 30).
-Numbers per the owner's update, Oct 31."""
+"""Phase-6 tests: daily tasks (check-in 20 / follow-3 10 / comment-5 5,
+react-6 10 / ad 20, once per day), the 30-day unbroken check-in
+streak, and the monetization gate (followers 500, posts 25, age 14d,
+lifetime points 5000, streak 30).
+Numbers per the owner's update, Oct 31, revised Nov 13 (Phase 113)."""
 import hashlib, hmac, json, os, urllib.parse
 from datetime import datetime, timedelta
 
@@ -34,23 +35,28 @@ def make_init_data(user):
 def H(uid, name):
     return {"X-Init-Data": make_init_data({"id": uid, "first_name": name})}
 
-CAROL, DAVE, ERIN = H(333, "Carol"), H(444, "Dave"), H(555, "Erin")
+CAROL, DAVE, ERIN, FRANK = (H(333, "Carol"), H(444, "Dave"),
+                            H(555, "Erin"), H(666, "Frank"))
 TODAY = datetime.utcnow().date()
 
 with TestClient(app) as c:
-    for h in (CAROL, DAVE, ERIN):
+    for h in (CAROL, DAVE, ERIN, FRANK):
         r = c.post("/auth", json={"initData": h["X-Init-Data"]})
         assert r.status_code == 200
 
     tasks = c.get("/me/tasks", headers=CAROL).json()["tasks"]
     by_key = {t["key"]: t for t in tasks}
-    assert set(by_key) == {"checkin", "follow2", "comment5"}, by_key
+    assert set(by_key) == {"checkin", "follow3", "react6", "comment5",
+                          "adwatch"}, by_key
     assert by_key["checkin"]["points"] == 20 and by_key["checkin"]["claimable"] is True
-    assert by_key["follow2"]["points"] == 5 and by_key["comment5"]["points"] == 5
+    assert by_key["follow3"]["points"] == 10
+    assert by_key["comment5"]["points"] == 5
+    assert by_key["react6"]["points"] == 10
+    assert by_key["adwatch"]["points"] == 20
     assert by_key["checkin"]["streak"] == 0
     print("task list + owner point values OK")
 
-    r = c.post("/me/tasks/follow2/claim", headers=CAROL)
+    r = c.post("/me/tasks/follow3/claim", headers=CAROL)
     assert r.status_code == 400
     r = c.post("/me/tasks/nope/claim", headers=CAROL)
     assert r.status_code == 404
@@ -64,16 +70,17 @@ with TestClient(app) as c:
 
     c.post("/users/444/follow", headers=CAROL)
     c.post("/users/555/follow", headers=CAROL)
-    r = c.post("/me/tasks/follow2/claim", headers=CAROL)
-    assert r.json()["points_awarded"] == 5 and r.json()["balance"] == 25
+    c.post("/users/666/follow", headers=CAROL)
+    r = c.post("/me/tasks/follow3/claim", headers=CAROL)
+    assert r.json()["points_awarded"] == 10 and r.json()["balance"] == 30
     post = c.post("/posts", headers=DAVE,
                   json={"type": "text", "caption": "Dave post"}).json()
     for i in range(5):
         c.post(f"/posts/{post['id']}/comments", headers=CAROL,
                json={"text": f"c{i}"})
     r = c.post("/me/tasks/comment5/claim", headers=CAROL)
-    assert r.json()["points_awarded"] == 5 and r.json()["balance"] == 30
-    print("follow-2 (+5) and comment-5 (+5) tasks OK")
+    assert r.json()["points_awarded"] == 5 and r.json()["balance"] == 35
+    print("follow-3 (+10) and comment-5 (+5) tasks OK")
 
     mon = c.get("/me/monetization", headers=CAROL).json()
     assert mon["unlocked"] is False
@@ -82,7 +89,7 @@ with TestClient(app) as c:
     assert checks["referrals"]["required"] == 12
     assert checks["referrals"]["current"] == 0
     assert checks["lifetime_points"]["required"] == 5000
-    assert checks["lifetime_points"]["current"] == 30
+    assert checks["lifetime_points"]["current"] == 35
     assert checks["checkin_streak"]["required"] == 30
     assert checks["checkin_streak"]["current"] == 1
     print("monetization gate: owner targets, locked state OK")

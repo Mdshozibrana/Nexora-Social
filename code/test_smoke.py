@@ -94,12 +94,12 @@ with TestClient(app) as c:
     pid1 = p1["id"]
     print("post created, hashtags parsed:", p1["hashtags"])
 
-    # Author post points (5) + ledger row.
+    # Author post points (10) + ledger row.
     r = c.get("/me/points", headers=H2); assert r.status_code == 200, r.text
     pts = r.json()
-    assert pts["balance"] == 5, pts
+    assert pts["balance"] == 10, pts
     assert len(pts["entries"]) == 1, pts
-    assert pts["entries"][0]["reason"] == "post" and pts["entries"][0]["amount"] == 5, pts
+    assert pts["entries"][0]["reason"] == "post" and pts["entries"][0]["amount"] == 10, pts
 
     # Referrer referral points (20) + ledger row; referral now qualified.
     r = c.get("/me/points", headers=H1); assert r.status_code == 200, r.text
@@ -115,18 +115,18 @@ with TestClient(app) as c:
     assert refs["referrals"][0]["qualified"] is True, refs
     r = c.get("/me/referrals", headers=H2)
     assert r.json()["total"] == 0, r.json()
-    print("first post qualified the referral; balances Bob=5, Alice=20: OK")
+    print("first post qualified the referral; balances Bob=10, Alice=20: OK")
 
-    # Bob's SECOND post: no re-qualification, no further points.
+    # Bob's SECOND post: no re-qualification, but every post pays 10 now.
     r = c.post("/posts", headers=H2, json={
         "type": "text", "caption": "Second post #hello"})
     assert r.status_code == 200, r.text
     pid2 = r.json()["id"]
-    assert c.get("/me/points", headers=H2).json()["balance"] == 5
-    assert len(c.get("/me/points", headers=H2).json()["entries"]) == 1
+    assert c.get("/me/points", headers=H2).json()["balance"] == 20
+    assert len(c.get("/me/points", headers=H2).json()["entries"]) == 2
     assert c.get("/me/points", headers=H1).json()["balance"] == 20
     assert len(c.get("/me/points", headers=H1).json()["entries"]) == 1
-    print("second post did not re-qualify or re-pay: OK")
+    print("second post paid again (10) but did not re-qualify: OK")
 
     # Like toggle by Carol, then a like by Alice.
     r = c.post(f"/posts/{pid1}/like", headers=H3); assert r.status_code == 200, r.text
