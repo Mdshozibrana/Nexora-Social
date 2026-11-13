@@ -273,6 +273,7 @@ function anyOverlayOpen() {
   const pop = $("design-pop");
   return !$("reel-sheet-wrap").hidden
     || !$("design-sheet-wrap").hidden
+    || !$("photo-viewer").hidden
     || (pop && !pop.hidden)
     || $("glassbar").classList.contains("open");
 }
@@ -286,7 +287,8 @@ function updateBackButton() {
 
 function onAppBack() {
   const pop = $("design-pop");
-  if (pop && !pop.hidden) hideDesignPop();
+  if (!$("photo-viewer").hidden) closePhotoViewer();
+  else if (pop && !pop.hidden) hideDesignPop();
   else if (!$("reel-sheet-wrap").hidden) closeReelMenu();
   else if (!$("design-sheet-wrap").hidden) closeDesignSheet();
   else if ($("glassbar").classList.contains("open")) closeSidebar();
@@ -638,6 +640,16 @@ function avatarEl(name, id, big, photoId) {
     img.src = mediaUrl(photoId);
     img.alt = name || "";
     img.loading = "lazy";
+    img.draggable = false;
+    // Phase 112 (owner): tap a profile picture to see it big.
+    // stopPropagation so a tap opens the viewer instead of the
+    // parent's action (open profile / open chat); pointerdown/up
+    // stopPropagation (Phase 99 pattern) so a hold on the avatar
+    // never arms a parent card's long-press menu.
+    img.onclick = e => { e.stopPropagation();
+      openPhotoViewer(photoId, name); };
+    img.addEventListener("pointerdown", e => e.stopPropagation());
+    img.addEventListener("pointerup", e => e.stopPropagation());
     img.onerror = () => img.replaceWith(avatarEl(name, id, big));
     return img;
   }
@@ -650,6 +662,28 @@ function avatarEl(name, id, big, photoId) {
     ",70%,45%), hsl(" + ((hue + 50) % 360) + ",75%,55%))";
   return el;
 }
+
+// ---------- Phase 112: full-screen profile photo viewer ----------
+// Tap any profile picture (avatarEl wires it) to see the photo big,
+// whole and uncropped; tap anywhere or ✕ (or the app back button)
+// to close. The image loads from the Phase 111 /media cache, so
+// reopening is instant.
+function openPhotoViewer(photoId, name) {
+  $("pv-img").src = mediaUrl(photoId);
+  $("pv-img").alt = name || "Profile photo";
+  $("pv-name").textContent = name || "";
+  $("photo-viewer").hidden = false;
+  updateBackButton();
+}
+function closePhotoViewer() {
+  const v = $("photo-viewer");
+  if (v.hidden) return;
+  v.hidden = true;
+  $("pv-img").src = "";
+  updateBackButton();
+}
+$("photo-viewer").onclick = () => closePhotoViewer();
+$("pv-close").onclick = e => { e.stopPropagation(); closePhotoViewer(); };
 
 // ---------------------------------------------------------------- posts ---
 function postCard(p) {

@@ -68,7 +68,7 @@ assert "attachLongPress(el, () => showDesignPop(d, el));" in JS
 assert "openDesignSheet(d); };" in JS
 # 44px touch target
 assert ".design-like { min-height: 44px;" in CSS
-assert "app.js?v=111" in HTML and "style.css?v=111" in HTML
+assert "app.js?v=112" in HTML and "style.css?v=112" in HTML
 print("static contract OK")
 
 def make_init_data(user):

@@ -1116,6 +1116,23 @@ body { padding: 0; overflow: hidden; }
 #design-sheet-wrap { position: fixed; inset: 0; z-index: 80; }
 #design-sheet-backdrop { position: absolute; inset: 0;
   background: rgba(46, 12, 30, .55); }
+/* Phase 112: full-screen profile photo viewer (owner: tap a
+   profile picture to see it big). Topmost overlay; the photo
+   shows whole (contain, never cropped); tap anywhere or ✕ closes. */
+#photo-viewer { position: fixed; inset: 0; z-index: 100;
+  background: rgba(10, 8, 12, .94); display: flex;
+  align-items: center; justify-content: center; }
+#photo-viewer[hidden] { display: none; }
+#pv-img { max-width: 100%; max-height: 100%; object-fit: contain; }
+#pv-close { position: absolute; top: 14px; right: 14px;
+  width: 40px; height: 40px; border-radius: 50%; border: 0;
+  background: rgba(255, 255, 255, .16); color: #fff;
+  font-size: 20px; line-height: 1; cursor: pointer; }
+#pv-name { position: absolute; left: 0; right: 0; bottom: 20px;
+  text-align: center; color: #fff; font-size: 15px;
+  font-weight: 700; text-shadow: 0 1px 6px rgba(0, 0, 0, .6);
+  pointer-events: none; }
+img.avatar { cursor: pointer; }
 #design-sheet { position: absolute; left: 10px; right: 10px;
   bottom: 10px; max-height: 88%; overflow-y: auto;
   overscroll-behavior: contain;

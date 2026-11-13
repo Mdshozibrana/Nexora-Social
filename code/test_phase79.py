@@ -40,5 +40,5 @@ assert "max-height: calc(100vh - 20px)" not in CSS
 assert "overflow-y: auto" in CSS
 print("sidebar layering OK")
 
-assert "app.js?v=111" in HTML and "style.css?v=111" in HTML
+assert "app.js?v=112" in HTML and "style.css?v=112" in HTML
 print("PHASE 79 OK")
