@@ -31,7 +31,7 @@ CSS = open("webapp/style.css").read()
 for marker in ('class="earn-panel"', 'id="earn-ads-today"',
                'id="earn-est-month"', 'id="earn-rate-in"',
                'id="earn-chart"', 'id="earn-top-points"',
-               'id="earn-top-today"', "?v=105"):
+               'id="earn-top-today"', "?v=106"):
     assert marker in HTML, marker
 for marker in ("loadEarnings", "/admin/earnings", "fmtTk"):
     assert marker in JS, marker
