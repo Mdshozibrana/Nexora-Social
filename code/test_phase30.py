@@ -48,8 +48,8 @@ print("video lifecycle contract OK")
 for marker in ("Phase 30", "auroraA", "auroraB", "cardIn", "pillGlow",
                "sheen", "heartPop", "prefers-reduced-motion"):
     assert marker in CSS, marker
-# The clay base theme is unchanged underneath the polish.
-assert "#F8EAF1" in CSS and "#EC4899" in CSS
+# Phase 105: the clay base moved to warm cream + sky accent.
+assert "#F6F1E7" in CSS and "#3E8FD0" in CSS
 print("polish layer OK")
 
 

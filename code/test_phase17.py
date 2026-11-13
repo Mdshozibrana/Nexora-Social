@@ -21,7 +21,7 @@ from app.main import app
 
 with TestClient(app) as c:
     css = c.get("/webapp/style.css").text
-    for marker in ("#F8EAF1", "#FFFBFC", "#472A3E", "--clay-shadow",
+    for marker in ("#F6F1E7", "#FFFBFC", "#3A2E33", "--clay-shadow",
                    "--clay-inset", ".game-card:nth-child", "#nav-pill",
                    "@keyframes navBtnPop", "prefers-reduced-motion",
                    "cubic-bezier(.34, 1.45"):

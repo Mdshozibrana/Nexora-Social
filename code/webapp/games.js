@@ -1294,7 +1294,7 @@ registerGame({
     const TGT = { x: 252, y: 96, r: 46 };
     const TGT_Y = 96;
     const HAND = { x: 64, y: GY - 60 };
-    const PCOL = ["#FFFFFF", "#FF8FBE"];
+    const PCOL = ["#FFFFFF", "#58B0E6"];
     const THEMES = [
       { name: "Night Range", top: "#0B0B0E", bot: "#1A1A28", hill: "#0D0D14", stars: true },
       { name: "Dawn Ridge", top: "#1B2340", bot: "#51386B", hill: "#120E24", stars: true },
@@ -1398,7 +1398,7 @@ registerGame({
       note = msg; noteT = 55; state = "show";
       if (arrow) {
         if (pts > 0)
-          burst(arrow.x, arrow.y, ["#FFD93D", "#FF8FBE", "#FFFFFF"], 16);
+          burst(arrow.x, arrow.y, ["#FFD93D", "#58B0E6", "#FFFFFF"], 16);
         stuck.push(arrow); arrow = null;
       }
       if (stuck.length > 14) stuck.shift();
@@ -1414,7 +1414,7 @@ registerGame({
             best = banked;
             nxSet("nx_archery_best", best);
           }
-          burst(TGT.x, TGT.y, ["#FFD93D", "#FF8FBE", "#7BE0A3", "#FFFFFF"], 70);
+          burst(TGT.x, TGT.y, ["#FFD93D", "#58B0E6", "#7BE0A3", "#FFFFFF"], 70);
           state = "clear"; noteT = 110;
           saveRun(level + 1, banked);
         } else {
@@ -1617,7 +1617,7 @@ registerGame({
         ctx.fillStyle = "rgba(255,255,255,.18)";
         ctx.beginPath(); ctx.roundRect(60, H - 26, W - 120, 8, 4);
         ctx.fill();
-        ctx.fillStyle = scores[0] >= cfg.quota ? "#7BE0A3" : "#FF8FBE";
+        ctx.fillStyle = scores[0] >= cfg.quota ? "#7BE0A3" : "#58B0E6";
         ctx.beginPath();
         ctx.roundRect(60, H - 26,
           (W - 120) * Math.min(1, scores[0] / cfg.quota), 8, 4);
@@ -1632,7 +1632,7 @@ registerGame({
           [NEW_AT[level] || (level === 1
              ? "Thread the bars. Hit SUCCESS."
              : "Faster, smaller, trickier…"),
-           "bold 13px system-ui", "#FF8FBE", 34],
+           "bold 13px system-ui", "#58B0E6", 34],
           [resumed
              ? "↩ Resumed — your saved run continues here"
              : "Best level reached: " + bestLevel,

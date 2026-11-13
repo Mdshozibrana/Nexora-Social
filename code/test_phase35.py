@@ -25,7 +25,7 @@ CSS = open("webapp/style.css").read()
 JS = open("webapp/app.js").read()
 
 # --- wordmark: deep, readable tones on the light clay hero ---
-assert "Phase 35" in CSS and "#app-name { color: #472A3E; }" in CSS
+assert "Phase 35" in CSS and "#app-name { color: #3A2E33; }" in CSS  # Phase 105: ink #472A3E -> #3A2E33
 assert "#D81B60" in CSS  # rich rose-violet gradient replaces white
 # --- wording: a finished video is announced as live in Videos ---
 assert "live in Videos" in JS

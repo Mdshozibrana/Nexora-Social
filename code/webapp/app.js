@@ -517,7 +517,7 @@ async function nbRoute(q, silent) {
   } catch (e) {}
   if (!pts) pts = [[nbPos.lat, nbPos.lon], [q.lat, q.lon]];
   if (nbRouteLine) nbMap.removeLayer(nbRouteLine);
-  nbRouteLine = L.polyline(pts, { color: "#E84393", weight: 5,
+  nbRouteLine = L.polyline(pts, { color: "#3E8FD0", weight: 5,
     opacity: .9, dashArray: dur === null ? "2 8" : null }).addTo(nbMap);
   if (!silent) nbMap.fitBounds(nbRouteLine.getBounds(),
     { padding: [30, 30] });
@@ -885,7 +885,7 @@ async function loadSuggestedInto(slot) {
 
 function suggestCard(users) {
   const el = document.createElement("section");
-  el.className = "suggest-card";
+  el.className = "suggest-card blob";
   el.id = "suggest-card";
   const head = document.createElement("div");
   head.className = "suggest-head";
@@ -2178,7 +2178,7 @@ function themeCard() {
   swatch.className = "theme-drop-swatch";
   swatch.style.background = cur
     ? "linear-gradient(90deg," + cur.stops.join(",") + ")"
-    : "linear-gradient(90deg,#FF8FBE,#FBB931,#7BE0A3,#38BDF8)";
+    : "linear-gradient(90deg,#8ED4F7,#FBB931,#7BE0A3,#38BDF8)";
   const dtext = document.createElement("span");
   dtext.className = "theme-drop-text";
   dtext.textContent = cur ? "Shade: " + cur.name : "Choose your shade";
@@ -2280,7 +2280,12 @@ async function openProfile(userId) {
       cam.onclick = () => $("cover-file").click();
       cover.appendChild(cam);
     }
-    box.appendChild(cover);
+    // Phase 105 (owner): the profile header is a two-tone hero —
+    // cover + avatar + name + bio + followers in one gradient zone,
+    // with a glowing snake wave where it meets the body below.
+    const hero = document.createElement("div");
+    hero.className = "profile-hero";
+    hero.appendChild(cover);
     const headWrap = document.createElement("div");
     headWrap.className = "profile-head";
     const col = document.createElement("div");
@@ -2318,7 +2323,15 @@ async function openProfile(userId) {
     // card. Followers / following only.
     stats.textContent = u.followers + " followers · " +
       u.following_count + " following";
-    box.append(headWrap, bio, stats);
+    hero.append(headWrap, bio, stats);
+    box.appendChild(hero);
+    const wave = document.createElement("div");
+    wave.className = "wave-div";
+    wave.innerHTML = '<svg viewBox="0 0 720 56" preserveAspectRatio="none" aria-hidden="true">'
+      + '<path class="wave-fill" d="M0,30 C120,8 240,52 360,30 C480,8 600,52 720,30 L720,56 L0,56 Z"/>'
+      + '<path class="wave-line" d="M0,30 C120,8 240,52 360,30 C480,8 600,52 720,30" fill="none"/>'
+      + '</svg>';
+    box.appendChild(wave);
 
     if (u.is_official) {
       const chip = document.createElement("button");
@@ -2333,7 +2346,7 @@ async function openProfile(userId) {
       box.appendChild(omBtn);
     } else if (me && userId !== me.telegram_id) {
       const fBtn = document.createElement("button");
-      fBtn.className = "wide";
+      fBtn.className = "wide btn";
       const paint = () => { fBtn.textContent = u.following ? "Unfollow" : "Follow"; };
       paint();
       fBtn.onclick = async () => {
@@ -2746,11 +2759,11 @@ async function loadTasks() {
       const btn = document.createElement("button");
       if (t.claimed) {
         btn.textContent = "✓ Claimed";
-        btn.className = "task-claim claimed";
+        btn.className = "task-claim claimed btn";
         btn.disabled = true;
       } else if (t.claimable) {
         btn.textContent = "Claim";
-        btn.className = "task-claim";
+        btn.className = "task-claim btn";
         btn.onclick = async () => {
           try {
             const r = await api("/me/tasks/" + t.key + "/claim", { method: "POST" });
@@ -4234,6 +4247,8 @@ $("design-post").onclick = async () => {
     $("design-prompt").value = "";
     if (paintDesignCount) paintDesignCount();
     $("design-status").textContent = "Design posted ✨";
+    btn.classList.add("is-success");
+    setTimeout(() => btn.classList.remove("is-success"), 1500);
     loadDesigns(true);
   } catch (e) {
     $("design-status").textContent =

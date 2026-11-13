@@ -24,8 +24,8 @@ HTML = open("webapp/index.html").read()
 # --- the selected word stays readable ----------------------------
 seg = CSS[CSS.index(".gb-item.active {"):]
 seg = seg[:seg.index("}")]
-assert "color: #472A3E" in seg, seg
-assert ".gb-item.active .gb-label { color: #472A3E; }" in CSS
+assert "color: #3A2E33" in seg, seg  # Phase 105: ink #472A3E -> #3A2E33
+assert ".gb-item.active .gb-label { color: #3A2E33; }" in CSS
 # the legacy leak itself is documented, not silently relied on
 assert "button.active { background: var(--tg-theme-button-color" in CSS
 print("active label colour OK")
@@ -40,5 +40,5 @@ assert "max-height: calc(100vh - 20px)" not in CSS
 assert "overflow-y: auto" in CSS
 print("sidebar layering OK")
 
-assert "app.js?v=104" in HTML and "style.css?v=104" in HTML
+assert "app.js?v=105" in HTML and "style.css?v=105" in HTML
 print("PHASE 79 OK")

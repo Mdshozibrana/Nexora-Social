@@ -20,8 +20,8 @@
 <meta name="twitter:description" content="Share photos, watch reels, discover designs and play classic games — all inside Telegram.">
 <meta name="twitter:image" content="https://nexora-9pip.onrender.com/webapp/og-image.png">
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
-<link rel="stylesheet" href="style.css?v=104">
-<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=104">
+<link rel="stylesheet" href="style.css?v=105">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=105">
 </head>
 <body>
 <div id="entry-screen">
@@ -83,7 +83,7 @@
     <div class="composer-row">
       <button id="composer-media" class="tool-btn" title="Add a photo or video">📷</button>
       <span id="composer-attach" class="attach-chip" hidden></span>
-      <button id="composer-post">Post</button>
+      <button id="composer-post" class="btn">Post</button>
     </div>
     <div id="composer-progress" class="up-progress" hidden><div id="composer-progress-fill"></div><span id="composer-progress-label"></span></div>
     <div id="composer-status" class="composer-status"></div>
@@ -117,7 +117,7 @@
       <button id="design-pick" class="tool-btn" title="Pick the design image">🖼️</button>
       <span id="design-attach" class="attach-chip" hidden></span>
       <span id="design-status" class="hint"></span>
-      <button id="design-post" type="button">Post Design</button>
+      <button id="design-post" type="button" class="btn">Post Design</button>
     </div>
     <input type="file" id="design-file" accept="image/*" hidden>
   </div>
@@ -185,7 +185,7 @@
 
 <section id="view-assistant" hidden>
   <h2 class="view-title">🤖 Nexa · AI Assistant</h2>
-  <div class="nexa-stage">
+  <div class="nexa-stage blob">
     <img id="nexa-img" src="nexa/wave.webp" alt="Nexa, your AI assistant">
     <div class="nexa-name">Nexa</div>
     <div class="nexa-status" id="nexa-status">Your AI friend — ask me anything!</div>
@@ -604,8 +604,8 @@
   <div id="reel-sheet"></div>
 </div>
 
-<script src="vendor/leaflet/leaflet.js?v=104"></script>
-<script src="app.js?v=104"></script>
-<script src="games.js?v=104"></script>
+<script src="vendor/leaflet/leaflet.js?v=105"></script>
+<script src="app.js?v=105"></script>
+<script src="games.js?v=105"></script>
 </body>
 </html>
