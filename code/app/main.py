@@ -3236,6 +3236,218 @@ async def my_export_send(user: models.User = Depends(current_user),
     return {"sent": bool(sent)}
 
 
+# --------------------------------------------------------- Phase 107 --
+# Full-site backup + restore (owner: "Admin আইডিতে ... পুরো সাইটের
+# এটুজেড ডাটা ডাউনলোডও আপলোড করে রাখা যাবে"). Admin-only. The
+# backup is every row of every table, IDs preserved, so a restore
+# brings back the same users (names, bios, points), posts, comments,
+# likes, follows, designs and messages — A to Z. Media bytes live
+# on Telegram's servers (PRD §7); the backup keeps the file_ids,
+# so photos/videos come back through those references.
+_BACKUP_TABLES = [
+    ("users", models.User),
+    ("posts", models.Post),
+    ("designs", models.Design),
+    ("likes", models.Like),
+    ("comments", models.Comment),
+    ("follows", models.Follow),
+    ("referrals", models.Referral),
+    ("points_ledger", models.PointsLedger),
+    ("reports", models.Report),
+    ("notifications_log", models.NotificationLog),
+    ("saved_posts", models.SavedPost),
+    ("post_shares", models.PostShare),
+    ("daily_claims", models.DailyClaim),
+    ("user_activity", models.UserActivity),
+    ("ad_events", models.AdEvent),
+    ("app_settings", models.AppSetting),
+    ("notifications", models.Notification),
+    ("verification_requests", models.VerificationRequest),
+    ("design_likes", models.DesignLike),
+    ("admin_audit_logs", models.AdminAuditLog),
+    ("user_blocks", models.UserBlock),
+    ("post_views", models.PostView),
+    ("design_views", models.DesignView),
+    ("design_saves", models.DesignSave),
+    ("design_shares", models.DesignShare),
+    ("messages", models.Message),
+    ("stories", models.Story),
+    ("story_views", models.StoryView),
+]
+_BACKUP_MODELS = {name: m for name, m in _BACKUP_TABLES}
+_BACKUP_MAX_BYTES = 50 * 1024 * 1024
+
+
+def _row_to_dict(row):
+    out = {}
+    for c in row.__table__.columns:
+        v = getattr(row, c.name)
+        if isinstance(v, datetime):
+            v = v.isoformat()
+        out[c.name] = v
+    return out
+
+
+def _backup_payload(db: Session) -> dict:
+    tables = {}
+    for name, model in _BACKUP_TABLES:
+        pk = list(model.__table__.primary_key.columns)[0].name
+        rows = db.query(model).order_by(getattr(model, pk)).all()
+        tables[name] = [_row_to_dict(r) for r in rows]
+    return {
+        "format": "nexora-backup",
+        "version": 1,
+        "exported_at": datetime.utcnow().isoformat() + "Z",
+        "tables": tables,
+    }
+
+
+def _restore_backup(db: Session, payload: dict) -> dict:
+    """Validate, then wipe + re-insert every table in one
+    transaction. Raises HTTPException on any bad input; the caller
+    rolls back on failure, so a bad file never half-restores."""
+    if not isinstance(payload, dict):
+        raise HTTPException(400, "Backup must be a JSON object")
+    if payload.get("format") != "nexora-backup":
+        raise HTTPException(400, "Not a Nexora backup file")
+    if payload.get("version") != 1:
+        raise HTTPException(400, "Unsupported backup version")
+    tables = payload.get("tables")
+    if not isinstance(tables, dict):
+        raise HTTPException(400, "Backup has no tables")
+    unknown = set(tables) - set(_BACKUP_MODELS)
+    if unknown:
+        raise HTTPException(
+            400, "Unknown tables in backup: " + ", ".join(sorted(unknown)))
+    # Validate every row before touching the database.
+    cleaned = {}
+    for name, rows in tables.items():
+        model = _BACKUP_MODELS[name]
+        cols = {c.name: c for c in model.__table__.columns}
+        pk = list(model.__table__.primary_key.columns)[0].name
+        if not isinstance(rows, list):
+            raise HTTPException(400, f"Table {name} must be a list")
+        out_rows = []
+        for r in rows:
+            if not isinstance(r, dict) or pk not in r:
+                raise HTTPException(
+                    400, f"Table {name}: every row needs its id ({pk})")
+            extra = set(r) - set(cols)
+            if extra:
+                raise HTTPException(
+                    400, "Table " + name + ": unknown columns "
+                         + ", ".join(sorted(extra)))
+            row = {}
+            for k, v in r.items():
+                col = cols[k]
+                if col.type.python_type is datetime and isinstance(v, str):
+                    dt = datetime.fromisoformat(
+                        v[:-1] + "+00:00") if v.endswith("Z") \
+                        else datetime.fromisoformat(v)
+                    row[k] = dt.replace(tzinfo=None)
+                else:
+                    row[k] = v
+            out_rows.append(row)
+        cleaned[name] = out_rows
+    counts = {}
+    # Delete children first, then parents.
+    for name, model in reversed(_BACKUP_TABLES):
+        db.query(model).delete()
+    # Insert parents first (users before everything that references
+    # them; rows are PK-ordered, so a referrer with a smaller id
+    # always lands before the member who named them).
+    for name, model in _BACKUP_TABLES:
+        if cleaned.get(name):
+            db.execute(model.__table__.insert(), cleaned[name])
+        counts[name] = len(cleaned.get(name, []))
+    # Postgres sequences sit behind explicit ids — move them past
+    # the restored max, or the next insert collides. (SQLite tracks
+    # the max itself, so this runs on Postgres only.)
+    if db.bind.dialect.name == "postgresql":
+        for name, model in _BACKUP_TABLES:
+            pk = list(model.__table__.primary_key.columns)[0]
+            if pk.type.python_type is int:
+                db.execute(text(
+                    "SELECT setval(pg_get_serial_sequence("
+                    f"'{model.__tablename__}', '{pk.name}'), "
+                    f"COALESCE((SELECT MAX({pk.name}) "
+                    f"FROM {model.__tablename__}), 0))"))
+    return counts
+
+
+@app.get("/admin/backup")
+def admin_backup(admin: models.User = Depends(admin_user),
+                 db: Session = Depends(get_db)):
+    """Admin-only full-site backup download (Phase 107)."""
+    _enforce_rate("backup", f"a{admin.telegram_id}")
+    payload = _backup_payload(db)
+    total = sum(len(v) for v in payload["tables"].values())
+    _audit(db, admin, "backup_download",
+           detail=f"{total} rows across {len(payload['tables'])} tables")
+    db.commit()
+    fname = ("nexora-full-backup-"
+             + datetime.utcnow().strftime("%Y-%m-%d") + ".json")
+    return JSONResponse(
+        content=payload,
+        headers={"Content-Disposition": f"attachment; filename={fname}"})
+
+
+@app.post("/admin/backup/send")
+async def admin_backup_send(admin: models.User = Depends(admin_user),
+                            db: Session = Depends(get_db)):
+    """Send the full backup to the admin's bot chat (Phase 107) —
+    the reliable route on phones, same as the Phase 100 export."""
+    _enforce_rate("backup", f"a{admin.telegram_id}")
+    payload = _backup_payload(db)
+    data = json.dumps(payload, ensure_ascii=False, indent=1).encode("utf-8")
+    fname = ("nexora-full-backup-"
+             + datetime.utcnow().strftime("%Y-%m-%d") + ".json")
+    sent = await notify.send_document(
+        admin.telegram_id, fname, data,
+        caption="💾 Nexora full-site backup — every user, post, "
+                "comment, like, follow, design and message. Keep "
+                "this file safe: anyone holding it holds the whole "
+                "database.")
+    return {"sent": bool(sent)}
+
+
+class RestoreIn(BaseModel):
+    confirm: str
+    backup: dict
+
+
+@app.post("/admin/restore")
+def admin_restore(body: RestoreIn,
+                  x_act_as: str = Header(default=""),
+                  admin: models.User = Depends(admin_user),
+                  db: Session = Depends(get_db)):
+    """Restore the whole site from a backup file (Phase 107).
+    Guarded: admin-only, never while acting as another account,
+    typed RESTORE, format/version/column validation up front, one
+    transaction (a bad file rolls back clean), audit-logged."""
+    if x_act_as:
+        raise HTTPException(
+            400, "Switch back to your own account to restore")
+    if body.confirm != "RESTORE":
+        raise HTTPException(400, "Type RESTORE to confirm the restore")
+    if len(json.dumps(body.backup, ensure_ascii=False)) > _BACKUP_MAX_BYTES:
+        raise HTTPException(413, "Backup file is too large (max 50 MB)")
+    _enforce_rate("restore", f"a{admin.telegram_id}")
+    try:
+        counts = _restore_backup(db, body.backup)
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception:
+        db.rollback()
+        raise HTTPException(400, "Restore failed — nothing was changed")
+    total = sum(counts.values())
+    _audit(db, admin, "backup_restore",
+           detail=f"{total} rows across {len(counts)} tables")
+    db.commit()
+    return {"restored": counts}
+
+
 class DeleteAccountIn(BaseModel):
     confirm: str
 
@@ -3596,7 +3808,9 @@ _NEXA_SYSTEM = (
     "Games, Tasks, Ranks and Profile. A floating glass button "
     "opens the sidebar, which holds Search, Messages, "
     "Notifications, Saved, Shared with me, the Admin Panel "
-    "(owner only) and Nexa herself — that is where members "
+    "(owner only — it has a Site Backup card to download the "
+    "whole site's data as one file, or restore it from a backup "
+    "file by typing RESTORE) and Nexa herself — that is where members "
     "find you. Every main page can be refreshed by pulling "
     "down from the top. "
     "FEED: Explore shows everyone, Following shows people you "

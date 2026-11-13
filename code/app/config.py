@@ -75,6 +75,11 @@ RATE_LIMITS = {
     # Phase 100: data export (download + send-to-Telegram) — a full
     # account dump is heavy and sensitive; a small hourly budget.
     "export": (10, 3600),
+    # Phase 107: full-site backup (admin-only download/send) and
+    # restore — the backup is the whole database, and restore
+    # rewrites everything, so both budgets stay small.
+    "backup": (10, 3600),
+    "restore": (3, 3600),
 }
 
 # Points economy (PRD section 5). PLACEHOLDER defaults — these are product

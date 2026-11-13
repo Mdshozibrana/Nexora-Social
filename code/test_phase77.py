@@ -48,5 +48,5 @@ print("back order OK")
 assert JS.count("updateBackButton();") >= 10
 print("visibility hooks OK")
 
-assert "app.js?v=106" in HTML and "style.css?v=106" in HTML
+assert "app.js?v=107" in HTML and "style.css?v=107" in HTML
 print("PHASE 77 OK")

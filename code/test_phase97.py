@@ -53,7 +53,7 @@ for bit in ("nxUid", "nxGet", "nxSet", 'nxGet("nx_archery_run")',
     assert bit in GAMES, bit
 assert 'localStorage.getItem("nx_archery' not in GAMES
 assert 'localStorage.setItem("nx_archery' not in GAMES
-assert "app.js?v=106" in HTML
+assert "app.js?v=107" in HTML
 print("static contract OK")
 
 def make_init_data(user):

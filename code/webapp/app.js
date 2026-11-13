@@ -4547,6 +4547,103 @@ async function loadAdminStats() {
   } catch (e) { box.textContent = "Could not load stats."; }
 }
 
+// ------------------------------------------------- Phase 107: backup --
+// Admin-only full-site backup: download / send-to-Telegram /
+// restore-from-file. The file lives with the owner (phone or bot
+// chat); the server keeps no copy. Restore is destructive by
+// design, so the button stays inert until a file is picked AND
+// RESTORE is typed — the server demands the same.
+let backupPicked = null;
+function wireBackupCard() {
+  const dl = $("backup-download");
+  if (!dl || dl.dataset.wired) return;
+  dl.dataset.wired = "1";
+  const st = $("backup-status");
+  const say = t => { if (st) st.textContent = t; };
+  dl.onclick = async () => {
+    dl.disabled = true;
+    say("Preparing the full backup…");
+    try {
+      const data = await api("/admin/backup");
+      const blob = new Blob([JSON.stringify(data, null, 1)],
+                            { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "nexora-full-backup-" +
+        new Date().toISOString().slice(0, 10) + ".json";
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+      say("Backup downloaded ✓ — keep the file safe.");
+    } catch (e) {
+      say("Download did not work here — try “Send to my Telegram” instead.");
+    }
+    dl.disabled = false;
+  };
+  const send = $("backup-send");
+  send.onclick = async () => {
+    send.disabled = true;
+    say("Sending the backup to your bot chat…");
+    try {
+      const r = await api("/admin/backup/send", { method: "POST" });
+      if (r.sent) say("Sent ✓ — check your chat with the bot for the backup file.");
+      else say("The bot could not message you — use Download instead.");
+    } catch (e) { say("Could not send the backup."); }
+    send.disabled = false;
+  };
+  const fileIn = $("backup-file");
+  $("backup-pick").onclick = () => fileIn.click();
+  fileIn.onchange = () => {
+    const f = fileIn.files && fileIn.files[0];
+    if (!f) return;
+    const rd = new FileReader();
+    rd.onload = () => {
+      try {
+        const parsed = JSON.parse(rd.result);
+        if (parsed.format !== "nexora-backup" || parsed.version !== 1) {
+          say("That file is not a Nexora backup.");
+          backupPicked = null;
+          return;
+        }
+        backupPicked = parsed;
+        const n = Object.values(parsed.tables || {})
+          .reduce((a, rows) => a + rows.length, 0);
+        say("Backup file ready: " + n + " rows from " +
+            (parsed.exported_at || "an earlier backup") +
+            ". Type RESTORE below, then tap Restore now.");
+      } catch (e) {
+        backupPicked = null;
+        say("Could not read that file — pick a Nexora backup JSON.");
+      }
+    };
+    rd.readAsText(f);
+  };
+  $("backup-restore").onclick = async () => {
+    if (!backupPicked) { say("Pick a backup file first."); return; }
+    const typed = ($("backup-confirm").value || "").trim();
+    if (typed !== "RESTORE") {
+      say("Type RESTORE in the box above to confirm the restore.");
+      return;
+    }
+    const btn = $("backup-restore");
+    btn.disabled = true;
+    say("Restoring the whole site — do not close the app…");
+    try {
+      const r = await api("/admin/restore", { method: "POST",
+        body: JSON.stringify({ confirm: "RESTORE", backup: backupPicked }) });
+      const total = Object.values(r.restored || {})
+        .reduce((a, n) => a + n, 0);
+      say("Restored ✓ — " + total + " rows back in place. Reloading…");
+      backupPicked = null;
+      $("backup-confirm").value = "";
+      setTimeout(() => location.reload(), 1500);
+    } catch (e) {
+      say("Restore failed — nothing was changed. " + (e.message || ""));
+    }
+    btn.disabled = false;
+  };
+}
+
 function loadAdmin() {
   if (!me || !me.is_admin) return;
   loadEarnings();
@@ -4559,6 +4656,7 @@ function loadAdmin() {
   loadAdminComments();
   prefillOfficial();
   loadAdminPosts();
+  wireBackupCard();
 }
 
 async function loadAdminReports() {
