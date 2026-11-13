@@ -1,6 +1,12 @@
 """The bot: front door + notifications (PRD section 2).
 /start handles referrals via the deep-link payload ref_<telegram_id> and
-hands the user a button that opens the Mini App."""
+profile deep links via profile_<telegram_id> (Phase 114), and hands
+the user a button that opens the Mini App."""
+
+# Phase 114: the Mini App's t.me short name (verified live via
+# https://t.me/NexoraSocial_bot/nexorasocial, Nov 13) — used for
+# startapp deep links that open the app straight onto a profile.
+MINI_APP_SHORT_NAME = "nexorasocial"
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, MenuButtonWebApp, Update, WebAppInfo
 from telegram.ext import (
     Application, CommandHandler, ContextTypes, MessageHandler, filters,
@@ -11,6 +17,7 @@ import os
 import tempfile
 
 from . import moderation
+from . import models
 from .config import settings
 from .db import SessionLocal
 from .services import register_post
@@ -25,6 +32,13 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             referrer_id = int(context.args[0][4:])
         except ValueError:
             referrer_id = None
+    # Phase 114: a scanned profile QR arrives as /start profile_<id>.
+    profile_id = None
+    if context.args and context.args[0].startswith("profile_"):
+        try:
+            profile_id = int(context.args[0][8:])
+        except ValueError:
+            profile_id = None
     db = SessionLocal()
     try:
         user, is_new = get_or_create_user(
@@ -34,6 +48,14 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             referrer_id=referrer_id,
         )
         banned = user.is_banned
+        # Phase 114: the member whose QR was scanned — looked up here
+        # so the welcome can name them and offer their profile.
+        target = None
+        if profile_id is not None:
+            target = db.get(models.User, profile_id)
+            if target is not None and target.is_banned:
+                target = None
+        target_name = target.first_name if target is not None else None
         if not banned and not user.photo_file_id:
             from . import photosync
             fid = await photosync.fetch_telegram_photo_file_id(tg_user.id)
@@ -45,7 +67,12 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if banned:
         await update.message.reply_text("This account is suspended.")
         return
+    # Phase 114: a scanned QR names the member whose profile
+    # the scanner asked for; the button below opens it in the app.
+    head = (f"\U0001F464 {target_name} shared their Nexora profile "
+            "with you.\n\n") if target_name else ""
     text = (
+        head +
         f"Welcome to {settings.APP_NAME}! \U0001F44B\n"
         "Post photos and videos, follow people, earn points.\n"
         "Tip: send me a photo or video with a caption and I will post it "
@@ -60,6 +87,11 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         link = f"https://t.me/{settings.BOT_USERNAME}?start=ref_{tg_user.id}"
         buttons.append([InlineKeyboardButton("\U0001F517 My referral link", url=
             f"https://t.me/share/url?url={link}&text=Join%20me!")])
+    if target_name and settings.BOT_USERNAME:
+        app_link = (f"https://t.me/{settings.BOT_USERNAME}/"
+                    f"{MINI_APP_SHORT_NAME}?startapp=profile_{profile_id}")
+        buttons.append([InlineKeyboardButton(
+            f"\U0001F464 View {target_name}'s profile", url=app_link)])
     await update.message.reply_text(
         text, reply_markup=InlineKeyboardMarkup(buttons) if buttons else None)
 

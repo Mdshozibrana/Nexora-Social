@@ -31,11 +31,11 @@ print("image retry OK")
 
 # --- boot retry --------------------------------------------------
 assert "function bootFailed()" in JS
-assert "loadMe().then(() => loadFeed(true)).catch(bootFailed)" in JS
-assert JS.count("loadMe().then(() => loadFeed(true))") == 2
+assert "loadMe().then(bootOk).catch(bootFailed)" in JS
+assert JS.count("loadMe().then(bootOk)") == 2
 # the fallback text itself is unchanged for a genuine failure
 assert "Please open this app from inside Telegram." in JS
 print("boot retry OK")
 
-assert "app.js?v=113" in HTML and "style.css?v=113" in HTML
+assert "app.js?v=114" in HTML and "style.css?v=114" in HTML
 print("PHASE 76 OK")

@@ -15,7 +15,7 @@ from typing import Optional
 import httpx
 from fastapi import (Depends, FastAPI, File, Form, Header, HTTPException,
                      Request, UploadFile)
-from fastapi.responses import JSONResponse, RedirectResponse, \
+from fastapi.responses import JSONResponse, RedirectResponse, Response, \
     StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -276,6 +276,90 @@ def _media_token() -> str:
                   _hl.sha256).hexdigest()
     raw = f"{exp}.{sig}".encode()
     return base64.urlsafe_b64encode(raw).decode()
+
+
+def _profile_link(telegram_id: int) -> str:
+    """Phase 114: the deep link a member's QR code carries — the bot
+    deep link, mirroring the referral link (?start=ref_<id>)."""
+    return (f"https://t.me/{settings.BOT_USERNAME}"
+            f"?start=profile_{telegram_id}")
+
+
+def _qr_token(user_id: int) -> str:
+    """Phase 114: user-bound signed capability for /me/qr — same
+    shape as _media_token (HMAC over user id + expiry, 7 days), so
+    the QR image URL carries its own auth and <img> tags work."""
+    import base64
+    import hashlib as _hl
+    import hmac as _hm
+    exp = int(time.time()) + 7 * 86400
+    sig = _hm.new(settings.BOT_TOKEN.encode(),
+                  f"nexora-qr:{user_id}:{exp}".encode(),
+                  _hl.sha256).hexdigest()
+    raw = f"{user_id}.{exp}.{sig}".encode()
+    return base64.urlsafe_b64encode(raw).decode()
+
+
+def _qr_token_ok(token: str):
+    """Phase 114: verify a QR token; returns the user id, or None."""
+    import base64
+    import hashlib as _hl
+    import hmac as _hm
+    if not token or not settings.BOT_TOKEN:
+        return None
+    try:
+        decoded = base64.urlsafe_b64decode(
+            token.encode()).decode()
+        user_s, exp_s, sig = decoded.split(".", 2)
+        user_id, exp = int(user_s), int(exp_s)
+    except Exception:
+        return None
+    if exp < int(time.time()):
+        return None
+    expected = _hm.new(settings.BOT_TOKEN.encode(),
+                       f"nexora-qr:{user_id}:{exp}".encode(),
+                       _hl.sha256).hexdigest()
+    if not _hm.compare_digest(expected, sig):
+        return None
+    return user_id
+
+
+def _build_profile_qr_png(link: str) -> bytes:
+    """Phase 114: the branded QR image — error-correction Q, a
+    white quiet zone on all sides, and NEXORA SOCIAL in bold ink in
+    the free space at the bottom (owner's design). DejaVu Bold is
+    tried first (present on the sandbox and Render's Debian image);
+    PIL's built-in font is the fallback so the label never vanishes.
+    """
+    import io as _io
+    import qrcode
+    from PIL import Image, ImageDraw, ImageFont
+    qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_Q,
+                       box_size=10, border=1)
+    qr.add_data(link)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black",
+                        back_color="white").convert("RGB")
+    side, top, bottom = 40, 40, 140
+    canvas = Image.new("RGB", (img.size[0] + side * 2,
+                               img.size[1] + top + bottom), "white")
+    canvas.paste(img, (side, top))
+    font = None
+    for path in ("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+                 "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"):
+        try:
+            font = ImageFont.truetype(path, 30)
+            break
+        except Exception:
+            continue
+    if font is None:
+        font = ImageFont.load_default()
+    draw = ImageDraw.Draw(canvas)
+    draw.text((canvas.size[0] / 2, img.size[1] + top + 45),
+              "NEXORA SOCIAL", fill=(58, 46, 51), font=font, anchor="mm")
+    buf = _io.BytesIO()
+    canvas.save(buf, format="PNG")
+    return buf.getvalue()
 
 
 def _media_token_ok(token: str) -> bool:
@@ -1526,6 +1610,26 @@ def my_points(user: models.User = Depends(current_user),
             "created_at": e.created_at.isoformat() if e.created_at else None,
         } for e in rows],
     }
+
+
+@app.get("/me/qr-token")
+def my_qr_token(user: models.User = Depends(current_user)):
+    """Phase 114: mint the caller's QR capability token."""
+    return {"token": _qr_token(user.telegram_id)}
+
+
+@app.get("/me/qr")
+def my_qr(qt: str = ""):
+    """Phase 114: the caller's branded profile QR as a PNG. The
+    user-bound token in ?qt= is the auth (no header on <img>)."""
+    user_id = _qr_token_ok(qt)
+    if user_id is None:
+        raise HTTPException(401, "Invalid QR token")
+    if not settings.BOT_USERNAME:
+        raise HTTPException(503, "Bot username is not configured")
+    png = _build_profile_qr_png(_profile_link(user_id))
+    return Response(content=png, media_type="image/png",
+                    headers={"Cache-Control": "private, max-age=86400"})
 
 
 @app.get("/search")

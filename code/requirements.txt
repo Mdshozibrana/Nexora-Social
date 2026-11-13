@@ -11,3 +11,4 @@ python-multipart==0.0.33
 imageio-ffmpeg==0.7.0
 Pillow==13.0.0
 pillow-heif==1.8.1
+qrcode==8.2

@@ -43,8 +43,8 @@ assert ".img-shield" in CSS
 assert "attachLongPress" in JS
 print("phase-67 shield intact")
 
-assert "style.css?v=113" in HTML and "app.js?v=113" in HTML \
-    and "games.js?v=113" in HTML
+assert "style.css?v=114" in HTML and "app.js?v=114" in HTML \
+    and "games.js?v=114" in HTML
 print("asset pins OK")
 
 print("PHASE 70 OK")

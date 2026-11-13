@@ -2435,3 +2435,17 @@ html[data-theme] .suggest-follow.on { background: var(--t-chip, #F3DCE7);
     rgba(170,205,245,.12), rgba(170,205,245,0) 42%); }
 #rain-fx[hidden] { display: none; }
 .rain-card .rain-toggle { width: 100%; }
+
+/* -------------------------------------------- Phase 114: My QR ------- */
+.qr-card { max-width: 420px; margin: 12px auto; padding: 20px 16px;
+  text-align: center; }
+.qr-head { display: flex; align-items: center; gap: 10px;
+  justify-content: center; margin-bottom: 12px; }
+.qr-head img.avatar { width: 44px; height: 44px; }
+.qr-name { font-weight: 700; font-size: 17px; }
+.qr-img { display: block; width: 100%; max-width: 320px; height: auto;
+  margin: 4px auto 12px; border-radius: 16px; }
+.qr-link { display: block; word-break: break-all; font-size: 13px;
+  margin-bottom: 12px; }
+.qr-actions { display: flex; gap: 10px; justify-content: center; }
+.qr-note { margin-top: 12px; }

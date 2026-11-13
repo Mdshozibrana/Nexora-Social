@@ -225,7 +225,7 @@ function showView(name, viaBack) {
                    games: "nav-games",
                    game: "nav-games", tasks: "nav-tasks",
                    leaderboard: "nav-ranks", profile: "nav-me" };
-  ["feed", "videos", "designs", "search", "tasks", "leaderboard", "profile", "saved", "shared", "games", "game", "admin", "notifications", "messages", "chat", "assistant", "nearby", "museum"].forEach(v => {
+  ["feed", "videos", "designs", "search", "tasks", "leaderboard", "profile", "saved", "shared", "games", "game", "admin", "notifications", "messages", "chat", "assistant", "nearby", "museum", "qr"].forEach(v => {
     $("view-" + v).hidden = v !== name;
   });
   // Phase 21: only tab views move the highlight. Views without a tab
@@ -238,6 +238,7 @@ function showView(name, viaBack) {
     $(id).classList.toggle("active", id === activeBtn));
   if (name !== "game" && typeof stopGame === "function") stopGame();
   if (name === "tasks") loadTasks();
+  if (name === "qr") loadMyQr();
   if (name === "saved") loadSaved();
   if (name === "shared") loadShared();
   if (name === "admin") loadAdmin();
@@ -2827,6 +2828,98 @@ async function loadTasks() {
   } catch (e) { box.textContent = "Could not load tasks."; }
 }
 
+// ------------------------------------------- Phase 114: My QR --------
+// Each member's own profile link as a QR code: the image comes from
+// /me/qr (server-generated, branded with NEXORA SOCIAL), the link is
+// shown for copying, and Download uses Telegram's native downloadFile
+// (Phase 110 pattern — anchor downloads are ignored in the WebView).
+async function loadMyQr() {
+  const box = $("qr-box");
+  box.innerHTML = "Loading…";
+  try {
+    const link = "https://t.me/" + me.bot_username +
+      "?start=profile_" + me.telegram_id;
+    const tok = await api("/me/qr-token");
+    const qrUrl = "/me/qr?qt=" + encodeURIComponent(tok.token);
+    box.innerHTML = "";
+    const card = document.createElement("div");
+    card.className = "card qr-card";
+    const head = document.createElement("div");
+    head.className = "qr-head";
+    head.appendChild(avatarEl(me.first_name, me.telegram_id, false,
+                              me.photo_file_id));
+    const nm = document.createElement("div");
+    nm.className = "qr-name";
+    nm.textContent = me.first_name || "Member";
+    head.appendChild(nm);
+    const img = document.createElement("img");
+    img.className = "qr-img";
+    img.alt = "My Nexora profile QR code";
+    img.src = qrUrl;
+    const a = document.createElement("a");
+    a.className = "qr-link";
+    a.href = link;
+    a.textContent = link;
+    const row = document.createElement("div");
+    row.className = "qr-actions";
+    const copy = document.createElement("button");
+    copy.className = "btn";
+    copy.textContent = "📋 Copy link";
+    copy.onclick = () => {
+      if (navigator.clipboard) navigator.clipboard.writeText(link);
+      setStatus("Profile link copied.");
+    };
+    const dl = document.createElement("button");
+    dl.className = "btn";
+    dl.id = "qr-download";
+    dl.textContent = "⬇️ Download";
+    dl.onclick = () => downloadQr(dl, qrUrl);
+    row.append(copy, dl);
+    const note = document.createElement("p");
+    note.className = "hint qr-note";
+    note.textContent = "Scan this with any phone camera or Telegram — " +
+      "it opens your profile in Nexora Social.";
+    card.append(head, img, a, row, note);
+    box.appendChild(card);
+  } catch (e) { box.textContent = "Could not load your QR code."; }
+}
+
+async function downloadQr(btn, qrUrl) {
+  if (btn.textContent !== "⬇️ Download") return; // double-tap guard
+  btn.textContent = "⬇️ Downloading…";
+  try {
+    const head = await fetch(qrUrl, { method: "HEAD" });
+    const ct = (head.headers.get("content-type") || "").toLowerCase();
+    const ext = ct.indexOf("png") >= 0 ? "png" : "jpg";
+    const fileName = "nexora-qr-" +
+      String(me.first_name || "profile").toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") + "." + ext;
+    const fullUrl = location.origin + qrUrl;
+    if (window.Telegram && tg && tg.downloadFile) {
+      try {
+        await tg.downloadFile({ url: fullUrl, file_name: fileName });
+        btn.textContent = "✅ Downloaded!";
+        setStatus("QR code downloaded ✓ — check your gallery / Downloads.");
+        setTimeout(() => { btn.textContent = "⬇️ Download"; }, 4000);
+        return;
+      } catch (e) { /* fall through to openLink below */ }
+    }
+    if (window.Telegram && tg && tg.openLink) {
+      tg.openLink(fullUrl);
+      setStatus("Opened in your browser — save the image from there.");
+    } else {
+      const a = document.createElement("a");
+      a.href = fullUrl;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setStatus("QR code downloaded.");
+    }
+  } catch (e) { setStatus("Could not download the QR code."); }
+  btn.textContent = "⬇️ Download";
+}
+
 // ----------------------------------------------------------------- init ---
 // ---------------------------------------------------------------------------
 // Phase 19: heartbeat — while the app is open, a beat every 30s lets the
@@ -3056,17 +3149,43 @@ $("reel-sound").onclick = () => {
   $("reel-sound").textContent = reelMuted ? "🔇" : "🔊";
 };
 
+// Phase 114: a scanned profile QR opens the app with a start
+// parameter (t.me startapp link, or the WebApp URL's ?startapp=).
+// After login, jump straight to that member's profile; a bad id
+// just shows the profile view's usual load error.
+let startParamRouted = false;
+function routeStartParam() {
+  if (startParamRouted) return;
+  startParamRouted = true;
+  let p = "";
+  try {
+    p = (tg.initDataUnsafe && tg.initDataUnsafe.start_param) || "";
+  } catch (e) {}
+  if (!p) {
+    try { p = new URLSearchParams(location.search).get("startapp") || ""; }
+    catch (e) {}
+  }
+  if (p && p.indexOf("profile_") === 0) {
+    const id = parseInt(p.slice(8), 10);
+    if (id) openProfile(id);
+  }
+}
+function bootOk() {
+  loadFeed(true);
+  routeStartParam();
+}
+
 function bootFailed() {
   $("status").textContent = "Please open this app from inside Telegram.";
   $("entry-go").disabled = true;
   $("entry-note").textContent =
     "Please open Nexora Social from inside Telegram to continue.";
 }
-loadMe().then(() => loadFeed(true)).catch(() => {
+loadMe().then(bootOk).catch(() => {
   // Phase 76: the first attempt can fail while the free server
   // wakes up — retry once before showing the fallback above.
   setTimeout(() => {
-    loadMe().then(() => loadFeed(true)).catch(bootFailed);
+    loadMe().then(bootOk).catch(bootFailed);
   }, 2000);
 });
 
@@ -3172,7 +3291,7 @@ function toggleSidebar() {
 function syncSidebarActive() {
   const current = ["feed", "videos", "designs", "search", "tasks",
     "leaderboard", "profile", "saved", "shared", "games", "game",
-    "nearby", "messages", "notifications"]
+    "nearby", "messages", "notifications", "qr"]
     .find(v => !$("view-" + v).hidden) || "feed";
   const key = current === "game" ? "games" : current;
   document.querySelectorAll(".gb-item[data-go]").forEach(b =>
