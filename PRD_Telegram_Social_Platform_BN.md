@@ -1044,3 +1044,5 @@ Owner তাঁর দেখা একটি ফেসবুক স্ক্র�
 ফিক্স: Telegram-এর নিজের `WebApp.downloadFile` (WebApp 8.0+) — বাটন চাপলে প্রথমে "⬇️ Downloading…" দেখায়, ছবির mime ধরতে /media-তে HEAD চেক করে সঠিক এক্সটেনশন (jpg/png/webp/gif) দিয়ে `nexora-design-<id>.<ext>` নামে ডাউনলোড চালায়; শেষ হলে বাটন "✅ Downloaded!" হয় আর স্ট্যাটাসে "Image downloaded ✓ — check your gallery / Downloads." লেখা ওঠে, ৪ সেকেন্ড পর লেবেল আগের অবস্থায় ফিরে আসে; বাতিল করলে আগের লেখা ফিরে আসে আর "Download cancelled." জানায়। পুরনো Telegram-এ (8.0-এর নিচে) downloadFile না থাকলে `tg.openLink` দিয়ে ছবি ব্রাউজারে খুলে দেয় — "Opened in your browser — save the image from there."; Telegram-এর বাইরে (ডেস্কটপ) আগের anchor-downloadই চলে। ডবল-ট্যাপে একই ডাউনলোড দুবার শুরু হয় না।
 
 যাচাই: test_phase110 — downloadFile ওয়্যারিং, Downloading…/Downloaded!/cancelled স্ট্যাটাস, এক্সটেনশন ধরা, openLink ও anchor ফলব্যাক, ডবল-ট্যাপ গার্ড, শিট খুললে লেবেল রিসেট, Phase 108/109-এর চিহ্ন অক্ষত, ?v=110। পূর্ণ রিগ্রেশনে সব ১০৬টি স্যুট সবুজ এবং লাইভে যাচাই করা হয়েছে।
+
+লাইভ যাচাই (Nov 13, 18:18): /health 200, shell 5×?v=110, app.js-এ downloadFile ×3 ও ds-download ×3, style.css-এ sheet-open অক্ষত।
