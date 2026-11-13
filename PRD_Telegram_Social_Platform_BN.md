@@ -1024,3 +1024,13 @@ Owner তাঁর দেখা একটি ফেসবুক স্ক্র�
 ফিক্স: শিট খোলা থাকলে #app-scroll-এ `.sheet-open` ক্লাস বসে (overflow hidden) — openDesignSheet-এ যোগ, closeDesignSheet-এ খোলা (শিট বন্ধের একমাত্র পথ, ব্যাকড্রপ/Close/ব্যাক-বাটন সব একই পথে যায়); শিটের নিজের স্ক্রল আগের মতোই চলে। সাথে #design-sheet-এ `overscroll-behavior: contain` — শিটের কিনারার স্ক্রল আর কোথাও ছড়ায় না। Museum থেকে খোলা ডিজাইনেও একই openDesignSheet চলে, তাই সেখানেও লক কাজ করে।
 
 যাচাই: test_phase108 — লক রুলে overflow hidden, শিটে overscroll contain, আনলক অবস্থায় শেলের overflow-y auto অক্ষত, open/close ওয়্যারিং, Phase 105/107-এর চিহ্ন অক্ষত, ?v=108। পূর্ণ রিগ্রেশনে সব ১০৪টি স্যুট সবুজ এবং লাইভে যাচাই করা হয়েছে।
+
+## Phase 109 — Design Sheet Download Button (Nov 13, 2026)
+
+মালিকের নির্দেশ: Design শিটে Copy Prompt-এর মতোই চাইলে ইউজার ছবিটা ডাউনলোড করতে পারবে।
+
+- শিটের অ্যাকশন-সারিতে Copy Prompt-এর পাশে নতুন **⬇️ Download** বাটন (`#ds-download`)।
+- পোস্টের ⋮ মেনুর Download (Phase 54)-এর মতোই anchor-download প্যাটার্ন: `mediaUrl(currentDesign.image_file_id)`-এ `<a download>` ক্লিক — সাইন করা /media লিংক, তাই ছবি ডাউনলোড হয়।
+- Phase 108-এর স্ক্রল লকে কোনো হাত দেওয়া হয়নি।
+
+যাচাই: test_phase109 — বাটন শিটের .ds-actions-এর ভেতরে Copy Prompt-এর পাশে, ওয়্যারিংয়ে mediaUrl + download + click, Phase 108-এর চিহ্ন অক্ষত, ?v=109। পূর্ণ রিগ্রেশনে সব ১০৫টি স্যুট সবুজ।

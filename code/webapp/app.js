@@ -4145,6 +4145,17 @@ $("ds-copy").onclick = async () => {
   $("ds-copy").textContent = ok ? "✅ Copied!" : "📋 Copy Prompt";
   if (ok) setStatus("Prompt copied 📋 — paste it anywhere.");
 };
+
+// Phase 109 (owner): download the design image, like Copy Prompt.
+$("ds-download").onclick = () => {
+  if (!currentDesign) return;
+  const a = document.createElement("a");
+  a.href = mediaUrl(currentDesign.image_file_id);
+  a.download = "";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+};
 $("ds-remove").onclick = async () => {
   if (!currentDesign) return;
   if (!confirm("Remove this design from the gallery?")) return;
