@@ -6,6 +6,7 @@ import contextvars
 import json
 import logging
 import os
+import random
 import re
 import tempfile
 import time
@@ -2911,6 +2912,7 @@ def _interest_words(text):
 
 @app.get("/designs")
 def list_designs(cursor: int = 0, limit: int = 20, similar_to: int = 0,
+                 shuffle: str = "",
                  user: models.User = Depends(current_user),
                  db: Session = Depends(get_db)):
     limit = max(1, min(limit, 40))
@@ -2937,13 +2939,24 @@ def list_designs(cursor: int = 0, limit: int = 20, similar_to: int = 0,
         next_cursor = cursor + limit \
             if cursor + limit < len(ranked) else None
     elif not liked_ids and not viewed_ids:
-        # No taste signals yet — the exact legacy behaviour:
-        # newest first, keyset pagination on the design id.
-        q = db.query(models.Design)
-        if cursor:
-            q = q.filter(models.Design.id < cursor)
-        rows = q.order_by(models.Design.id.desc()).limit(limit).all()
-        next_cursor = rows[-1].id if len(rows) == limit else None
+        if shuffle:
+            # Phase 116: a shuffled load pages by OFFSET over the
+            # shuffled newest-first list — keyset paging cannot
+            # shuffle, and the seed keeps one load stable.
+            ranked = sorted(db.query(models.Design).all(),
+                            key=lambda d: d.id, reverse=True)
+            random.Random(shuffle).shuffle(ranked)
+            rows = ranked[cursor:cursor + limit]
+            next_cursor = cursor + limit \
+                if cursor + limit < len(ranked) else None
+        else:
+            # No taste signals yet — the exact legacy behaviour:
+            # newest first, keyset pagination on the design id.
+            q = db.query(models.Design)
+            if cursor:
+                q = q.filter(models.Design.id < cursor)
+            rows = q.order_by(models.Design.id.desc()).limit(limit).all()
+            next_cursor = rows[-1].id if len(rows) == limit else None
     else:
         # Personalised order: unseen designs whose prompts match the
         # member's taste rank first; already-seen designs stay in the
@@ -2969,6 +2982,10 @@ def list_designs(cursor: int = 0, limit: int = 20, similar_to: int = 0,
 
         ranked = sorted(db.query(models.Design).all(),
                         key=rank_key, reverse=True)
+        if shuffle:
+            # Phase 116: refresh reshuffles (similar_to is exempt —
+            # its ranking is the point there).
+            random.Random(shuffle).shuffle(ranked)
         rows = ranked[cursor:cursor + limit]
         next_cursor = cursor + limit \
             if cursor + limit < len(ranked) else None

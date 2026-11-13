@@ -3546,6 +3546,8 @@ paintActAs();
 // enforces it); admins on their own ID get a one-tap switch card,
 // the official identity gets the upload card.
 let designCursor = null;
+let designShuffleSeed = 0;
+let designLoading = false;
 let designFile = null;
 let designUploadId = null;
 let currentDesign = null;
@@ -4096,20 +4098,49 @@ function openMuseumRoom(i) {
 async function loadDesigns(reset) {
   paintDesignAccess();
   const grid = $("design-grid");
-  if (reset) { designCursor = null; grid.innerHTML = ""; }
+  if (reset) {
+    // Phase 116: every fresh load mints a new shuffle seed, so a
+    // refresh shows the designs in new positions; paging reuses
+    // the seed, so one load never repeats or skips a design.
+    designShuffleSeed = Math.floor(Math.random() * 1e9);
+    designCursor = null; grid.innerHTML = "";
+  }
+  if (designLoading) return;
+  designLoading = true;
   try {
     const url = "/designs?limit=20" +
       (designSimilar ? "&similar_to=" + designSimilar.id : "") +
+      "&shuffle=" + designShuffleSeed +
       (designCursor ? "&cursor=" + designCursor : "");
     const r = await api(url);
     r.designs.forEach(d => grid.appendChild(designCard(d)));
     designCursor = r.next_cursor;
-    $("design-more").hidden = !designCursor;
+    // Phase 116: no more Load More button — the gallery keeps
+    // loading itself as you scroll, until every design is shown.
+    // The button stays in the DOM (other code references it).
+    $("design-more").hidden = true;
     $("design-empty").hidden = grid.children.length > 0;
+    maybeLoadMoreDesigns();
   } catch (e) {
     if (reset) $("design-empty").hidden = false;
+  } finally {
+    designLoading = false;
   }
 }
+
+// Phase 116: infinite scroll — while the Design gallery is open,
+// near the bottom (or when the page is not even scrollable yet)
+// the next page loads itself. The guard keeps it to one load.
+function maybeLoadMoreDesigns() {
+  if ($("view-designs").hidden || designLoading || !designCursor) return;
+  const sc = $("app-scroll");
+  if (sc.scrollHeight <= sc.clientHeight + 100 ||
+      sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 600) {
+    loadDesigns(false);
+  }
+}
+$("app-scroll").addEventListener("scroll", maybeLoadMoreDesigns,
+                                 { passive: true });
 $("design-more").onclick = () => loadDesigns(false);
 
 // Phase 61 (owner): pull-to-refresh on the Design gallery — pull
