@@ -1023,4 +1023,4 @@ Owner তাঁর দেখা একটি ফেসবুক স্ক্র�
 
 ফিক্স: শিট খোলা থাকলে #app-scroll-এ `.sheet-open` ক্লাস বসে (overflow hidden) — openDesignSheet-এ যোগ, closeDesignSheet-এ খোলা (শিট বন্ধের একমাত্র পথ, ব্যাকড্রপ/Close/ব্যাক-বাটন সব একই পথে যায়); শিটের নিজের স্ক্রল আগের মতোই চলে। সাথে #design-sheet-এ `overscroll-behavior: contain` — শিটের কিনারার স্ক্রল আর কোথাও ছড়ায় না। Museum থেকে খোলা ডিজাইনেও একই openDesignSheet চলে, তাই সেখানেও লক কাজ করে।
 
-যাচাই: test_phase108 — লক রুলে overflow hidden, শিটে overscroll contain, আনলক অবস্থায় শেলের overflow-y auto অক্ষত, open/close ওয়্যারিং, Phase 105/107-এর চিহ্ন অক্ষত, ?v=108। পূর্ণ রিগ্রেশনে সব ১০৪টি স্যুট সবুজ।
+যাচাই: test_phase108 — লক রুলে overflow hidden, শিটে overscroll contain, আনলক অবস্থায় শেলের overflow-y auto অক্ষত, open/close ওয়্যারিং, Phase 105/107-এর চিহ্ন অক্ষত, ?v=108। পূর্ণ রিগ্রেশনে সব ১০৪টি স্যুট সবুজ এবং লাইভে যাচাই করা হয়েছে।
