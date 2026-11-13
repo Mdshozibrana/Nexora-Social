@@ -1031,6 +1031,13 @@ body { padding: 0; overflow: hidden; }
 #app-scroll { position: fixed; inset: 0; overflow-y: auto;
   -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
   padding: 0 12px 110px; scrollbar-width: none; }
+
+/* Phase 108: DESIGN SHEET SCROLL LOCK (owner: opening a design
+   then scrolling moved the design grid behind the sheet). While
+   the sheet is open the shell is locked — overflow hidden — so no
+   gesture on the sheet or its backdrop can move the background;
+   the sheet keeps its own scroll. */
+#app-scroll.sheet-open { overflow: hidden; }
 #app-scroll::-webkit-scrollbar { display: none; }
 
 /* Phase 23: ALL SIX TABS FIT ONE SCREEN (owner: the Me tab was cut
@@ -1111,6 +1118,7 @@ body { padding: 0; overflow: hidden; }
   background: rgba(46, 12, 30, .55); }
 #design-sheet { position: absolute; left: 10px; right: 10px;
   bottom: 10px; max-height: 88%; overflow-y: auto;
+  overscroll-behavior: contain;
   background: #FFFBFC; border-radius: 22px;
   box-shadow: var(--clay-shadow); padding-bottom: 14px; }
 #ds-img { width: 100%; display: block;

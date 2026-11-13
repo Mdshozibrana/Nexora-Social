@@ -4094,6 +4094,7 @@ function openDesignSheet(d) {
   dsEditFile = null;
   $("ds-copy").textContent = "📋 Copy Prompt";
   $("design-sheet-wrap").hidden = false;
+  $("app-scroll").classList.add("sheet-open");
   updateBackButton();
   // "See more" only earns its place when the prompt truly overflows.
   requestAnimationFrame(() => {
@@ -4111,6 +4112,7 @@ function openDesignSheet(d) {
 }
 function closeDesignSheet() {
   $("design-sheet-wrap").hidden = true;
+  $("app-scroll").classList.remove("sheet-open");
   updateBackButton();
   currentDesign = null;
 }
