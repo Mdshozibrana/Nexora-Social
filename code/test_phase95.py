@@ -54,7 +54,7 @@ for bit in ("SUGGEST_AFTER_POSTS = 4", "suggestCard",
 for bit in (".suggest-card", ".suggest-scroll", ".suggest-person",
             ".suggest-follow", ".suggest-follow.on"):
     assert bit in CSS, bit
-assert "app.js?v=116" in HTML and "style.css?v=116" in HTML
+assert "app.js?v=117" in HTML and "style.css?v=117" in HTML
 print("static contract OK")
 
 def make_init_data(user):

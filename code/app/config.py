@@ -131,7 +131,11 @@ OFFICIAL_NAME = "Nexora Social"
 OFFICIAL_USERNAME = "nexora"
 OFFICIAL_FOLLOWER_BASE = 10000
 
-# Verification (owner request, Nov 1): a member may APPLY for the
-# verified blue tick once they reach this many followers. The admin
-# reviews each application in the Admin Panel and approves/rejects.
+# Verification (owner request, Nov 1; Phase 117: TWO conditions,
+# either one qualifies): a member may APPLY for the verified blue
+# tick once they reach this many followers OR this many QUALIFIED
+# referrals (the referred member has posted — the monetization
+# gate's definition). The admin reviews each application in the
+# Admin Panel and approves/rejects.
 VERIFICATION_MIN_FOLLOWERS = 1000
+VERIFICATION_MIN_REFERRALS = 50

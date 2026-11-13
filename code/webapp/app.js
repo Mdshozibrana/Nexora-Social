@@ -2681,8 +2681,9 @@ async function myExtras() {
     wrap.appendChild(card);
   } catch (e) { /* monetization card is optional decoration */ }
   try {
-    // Phase 22: blue-tick verification card (owner rule: applications
-    // open at 1,000 followers; the admin reviews them).
+    // Phase 22: blue-tick verification card. Phase 117 (owner):
+    // TWO conditions, either one qualifies — 50 qualified
+    // referrals or 1,000 followers; the admin reviews them.
     const ver = await api("/me/verification");
     const card = document.createElement("div");
     card.className = "mon-card";
@@ -2703,16 +2704,23 @@ async function myExtras() {
     }
     vh.append(vt, vb);
     card.appendChild(vh);
-    const row = document.createElement("div");
-    row.className = "mon-row";
-    const left = document.createElement("span");
-    left.textContent = (ver.followers >= ver.required ? "✅ " : "⬜ ") +
-      "👥 Followers for the blue tick";
-    const right = document.createElement("span");
-    right.className = ver.followers >= ver.required ? "done" : "";
-    right.textContent = ver.followers + " / " + ver.required;
-    row.append(left, right);
-    card.appendChild(row);
+    const mkRow = (done, label, have, need) => {
+      const row = document.createElement("div");
+      row.className = "mon-row";
+      const left = document.createElement("span");
+      left.textContent = (done ? "✅ " : "⬜ ") + label;
+      const right = document.createElement("span");
+      right.className = done ? "done" : "";
+      right.textContent = have + " / " + need;
+      row.append(left, right);
+      card.appendChild(row);
+    };
+    mkRow(ver.followers >= ver.required,
+          "👥 Followers for the blue tick",
+          ver.followers, ver.required);
+    mkRow(ver.referrals >= ver.referrals_required,
+          "🔗 Referrals for the blue tick",
+          ver.referrals, ver.referrals_required);
     const note = document.createElement("p");
     note.className = "hint";
     if (ver.is_verified) {
@@ -2723,9 +2731,16 @@ async function myExtras() {
         "You will get a notification when it is decided.";
       card.appendChild(note);
     } else if (ver.can_apply) {
-      note.textContent = ver.last_status === "rejected"
-        ? "Your last application was not approved. You may apply again."
-        : "You have enough followers to apply for the blue tick.";
+      const metHow = (ver.met || []).includes("referrals") &&
+        (ver.met || []).includes("followers")
+        ? "with 1,000 followers and 50 referrals"
+        : (ver.met || []).includes("referrals")
+        ? "with 50 referrals"
+        : "with 1,000 followers";
+      note.textContent = (ver.last_status === "rejected"
+        ? "Your last application was not approved. You may apply again. "
+        : "") + "Either one qualifies — you meet the blue tick " +
+        "conditions " + metHow + ".";
       card.appendChild(note);
       const btn = document.createElement("button");
       btn.className = "wide";
@@ -2743,8 +2758,9 @@ async function myExtras() {
       };
       card.appendChild(btn);
     } else {
-      note.textContent = "Reach " + ver.required +
-        " followers to apply for the blue tick.";
+      note.textContent = "Either one qualifies — reach " + ver.required +
+        " followers or " + ver.referrals_required +
+        " referrals to apply for the blue tick.";
       card.appendChild(note);
     }
     wrap.appendChild(card);
@@ -5208,7 +5224,7 @@ async function loadVerifications() {
     if (!r.requests.length) {
       box.innerHTML = '<p class="hint">No verification applications ' +
         'yet. Members can apply from their Me page at 1,000 ' +
-        'followers.</p>';
+        'followers or 50 referrals.</p>';
       return;
     }
     r.requests.forEach(q => {
@@ -5224,7 +5240,8 @@ async function loadVerifications() {
         (q.username ? " (@" + q.username + ")" : "");
       const s = document.createElement("div");
       s.className = "admin-sub";
-      s.textContent = "👥 " + q.followers + " followers · 📝 " +
+      s.textContent = "👥 " + q.followers + " followers · 🔗 " +
+        q.referrals + " referrals · 📝 " +
         q.posts + " posts · applied " + relTime(q.created_at) +
         " · " + q.status.toUpperCase();
       info.append(t, s);

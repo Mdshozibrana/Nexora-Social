@@ -2454,3 +2454,16 @@ html[data-theme] .suggest-follow.on { background: var(--t-chip, #F3DCE7);
 #ds-related { margin-top: 16px; }
 #ds-related-grid { margin-top: 10px; }
 #ds-related-grid .design-card { cursor: pointer; }
+
+/* ---------------- Phase 117: profile photo viewer entrance ------- */
+@keyframes pvZoomIn {
+  from { opacity: 0; transform: scale(.85); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes pvFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+#photo-viewer { animation: pvFadeIn .2s ease-out; }
+#pv-img { animation: pvZoomIn .28s ease-out; }
+#pv-name { animation: pvFadeIn .3s ease-out; }

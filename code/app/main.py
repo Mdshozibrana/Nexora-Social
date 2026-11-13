@@ -30,7 +30,8 @@ from . import filesig, geoip, imgconv, models, moderation, notify, \
     tgupload, videoutil
 from .config import (DAILY_TASKS, MONETIZATION, OFFICIAL_FOLLOWER_BASE,
                      OFFICIAL_ID, OFFICIAL_NAME, RATE_LIMITS,
-                     VERIFICATION_MIN_FOLLOWERS, settings)
+                     VERIFICATION_MIN_FOLLOWERS,
+                     VERIFICATION_MIN_REFERRALS, settings)
 from .db import Base, SessionLocal, engine, get_db
 from .security import init_data_auth_date, validate_init_data
 from .services import award_points, extract_hashtags, register_post
@@ -1883,14 +1884,33 @@ def my_monetization(user: models.User = Depends(current_user),
 
 
 # ---------------------------------------------------------------------------
-# Phase 22: verification (blue tick) applications. A member with at
-# least VERIFICATION_MIN_FOLLOWERS followers may apply from their Me
-# page; the admin reviews applications in the Admin Panel.
+# Phase 22: verification (blue tick) applications. Phase 117
+# (owner): TWO conditions, either one qualifies — 50 QUALIFIED
+# referrals or 1,000 followers. The admin reviews applications in
+# the Admin Panel.
 # ---------------------------------------------------------------------------
 
 def _followers_count(db, telegram_id):
     return db.query(models.Follow).filter_by(
         following_id=telegram_id).count()
+
+
+def _qualified_referrals_count(db, telegram_id):
+    # Phase 117: the monetization gate's definition — a referral
+    # qualifies only once the referred member has posted.
+    return db.query(models.Referral).filter_by(
+        referrer_id=telegram_id, qualified=True).count()
+
+
+def _verification_met(db, telegram_id):
+    followers = _followers_count(db, telegram_id)
+    referrals = _qualified_referrals_count(db, telegram_id)
+    met = []
+    if followers >= VERIFICATION_MIN_FOLLOWERS:
+        met.append("followers")
+    if referrals >= VERIFICATION_MIN_REFERRALS:
+        met.append("referrals")
+    return followers, referrals, met
 
 
 def _pending_verification(db, telegram_id):
@@ -1902,7 +1922,8 @@ def _pending_verification(db, telegram_id):
 @app.get("/me/verification")
 def my_verification(user: models.User = Depends(current_user),
                     db: Session = Depends(get_db)):
-    followers = _followers_count(db, user.telegram_id)
+    followers, referrals, met = _verification_met(
+        db, user.telegram_id)
     latest = db.query(models.VerificationRequest).filter_by(
         user_id=user.telegram_id) \
         .order_by(models.VerificationRequest.id.desc()).first()
@@ -1910,11 +1931,14 @@ def my_verification(user: models.User = Depends(current_user),
     return {
         "followers": followers,
         "required": VERIFICATION_MIN_FOLLOWERS,
+        "referrals": referrals,
+        "referrals_required": VERIFICATION_MIN_REFERRALS,
+        "met": met,
         "is_verified": bool(user.is_verified),
         "pending": pending is not None,
         "last_status": latest.status if latest else None,
         "can_apply": (not user.is_verified and pending is None
-                      and followers >= VERIFICATION_MIN_FOLLOWERS),
+                      and bool(met)),
     }
 
 
@@ -1923,11 +1947,14 @@ def apply_verification(user: models.User = Depends(current_user),
                        db: Session = Depends(get_db)):
     if user.is_verified:
         raise HTTPException(400, "Your account is already verified")
-    followers = _followers_count(db, user.telegram_id)
-    if followers < VERIFICATION_MIN_FOLLOWERS:
+    followers, referrals, met = _verification_met(
+        db, user.telegram_id)
+    if not met:
         raise HTTPException(
-            400, f"You need {VERIFICATION_MIN_FOLLOWERS} followers to "
-                 f"apply for the blue tick (you have {followers})")
+            400, f"You need {VERIFICATION_MIN_FOLLOWERS} followers or "
+                 f"{VERIFICATION_MIN_REFERRALS} referrals to apply for "
+                 f"the blue tick (you have {followers} followers and "
+                 f"{referrals} referrals)")
     if _pending_verification(db, user.telegram_id):
         raise HTTPException(400, "Your application is already pending")
     db.add(models.VerificationRequest(user_id=user.telegram_id))
@@ -2580,6 +2607,8 @@ def admin_verifications(admin: models.User = Depends(admin_user),
             "username": u.username, "photo_file_id": u.photo_file_id,
             "is_verified": bool(u.is_verified),
             "followers": _followers_count(db, u.telegram_id),
+            "referrals": _qualified_referrals_count(db, u.telegram_id),
+            "met": _verification_met(db, u.telegram_id)[2],
             "posts": db.query(models.Post).filter_by(
                 user_id=u.telegram_id, is_deleted=False).count(),
             "joined": u.created_at.isoformat() if u.created_at else None,
