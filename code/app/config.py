@@ -53,6 +53,10 @@ RATE_LIMITS = {
     "report": (30, 86400),
     "upload": (30, 3600),
     "share": (120, 3600),
+    # Phase 118: reposting a post to your own feed.
+    "repost": (120, 3600),
+    # Phase 118: reposting a post to your own feed.
+    "repost": (120, 3600),
     "design_like": (600, 3600),
     "message": (300, 3600),
     "search": (240, 3600),

@@ -63,6 +63,11 @@ class Post(Base):
     hashtags = Column(String(512), default="")
     like_count = Column(Integer, default=0)
     comment_count = Column(Integer, default=0)
+    # Phase 118: a repost is a Post row of type "repost"
+    # pointing at the original; it carries no media itself.
+    repost_of_id = Column(Integer, ForeignKey("posts.id"),
+                        nullable=True)
+    repost_count = Column(Integer, default=0)
     is_deleted = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
@@ -82,6 +87,10 @@ class Comment(Base):
     post_id = Column(Integer, ForeignKey("posts.id"), index=True)
     user_id = Column(BigInteger, ForeignKey("users.telegram_id"))
     text = Column(Text)
+    # Phase 118: a reply points at its parent comment;
+    # top-level comments have parent_id NULL (one level only).
+    parent_id = Column(Integer, ForeignKey("comments.id"),
+                       nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 

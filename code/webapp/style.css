@@ -207,6 +207,14 @@ input, textarea { font: inherit; width: 100%; padding: 10px; border-radius: 10px
             padding-top: 8px; }
 .comment { font-size: 14px; margin: 4px 0; }
 .comment-form { display: flex; gap: 8px; margin-top: 6px; }
+/* Phase 118: reposts + comment replies. */
+.repost-banner { display: block; width: 100%; text-align: left; background: none; border: 0; padding: 0 0 8px; font-size: 13px; color: #8A6D7B; cursor: pointer; }
+.reel-repost { font-size: 13px; opacity: .9; margin-top: 4px; cursor: pointer; }
+.actions button.reposted { background: #E7F3FB; color: #2F7FBF; font-weight: 700; }
+.reel-act button.reposted { color: #2F7FBF; }
+.comment-reply-btn { background: none; border: 0; font-size: 12px; color: #8A6D7B; cursor: pointer; padding: 0 0 0 6px; }
+.comment-replies { margin-left: 28px; border-left: 2px solid rgba(127,127,127,.25); padding-left: 8px; }
+.reply-chip { font-size: 13px; color: #2F7FBF; cursor: pointer; padding: 4px 0; }
 .comment-form input { flex: 1; padding: 7px 10px; }
 
 /* ---- profile / monetization ---- */

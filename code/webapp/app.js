@@ -705,6 +705,14 @@ function postCard(p) {
   who.append(nm, sub);
   head.append(avatarEl(p.author_name, p.author_id, false, p.author_photo), who);
   head.onclick = () => openProfile(p.author_id);
+  // Phase 118: a repost card says who shared it, on top.
+  if (p.reposted) {
+    const rp = document.createElement("button");
+    rp.className = "repost-banner";
+    rp.textContent = "🔁 " + p.reposted_by_name + " reposted";
+    rp.onclick = () => openProfile(p.reposted_by_id);
+    el.appendChild(rp);
+  }
   el.appendChild(head);
 
   if (p.media_file_id && p.type === "photo") {
@@ -793,6 +801,27 @@ function postCard(p) {
   cBtn.textContent = "💬 " + p.comment_count;
   actions.appendChild(cBtn);
 
+  // Phase 118: repost — share a post to your own feed (toggle).
+  const rpBtn = document.createElement("button");
+  const paintRepost = () => {
+    rpBtn.textContent = "🔁 " + (p.repost_count || 0);
+    rpBtn.classList.toggle("reposted", !!p.reposted_by_me);
+  };
+  paintRepost();
+  rpBtn.onclick = async () => {
+    try {
+      const r = await api("/posts/" + p.id + "/repost", { method: "POST" });
+      p.reposted_by_me = r.reposted;
+      p.repost_count = r.repost_count;
+      paintRepost();
+      if (!r.reposted && p.reposted &&
+          p.reposted_by_id === (me && me.telegram_id)) el.remove();
+      setStatus(r.reposted ? "Reposted to your feed."
+                           : "Repost removed.");
+    } catch (e) { setStatus("Could not repost."); }
+  };
+  actions.appendChild(rpBtn);
+
   const spacer = document.createElement("span");
   spacer.className = "spacer";
   actions.appendChild(spacer);
@@ -813,6 +842,19 @@ function postCard(p) {
   cBox.className = "comments";
   cBox.hidden = true;
   const cList = document.createElement("div");
+  // Phase 118: replying to a comment — tap Reply under it,
+  // the chip shows who you answer, Send posts it nested.
+  let replyTarget = null;
+  const replyChip = document.createElement("div");
+  replyChip.className = "reply-chip";
+  replyChip.hidden = true;
+  const paintReplyChip = () => {
+    if (replyTarget) {
+      replyChip.hidden = false;
+      replyChip.textContent = "Replying to " + replyTarget.author_name + "  ✕";
+    } else replyChip.hidden = true;
+  };
+  replyChip.onclick = () => { replyTarget = null; paintReplyChip(); };
   const cForm = document.createElement("div");
   cForm.className = "comment-form";
   const cInput = document.createElement("input");
@@ -822,7 +864,12 @@ function postCard(p) {
   const cSend = document.createElement("button");
   cSend.textContent = "Send";
   cForm.append(cInput, cSend);
-  cBox.append(cList, cForm);
+  const onReply = (cm) => {
+    replyTarget = cm;
+    paintReplyChip();
+    cInput.focus();
+  };
+  cBox.append(replyChip, cList, cForm);
   el.appendChild(cBox);
 
   let commentsLoaded = false;
@@ -832,18 +879,28 @@ function postCard(p) {
       commentsLoaded = true;
       try {
         const data = await api("/posts/" + p.id + "/comments");
-        data.comments.forEach(cm => cList.appendChild(commentRow(cm)));
+        data.comments.forEach(cm => cList.appendChild(commentRow(cm, onReply)));
       } catch (e) { setStatus("Could not load comments."); }
     }
   };
   cSend.onclick = async () => {
     const text = cInput.value.trim();
     if (!text) return;
+    const body = { text };
+    if (replyTarget) body.parent_id = replyTarget.id;
     try {
       const cm = await api("/posts/" + p.id + "/comments", {
-        method: "POST", body: JSON.stringify({ text }) });
-      cList.appendChild(commentRow(cm));
+        method: "POST", body: JSON.stringify(body) });
+      if (replyTarget) {
+        const parentRow = cList.querySelector(
+          '[data-comment-id="' + replyTarget.id + '"]');
+        if (parentRow && parentRow._repliesBox)
+          parentRow._repliesBox.appendChild(commentRow(cm, onReply));
+        else cList.appendChild(commentRow(cm, onReply));
+      } else cList.appendChild(commentRow(cm, onReply));
       cInput.value = "";
+      replyTarget = null;
+      paintReplyChip();
       p.comment_count += 1;
       cBtn.textContent = "💬 " + p.comment_count;
     } catch (e) { setStatus("Could not send the comment."); }
@@ -851,15 +908,30 @@ function postCard(p) {
   return el;
 }
 
-function commentRow(cm) {
+function commentRow(cm, onReply) {
   const row = document.createElement("div");
   row.className = "comment";
+  row.dataset.commentId = cm.id;
   row.appendChild(avatarEl(cm.author_name, cm.user_id, false, cm.author_photo));
   const who = document.createElement("b");
   who.textContent = cm.author_name;
   row.appendChild(who);
   if (cm.author_verified) row.appendChild(verifiedBadge());
   row.appendChild(document.createTextNode(": " + cm.text));
+  // Phase 118: answer a comment directly — the reply nests
+  // under it instead of starting a new top-level comment.
+  if (onReply) {
+    const rb = document.createElement("button");
+    rb.className = "comment-reply-btn";
+    rb.textContent = "Reply";
+    rb.onclick = () => onReply(cm);
+    row.appendChild(rb);
+  }
+  const replies = document.createElement("div");
+  replies.className = "comment-replies";
+  (cm.replies || []).forEach(r => replies.appendChild(commentRow(r, onReply)));
+  row.appendChild(replies);
+  row._repliesBox = replies;
   return row;
 }
 
@@ -1059,6 +1131,14 @@ function reelCard(p) {
   author.append(avatarEl(p.author_name, p.author_id, false, p.author_photo), who);
   author.onclick = () => openProfile(p.author_id);
   shade.appendChild(author);
+  // Phase 118: a reposted video says who shared it.
+  if (p.reposted) {
+    const rp = document.createElement("div");
+    rp.className = "reel-repost";
+    rp.textContent = "🔁 " + p.reposted_by_name + " reposted";
+    rp.onclick = () => openProfile(p.reposted_by_id);
+    shade.appendChild(rp);
+  }
   if (p.caption) {
     const cap = document.createElement("p");
     cap.className = "reel-caption";
@@ -1093,6 +1173,30 @@ function reelCard(p) {
   const cCount = document.createElement("span");
   cCount.textContent = p.comment_count;
   cWrap.append(cBtn, cCount);
+  // Phase 118: repost — same toggle as the Feed's 🔁 button.
+  const rWrap = document.createElement("div");
+  rWrap.className = "reel-act";
+  const rBtn = document.createElement("button");
+  const rCount = document.createElement("span");
+  const paintRepost = () => {
+    rBtn.textContent = "🔁";
+    rBtn.classList.toggle("reposted", !!p.reposted_by_me);
+    rCount.textContent = p.repost_count || 0;
+  };
+  paintRepost();
+  rBtn.onclick = async () => {
+    try {
+      const r = await api("/posts/" + p.id + "/repost", { method: "POST" });
+      p.reposted_by_me = r.reposted;
+      p.repost_count = r.repost_count;
+      paintRepost();
+      if (!r.reposted && p.reposted &&
+          p.reposted_by_id === (me && me.telegram_id)) el.remove();
+      setStatus(r.reposted ? "Reposted to your feed."
+                           : "Repost removed.");
+    } catch (e) { setStatus("Could not repost."); }
+  };
+  rWrap.append(rBtn, rCount);
   // Phase 31: the 👁 unique-view count, under comments.
   const vWrap = document.createElement("div");
   vWrap.className = "reel-act";
@@ -1110,13 +1214,26 @@ function reelCard(p) {
   mBtn.title = "Options";
   mBtn.onclick = () => openReelMenu(p, el);
   mWrap.appendChild(mBtn);
-  side.append(likeWrap, cWrap, vWrap, mWrap);
+  side.append(likeWrap, cWrap, rWrap, vWrap, mWrap);
   el.appendChild(side);
 
   const cBox = document.createElement("div");
   cBox.className = "comments";
   cBox.hidden = true;
   const cList = document.createElement("div");
+  // Phase 118: replying to a comment — tap Reply under it,
+  // the chip shows who you answer, Send posts it nested.
+  let replyTarget = null;
+  const replyChip = document.createElement("div");
+  replyChip.className = "reply-chip";
+  replyChip.hidden = true;
+  const paintReplyChip = () => {
+    if (replyTarget) {
+      replyChip.hidden = false;
+      replyChip.textContent = "Replying to " + replyTarget.author_name + "  ✕";
+    } else replyChip.hidden = true;
+  };
+  replyChip.onclick = () => { replyTarget = null; paintReplyChip(); };
   const cForm = document.createElement("div");
   cForm.className = "comment-form";
   const cInput = document.createElement("input");
@@ -1126,7 +1243,12 @@ function reelCard(p) {
   const cSend = document.createElement("button");
   cSend.textContent = "Send";
   cForm.append(cInput, cSend);
-  cBox.append(cList, cForm);
+  const onReply = (cm) => {
+    replyTarget = cm;
+    paintReplyChip();
+    cInput.focus();
+  };
+  cBox.append(replyChip, cList, cForm);
   el.appendChild(cBox);
 
   let commentsLoaded = false;
@@ -1136,18 +1258,28 @@ function reelCard(p) {
       commentsLoaded = true;
       try {
         const data = await api("/posts/" + p.id + "/comments");
-        data.comments.forEach(cm => cList.appendChild(commentRow(cm)));
+        data.comments.forEach(cm => cList.appendChild(commentRow(cm, onReply)));
       } catch (e) { setStatus("Could not load comments."); }
     }
   };
   cSend.onclick = async () => {
     const text = cInput.value.trim();
     if (!text) return;
+    const body = { text };
+    if (replyTarget) body.parent_id = replyTarget.id;
     try {
       const cm = await api("/posts/" + p.id + "/comments", {
-        method: "POST", body: JSON.stringify({ text }) });
-      cList.appendChild(commentRow(cm));
+        method: "POST", body: JSON.stringify(body) });
+      if (replyTarget) {
+        const parentRow = cList.querySelector(
+          '[data-comment-id="' + replyTarget.id + '"]');
+        if (parentRow && parentRow._repliesBox)
+          parentRow._repliesBox.appendChild(commentRow(cm, onReply));
+        else cList.appendChild(commentRow(cm, onReply));
+      } else cList.appendChild(commentRow(cm, onReply));
       cInput.value = "";
+      replyTarget = null;
+      paintReplyChip();
       p.comment_count += 1;
       cCount.textContent = p.comment_count;
     } catch (e) { setStatus("Could not send the comment."); }
@@ -1184,6 +1316,17 @@ async function openReelMenu(p, reelEl) {
     } catch (e) { setStatus("Could not save."); }
   });
   row("📤", "Share", () => openSharePicker(p));
+  // Phase 118: repost — a post to your own feed.
+  if (!mine) row("🔁", p.reposted_by_me ? "Reposted — tap to remove" : "Repost", async () => {
+    try {
+      const r = await api("/posts/" + p.id + "/repost", { method: "POST" });
+      p.reposted_by_me = r.reposted;
+      p.repost_count = r.repost_count;
+      setStatus(r.reposted ? "Reposted to your feed." : "Repost removed.");
+      if (!r.reposted && p.reposted &&
+          p.reposted_by_id === (me && me.telegram_id)) reelEl.remove();
+    } catch (e) { setStatus("Could not repost."); }
+  });
   row("🔗", "Copy link", async () => {
     const link = appLink + "?start=post_" + p.id;
     try {
@@ -3485,7 +3628,7 @@ async function refreshBell() {
 let notifCursor = null;
 const NOTIF_ICONS = { like: "❤️", comment: "💬", follow: "👥",
                       share: "📤", post_live: "🎬", announcement: "📣",
-                      verification: "🛡️" };
+                      verification: "🛡️", repost: "🔁", reply: "↩️" };
 async function loadNotifications(reset) {
   const box = $("notif-list");
   if (reset) { box.innerHTML = ""; notifCursor = null; }

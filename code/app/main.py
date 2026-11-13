@@ -68,6 +68,36 @@ def _migrate():
         if "thumb_file_id" not in post_cols:
             conn.execute(text(
                 "ALTER TABLE posts ADD COLUMN thumb_file_id VARCHAR(256)"))
+    # Phase 118: reposts on posts, replies on comments.
+    with engine.begin() as conn:
+        if "repost_of_id" not in post_cols:
+            conn.execute(text(
+                "ALTER TABLE posts ADD COLUMN repost_of_id INTEGER"))
+        if "repost_count" not in post_cols:
+            conn.execute(text(
+                "ALTER TABLE posts ADD COLUMN "
+                "repost_count INTEGER DEFAULT 0"))
+    comment_cols = {c["name"]
+                  for c in inspect(engine).get_columns("comments")}
+    with engine.begin() as conn:
+        if "parent_id" not in comment_cols:
+            conn.execute(text(
+                "ALTER TABLE comments ADD COLUMN parent_id INTEGER"))
+    # Phase 118: reposts on posts, replies on comments.
+    with engine.begin() as conn:
+        if "repost_of_id" not in post_cols:
+            conn.execute(text(
+                "ALTER TABLE posts ADD COLUMN repost_of_id INTEGER"))
+        if "repost_count" not in post_cols:
+            conn.execute(text(
+                "ALTER TABLE posts ADD COLUMN "
+                "repost_count INTEGER DEFAULT 0"))
+    comment_cols = {c["name"]
+                  for c in inspect(engine).get_columns("comments")}
+    with engine.begin() as conn:
+        if "parent_id" not in comment_cols:
+            conn.execute(text(
+                "ALTER TABLE comments ADD COLUMN parent_id INTEGER"))
     # Phase 60: a managed account created as "@name" stored the @
     # IN the username, so every "@" + username render showed
     # "@@name". Strip stray leading @s once (idempotent — later
@@ -543,7 +573,7 @@ async def auth(body: AuthIn, request: Request,
             db.commit()
     followers = db.query(models.Follow).filter_by(following_id=user.telegram_id).count()
     following = db.query(models.Follow).filter_by(follower_id=user.telegram_id).count()
-    posts = db.query(models.Post).filter_by(user_id=user.telegram_id, is_deleted=False).count()
+    posts = db.query(models.Post).filter_by(user_id=user.telegram_id, is_deleted=False).filter(models.Post.type != "repost").count()
     return {
         "telegram_id": user.telegram_id,
         "first_name": user.first_name,
@@ -573,7 +603,10 @@ def feed(tab: str = "explore", type: str = "", cursor: int = 0,
     if hidden:
         q = q.filter(~models.Post.user_id.in_(hidden))
     if type in ("photo", "video", "text"):
-        q = q.filter_by(type=type)
+        # Phase 118: repost rows carry type "repost" — they ride
+        # along and are matched against the ORIGINAL's type below.
+        q = q.filter(or_(models.Post.type == type,
+                         models.Post.type == "repost"))
     else:
         # Phase 35 (owner directive): the Feed page shows statuses
         # and photos only — videos live on the Videos page, whose
@@ -586,14 +619,28 @@ def feed(tab: str = "explore", type: str = "", cursor: int = 0,
     if cursor:
         q = q.filter(models.Post.id < cursor)
     rows = q.order_by(models.Post.id.desc()).limit(20).all()
-    liked = liked_ids(db, user.telegram_id, rows)
-    saved = saved_ids(db, user.telegram_id, rows)
+    next_cursor = rows[-1].id if len(rows) == 20 else None
+    # Phase 118: a repost shows its original — and a repost of
+    # a video belongs on the Videos tab, not the main feed
+    # (the Phase 35 rule, applied to the original's type).
+    keep = []
+    for p in rows:
+        if not getattr(p, "repost_of_id", None):
+            keep.append(p)
+            continue
+        orig = db.get(models.Post, p.repost_of_id)
+        if orig is None or orig.is_deleted:
+            continue
+        if type in ("photo", "video", "text"):
+            if orig.type == type:
+                keep.append(p)
+        elif orig.type != "video":
+            keep.append(p)
+    rows = keep
     counts = _post_view_counts(db, rows)
     _warm_authors(db, rows)
-    out = [post_dict(db, p, liked=p.id in liked, saved=p.id in saved,
-                     views=counts.get(p.id, 0))
-           for p in rows]
-    return {"posts": out, "next_cursor": rows[-1].id if len(rows) == 20 else None}
+    out = _post_list(db, rows, user.telegram_id, counts=counts)
+    return {"posts": out, "next_cursor": next_cursor}
 
 
 @app.get("/suggested-users")
@@ -627,7 +674,7 @@ def suggested_users(limit: int = 10, user: models.User = Depends(current_user),
         if cand.telegram_id == OFFICIAL_ID:
             followers += OFFICIAL_FOLLOWER_BASE
         posts = db.query(models.Post).filter_by(
-            user_id=cand.telegram_id, is_deleted=False).count()
+            user_id=cand.telegram_id, is_deleted=False).filter(models.Post.type != "repost").count()
         mutual_ids = []
         if following_ids:
             mutual_ids = [f.follower_id for f in db.query(models.Follow)
@@ -672,7 +719,28 @@ def suggested_users(limit: int = 10, user: models.User = Depends(current_user),
 # Posts, likes, comments (PRD section 4, MVP items 3-5)
 # ---------------------------------------------------------------------------
 
-def post_dict(db, p, liked=False, saved=False, views=None):
+def post_dict(db, p, liked=False, saved=False, views=None,
+              reposted_by_me=False):
+    # Phase 118: a repost row shows its ORIGINAL — the card's
+    # id, likes, comments and views all belong to the original;
+    # the repost itself only adds who shared it and when.
+    if getattr(p, "repost_of_id", None):
+        orig = db.get(models.Post, p.repost_of_id)
+        if orig is None or orig.is_deleted:
+            return None
+        d = post_dict(db, orig, liked=liked, saved=saved,
+                      views=views, reposted_by_me=reposted_by_me)
+        reposter = db.get(models.User, p.user_id)
+        d["reposted"] = True
+        d["repost_id"] = p.id
+        d["reposted_by_id"] = p.user_id
+        d["reposted_by_name"] = (reposter.first_name
+                                 if reposter else "")
+        d["reposted_by_photo"] = (reposter.photo_file_id
+                                  if reposter else None)
+        d["reposted_at"] = (p.created_at.isoformat()
+                            if p.created_at else None)
+        return d
     author = db.get(models.User, p.user_id)
     if views is None:
         # Phase 31: unique-view count (post_views), shown on reels.
@@ -683,9 +751,18 @@ def post_dict(db, p, liked=False, saved=False, views=None):
         "thumb_file_id": getattr(p, "thumb_file_id", None),
         "caption": p.caption, "hashtags": p.hashtags,
         "like_count": p.like_count, "comment_count": p.comment_count,
+        "repost_count": p.repost_count or 0,
         "views": views,
         "liked": liked,
         "saved": saved,
+        "reposted": False,
+        "repost_of_id": None,
+        "repost_id": None,
+        "reposted_by_id": None,
+        "reposted_by_name": "",
+        "reposted_by_photo": None,
+        "reposted_at": None,
+        "reposted_by_me": bool(reposted_by_me),
         "author_id": p.user_id,
         "author_name": author.first_name if author else "",
         "author_username": author.username if author else None,
@@ -695,11 +772,87 @@ def post_dict(db, p, liked=False, saved=False, views=None):
     }
 
 
+def _eff_id(p):
+    """The post a card actually shows: a repost resolves to
+    its original, so likes/saves/views/repost state all key
+    off the original's id."""
+    return getattr(p, "repost_of_id", None) or p.id
+
+
+def reposted_ids(db, viewer_id, posts):
+    """Which of these posts (by original id) the viewer
+    reposted — the 🔁 button's active state."""
+    ids = [_eff_id(p) for p in posts]
+    if not ids:
+        return set()
+    rows = db.query(models.Post.repost_of_id).filter(
+        models.Post.user_id == viewer_id,
+        models.Post.repost_of_id.in_(ids),
+        models.Post.is_deleted == False).all()
+    return {r[0] for r in rows}
+
+
+def _post_list(db, rows, viewer_id, counts=None):
+    """post_dict for a page of rows: reposts resolve to their
+    originals, and reposts whose original is gone are dropped."""
+    liked = liked_ids(db, viewer_id, rows)
+    saved = saved_ids(db, viewer_id, rows)
+    reposted = reposted_ids(db, viewer_id, rows)
+    out = []
+    for p in rows:
+        d = post_dict(db, p, liked=_eff_id(p) in liked,
+                      saved=_eff_id(p) in saved,
+                      views=(counts.get(_eff_id(p), 0)
+                             if counts is not None else None),
+                      reposted_by_me=_eff_id(p) in reposted)
+        if d is not None:
+            out.append(d)
+    return out
+
+
+def _eff_id(p):
+    """The post a card actually shows: a repost resolves to
+    its original, so likes/saves/views/repost state all key
+    off the original's id."""
+    return getattr(p, "repost_of_id", None) or p.id
+
+
+def reposted_ids(db, viewer_id, posts):
+    """Which of these posts (by original id) the viewer
+    reposted — the 🔁 button's active state."""
+    ids = [_eff_id(p) for p in posts]
+    if not ids:
+        return set()
+    rows = db.query(models.Post.repost_of_id).filter(
+        models.Post.user_id == viewer_id,
+        models.Post.repost_of_id.in_(ids),
+        models.Post.is_deleted == False).all()
+    return {r[0] for r in rows}
+
+
+def _post_list(db, rows, viewer_id, counts=None):
+    """post_dict for a page of rows: reposts resolve to their
+    originals, and reposts whose original is gone are dropped."""
+    liked = liked_ids(db, viewer_id, rows)
+    saved = saved_ids(db, viewer_id, rows)
+    reposted = reposted_ids(db, viewer_id, rows)
+    out = []
+    for p in rows:
+        d = post_dict(db, p, liked=_eff_id(p) in liked,
+                      saved=_eff_id(p) in saved,
+                      views=(counts.get(_eff_id(p), 0)
+                             if counts is not None else None),
+                      reposted_by_me=_eff_id(p) in reposted)
+        if d is not None:
+            out.append(d)
+    return out
+
+
 def _post_view_counts(db, posts):
     """Phase 38 (speed): ONE grouped query returns the unique-view
     counts for a whole page of posts, instead of one count query
     per post (the feed was making 20+ extra round trips)."""
-    ids = [p.id for p in posts]
+    ids = [_eff_id(p) for p in posts]
     if not ids:
         return {}
     rows = db.query(models.PostView.post_id, func.count()).filter(
@@ -719,7 +872,7 @@ def _warm_authors(db, posts):
 
 def liked_ids(db, viewer_id, posts):
     """Which of these posts has the viewer liked (for the heart state)."""
-    ids = [p.id for p in posts]
+    ids = [_eff_id(p) for p in posts]
     if not ids:
         return set()
     rows = db.query(models.Like.post_id).filter(
@@ -730,7 +883,7 @@ def liked_ids(db, viewer_id, posts):
 
 def saved_ids(db, viewer_id, posts):
     """Which of these posts has the viewer bookmarked."""
-    ids = [p.id for p in posts]
+    ids = [_eff_id(p) for p in posts]
     if not ids:
         return set()
     rows = db.query(models.SavedPost.post_id).filter(
@@ -1082,6 +1235,34 @@ async def upload_post(caption: str = Form(""),
     return body
 
 
+def _delete_post_cascade(db, p):
+    """Phase 118: deleting a repost takes one off the
+    original's count; deleting an original takes its live
+    reposts with it, so no orphan card can surface."""
+    if getattr(p, "repost_of_id", None):
+        orig = db.get(models.Post, p.repost_of_id)
+        if orig is not None:
+            orig.repost_count = max(0, (orig.repost_count or 0) - 1)
+    else:
+        for rp in db.query(models.Post).filter_by(
+                repost_of_id=p.id, is_deleted=False).all():
+            rp.is_deleted = True
+
+
+def _delete_post_cascade(db, p):
+    """Phase 118: deleting a repost takes one off the
+    original's count; deleting an original takes its live
+    reposts with it, so no orphan card can surface."""
+    if getattr(p, "repost_of_id", None):
+        orig = db.get(models.Post, p.repost_of_id)
+        if orig is not None:
+            orig.repost_count = max(0, (orig.repost_count or 0) - 1)
+    else:
+        for rp in db.query(models.Post).filter_by(
+                repost_of_id=p.id, is_deleted=False).all():
+            rp.is_deleted = True
+
+
 @app.delete("/posts/{post_id}")
 def delete_post(post_id: int, user: models.User = Depends(current_user),
                 db: Session = Depends(get_db)):
@@ -1089,6 +1270,7 @@ def delete_post(post_id: int, user: models.User = Depends(current_user),
     if p is None or p.is_deleted or p.user_id != user.telegram_id:
         raise HTTPException(404, "Post not found")
     p.is_deleted = True
+    _delete_post_cascade(db, p)
     db.commit()
     return {"ok": True, "id": p.id}
 
@@ -1143,6 +1325,44 @@ async def toggle_like(post_id: int, user: models.User = Depends(current_user),
         notify.record(db, p.user_id, "like",
                       actor_id=user.telegram_id, post_id=p.id)
     return {"liked": liked, "like_count": p.like_count}
+
+
+@app.post("/posts/{post_id}/repost")
+async def toggle_repost(post_id: int, user: models.User = Depends(current_user),
+                      db: Session = Depends(get_db)):
+    """Phase 118: repost a post to your own feed (toggle).
+    Reposting a repost resolves to the original; your own post
+    cannot be reposted; reposts earn no points and never count
+    toward the post totals."""
+    _enforce_rate("repost", f"u{user.telegram_id}")
+    p = get_live_post(db, post_id)
+    if getattr(p, "repost_of_id", None):
+        p = get_live_post(db, p.repost_of_id)
+    if p.user_id == user.telegram_id:
+        raise HTTPException(400, "You cannot repost your own post")
+    if _blocked_by(db, p.user_id, user.telegram_id) \
+            or _blocked_by(db, user.telegram_id, p.user_id):
+        raise HTTPException(403, "This member is not available")
+    existing = db.query(models.Post).filter_by(
+        user_id=user.telegram_id, repost_of_id=p.id,
+        is_deleted=False).first()
+    if existing:
+        existing.is_deleted = True
+        p.repost_count = max(0, (p.repost_count or 0) - 1)
+        reposted = False
+    else:
+        db.add(models.Post(user_id=user.telegram_id, type="repost",
+                           repost_of_id=p.id, caption="", hashtags=""))
+        p.repost_count = (p.repost_count or 0) + 1
+        reposted = True
+    db.commit()
+    if reposted:
+        await notify.notify_user(
+            db, p.user_id, "repost",
+            f"\U0001F501 {user.first_name} reposted your post.")
+        notify.record(db, p.user_id, "repost",
+                      actor_id=user.telegram_id, post_id=p.id)
+    return {"reposted": reposted, "repost_count": p.repost_count}
 
 
 @app.post("/posts/{post_id}/view")
@@ -1203,9 +1423,7 @@ def my_saved(user: models.User = Depends(current_user),
         .filter(models.SavedPost.user_id == user.telegram_id,
                 models.Post.is_deleted == False) \
         .order_by(models.SavedPost.id.desc()).limit(50).all()
-    liked = liked_ids(db, user.telegram_id, rows)
-    return {"posts": [post_dict(db, p, liked=p.id in liked, saved=True)
-                      for p in rows]}
+    return {"posts": _post_list(db, rows, user.telegram_id)}
 
 
 @app.get("/me/following")
@@ -1272,8 +1490,11 @@ def my_shared(user: models.User = Depends(current_user),
             continue
         sender = db.get(models.User, s.from_user_id)
         d = post_dict(db, p,
-                      liked=s.post_id in liked_ids(db, user.telegram_id, [p]),
-                      saved=s.post_id in saved_ids(db, user.telegram_id, [p]))
+                      liked=_eff_id(p) in liked_ids(db, user.telegram_id, [p]),
+                      saved=_eff_id(p) in saved_ids(db, user.telegram_id, [p]),
+                      reposted_by_me=_eff_id(p) in reposted_ids(db, user.telegram_id, [p]))
+        if d is None:
+            continue
         d["shared_by_id"] = s.from_user_id
         d["shared_by_name"] = sender.first_name if sender else ""
         d["shared_at"] = s.created_at.isoformat() if s.created_at else None
@@ -1283,17 +1504,21 @@ def my_shared(user: models.User = Depends(current_user),
 
 class CommentIn(BaseModel):
     text: str = Field(max_length=1000)
+    parent_id: Optional[int] = None  # Phase 118: reply target
 
 
-def comment_dict(db, cm):
+def comment_dict(db, cm, reply_count=0, replies=None):
     author = db.get(models.User, cm.user_id)
     return {
         "id": cm.id, "post_id": cm.post_id, "user_id": cm.user_id,
+        "parent_id": getattr(cm, "parent_id", None),
         "author_name": author.first_name if author else "",
         "author_username": author.username if author else None,
         "author_verified": bool(author and author.is_verified),
         "author_photo": author.photo_file_id if author else None,
         "text": cm.text,
+        "reply_count": reply_count,
+        "replies": replies or [],
         "created_at": cm.created_at.isoformat() if cm.created_at else None,
     }
 
@@ -1305,10 +1530,25 @@ def list_comments(post_id: int, user: models.User = Depends(current_user),
     # Second-pass audit (R1): this was the one unbounded list in the
     # API — a post with tens of thousands of comments returned all
     # of them at once. Now the LATEST 500, in reading order.
-    rows = db.query(models.Comment).filter_by(post_id=p.id) \
+    tops = db.query(models.Comment).filter_by(
+        post_id=p.id, parent_id=None) \
         .order_by(models.Comment.id.desc()).limit(500).all()
-    rows.reverse()
-    return {"comments": [comment_dict(db, cm) for cm in rows]}
+    tops.reverse()
+    # Phase 118: replies — one level deep, oldest first, in one
+    # extra query for the whole post.
+    replies = db.query(models.Comment).filter_by(post_id=p.id) \
+        .filter(models.Comment.parent_id.isnot(None)) \
+        .order_by(models.Comment.id.asc()).limit(2000).all()
+    by_parent = {}
+    for r in replies:
+        by_parent.setdefault(r.parent_id, []).append(r)
+    out = []
+    for cm in tops:
+        rs = by_parent.get(cm.id, [])
+        out.append(comment_dict(
+            db, cm, reply_count=len(rs),
+            replies=[comment_dict(db, r) for r in rs[:50]]))
+    return {"comments": out}
 
 
 @app.post("/posts/{post_id}/comments")
@@ -1324,7 +1564,17 @@ async def add_comment(post_id: int, body: CommentIn,
     text = body.text.strip()
     if not text:
         raise HTTPException(400, "Comment text is empty")
-    cm = models.Comment(post_id=p.id, user_id=user.telegram_id, text=text)
+    # Phase 118: a reply targets a comment on this post; a
+    # reply to a reply answers its top comment instead.
+    parent = None
+    if body.parent_id is not None:
+        parent = db.get(models.Comment, body.parent_id)
+        if parent is None or parent.post_id != p.id:
+            raise HTTPException(400, "That comment does not exist here")
+        if parent.parent_id is not None:
+            parent = db.get(models.Comment, parent.parent_id)
+    cm = models.Comment(post_id=p.id, user_id=user.telegram_id, text=text,
+                      parent_id=parent.id if parent else None)
     db.add(cm)
     p.comment_count = (p.comment_count or 0) + 1
     db.commit()
@@ -1334,6 +1584,16 @@ async def add_comment(post_id: int, body: CommentIn,
             db, p.user_id, "comment",
             f"\U0001F4AC {user.first_name} commented on your post: {text[:80]}")
         notify.record(db, p.user_id, "comment",
+                      actor_id=user.telegram_id, post_id=p.id)
+    # Phase 118: the parent comment's author hears about the
+    # reply — unless they are the post author (already told)
+    # or the replier themself.
+    if parent is not None and parent.user_id != user.telegram_id \
+            and parent.user_id != p.user_id:
+        await notify.notify_user(
+            db, parent.user_id, "reply",
+            f"\U0001F4AC {user.first_name} replied to your comment: {text[:80]}")
+        notify.record(db, parent.user_id, "reply",
                       actor_id=user.telegram_id, post_id=p.id)
     return comment_dict(db, cm)
 
@@ -1357,7 +1617,7 @@ def public_profile(telegram_id: int, user: models.User = Depends(current_user),
         followers += OFFICIAL_FOLLOWER_BASE  # official account starts at 10k
     following_count = db.query(models.Follow).filter_by(follower_id=telegram_id).count()
     posts = db.query(models.Post).filter_by(
-        user_id=telegram_id, is_deleted=False).count()
+        user_id=telegram_id, is_deleted=False).filter(models.Post.type != "repost").count()
     is_following = db.query(models.Follow).filter_by(
         follower_id=user.telegram_id, following_id=telegram_id).first() is not None
     # Phase 42: for your own profile, the days left on the
@@ -1649,11 +1909,7 @@ def search(q: str = "", user: models.User = Depends(current_user),
         matched = [p for p in rows
                    if tag in (p.hashtags or "").split()
                    and p.user_id not in hidden][:20]
-        liked = liked_ids(db, user.telegram_id, matched)
-        saved = saved_ids(db, user.telegram_id, matched)
-        return {"users": [], "posts": [post_dict(db, p, liked=p.id in liked,
-                                                 saved=p.id in saved)
-                                       for p in matched]}
+        return {"users": [], "posts": _post_list(db, matched, user.telegram_id)}
     if not q:
         return {"users": [], "posts": []}
     like = _like_pattern(q)
@@ -1707,15 +1963,11 @@ def user_posts(telegram_id: int, cursor: int = 0,
     if cursor:
         q = q.filter(models.Post.id < cursor)
     rows = q.order_by(models.Post.id.desc()).limit(20).all()
-    liked = liked_ids(db, user.telegram_id, rows)
-    saved = saved_ids(db, user.telegram_id, rows)
+    next_cursor = rows[-1].id if len(rows) == 20 else None
     counts = _post_view_counts(db, rows)
     _warm_authors(db, rows)
-    return {"posts": [post_dict(db, p, liked=p.id in liked,
-                                saved=p.id in saved,
-                                views=counts.get(p.id, 0))
-                      for p in rows],
-            "next_cursor": rows[-1].id if len(rows) == 20 else None}
+    return {"posts": _post_list(db, rows, user.telegram_id, counts=counts),
+            "next_cursor": next_cursor}
 
 
 @app.get("/leaderboard")
@@ -1854,7 +2106,7 @@ def my_monetization(user: models.User = Depends(current_user),
     referrals = db.query(models.Referral).filter_by(
         referrer_id=user.telegram_id, qualified=True).count()
     posts = db.query(models.Post).filter_by(
-        user_id=user.telegram_id, is_deleted=False).count()
+        user_id=user.telegram_id, is_deleted=False).filter(models.Post.type != "repost").count()
     age_days = (datetime.utcnow() - user.created_at).days \
         if user.created_at else 0
     # SQL aggregate instead of loading the member's whole ledger
@@ -2045,6 +2297,8 @@ _NOTIF_PHRASES = {
     "comment": "commented on your post",
     "follow": "started following you",
     "share": "shared a post with you",
+    "repost": "reposted your post",
+    "reply": "replied to your comment",
     "post_live": "Your video is now live",
     "announcement": "Announcement",
     "verification": "Verification update",
@@ -2386,7 +2640,7 @@ def admin_user_detail(telegram_id: int,
         "referrer_id": u.referrer_id,
         "points": u.points_balance, "points_earned_total": int(earned),
         "posts": db.query(models.Post).filter_by(
-            user_id=telegram_id, is_deleted=False).count(),
+            user_id=telegram_id, is_deleted=False).filter(models.Post.type != "repost").count(),
         "comments": db.query(models.Comment).filter_by(
             user_id=telegram_id).count(),
         "followers": db.query(models.Follow).filter_by(
@@ -2498,6 +2752,7 @@ def admin_remove_post(post_id: int, admin: models.User = Depends(moderator_user)
     if p is None or p.is_deleted:
         raise HTTPException(404, "Post not found")
     p.is_deleted = True
+    _delete_post_cascade(db, p)
     _audit(db, admin, "post_remove", target_id=p.user_id,
            detail=f"post {p.id}")
     db.commit()
@@ -2543,6 +2798,7 @@ def admin_resolve_report(report_id: int, body: ResolveIn,
         p = db.get(models.Post, r.post_id)
         if p is not None:
             p.is_deleted = True
+            _delete_post_cascade(db, p)
     r.status = "resolved"
     _audit(db, admin, "report_resolve", target_id=r.reporter_id,
            detail=f"report {r.id}: {body.action}")
@@ -2610,7 +2866,7 @@ def admin_verifications(admin: models.User = Depends(admin_user),
             "referrals": _qualified_referrals_count(db, u.telegram_id),
             "met": _verification_met(db, u.telegram_id)[2],
             "posts": db.query(models.Post).filter_by(
-                user_id=u.telegram_id, is_deleted=False).count(),
+                user_id=u.telegram_id, is_deleted=False).filter(models.Post.type != "repost").count(),
             "joined": u.created_at.isoformat() if u.created_at else None,
         })
     return {"requests": out,
@@ -3982,7 +4238,9 @@ _NEXA_SYSTEM = (
     "follow. Like with the heart (likes give no points), "
     "comment, save, or open the menu for Share, Copy link, "
     "Download, View profile, Follow, Not interested or Report; "
-    "your own posts also have Edit and Delete there. Views "
+    "your own posts also have Edit and Delete there. Tap Repost "
+    "to share a post to your own feed, and Reply under any "
+    "comment to answer it directly. Views "
     "count once per person. A little way down the Explore "
     "feed, a Suggested for you card suggests people to "
     "follow — tap Follow on anyone there, or tap their "
