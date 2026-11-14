@@ -3330,6 +3330,7 @@ function routeStartParam() {
   }
 }
 function bootOk() {
+  loadAnnouncementBar();
   loadFeed(true);
   routeStartParam();
 }
@@ -4999,10 +5000,22 @@ async function loadAdminStats() {
     const s = await api("/admin/stats");
     [["👥 Members", s.users], ["📝 Posts", s.posts],
      ["💬 Comments", s.comments], ["🚩 Reports", s.open_reports],
-     ["🚫 Banned", s.banned_users], ["⭐ Points", s.total_points]
+     ["🚫 Banned", s.banned_users], ["⭐ Points", s.total_points],
+     ["🎨 Designs", s.designs],
+     ["🛡️ Verifications", s.pending_verifications]
     ].forEach(([l, v]) => box.appendChild(statCard(l, v)));
     const ahR = $("ah-reports");
     if (ahR) ahR.textContent = s.open_reports;
+    // Phase 119: hero cells + Control Panel nav badges (live counts).
+    const ahD = $("ah-designs"); if (ahD) ahD.textContent = s.designs;
+    const ahV = $("ah-verifs");
+    if (ahV) ahV.textContent = s.pending_verifications;
+    const cpR = $("cp-count-reports");
+    if (cpR) cpR.textContent = s.open_reports;
+    const cpM = $("cp-count-members");
+    if (cpM) cpM.textContent = s.users;
+    const cpV = $("cp-count-verifs");
+    if (cpV) cpV.textContent = s.pending_verifications;
   } catch (e) { box.textContent = "Could not load stats."; }
 }
 
@@ -5103,6 +5116,177 @@ function wireBackupCard() {
   };
 }
 
+// ------------------------------------------- Phase 119: Control Panel --
+// One home for everything admin: the section nav jumps to each part
+// of the panel (counts on the nav come from loadAdminStats), Site
+// Controls flips maintenance + the feed banner, the Audit Log shows
+// every privileged action, and Content gains the design list.
+function wireControlPanel() {
+  const nav = $("cp-nav");
+  if (!nav || nav.dataset.wired) return;
+  nav.dataset.wired = "1";
+  nav.querySelectorAll("button[data-target]").forEach(btn => {
+    btn.onclick = () => {
+      const el = $(btn.dataset.target);
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+    };
+  });
+}
+
+function wireCpButtons() {
+  const mt = $("maint-toggle");
+  if (mt && !mt.dataset.wired) {
+    mt.dataset.wired = "1"; mt.onclick = toggleMaintenance;
+  }
+  const as = $("announce-save");
+  if (as && !as.dataset.wired) {
+    as.dataset.wired = "1"; as.onclick = saveAnnouncement;
+  }
+  const ac = $("announce-clear");
+  if (ac && !ac.dataset.wired) {
+    ac.dataset.wired = "1"; ac.onclick = clearAnnouncement;
+  }
+  const ar = $("audit-refresh");
+  if (ar && !ar.dataset.wired) {
+    ar.dataset.wired = "1"; ar.onclick = loadAuditLog;
+  }
+}
+
+async function loadSiteControls() {
+  const st = $("maint-status"), tg = $("maint-toggle");
+  if (!st || !tg) return;
+  try {
+    const m = await api("/admin/maintenance");
+    st.textContent = m.maintenance
+      ? (m.env_locked
+        ? "Maintenance is ON (set by the server — the panel cannot switch it off)."
+        : "Maintenance is ON — members see \u201cdown for maintenance\u201d.")
+      : "Maintenance is OFF — the app is open to everyone.";
+    tg.textContent = m.maintenance
+      ? "Switch maintenance OFF" : "Switch maintenance ON";
+    tg.disabled = !!m.env_locked;
+    tg.dataset.maintOn = m.maintenance ? "1" : "0";
+  } catch (e) { st.textContent = "Could not load maintenance state."; }
+  const ann = $("announce-text");
+  if (ann && !ann.dataset.filled) {
+    try {
+      const a = await api("/announcement");
+      ann.value = a.text || "";
+      ann.dataset.filled = "1";
+    } catch (e) { /* banner read is best-effort */ }
+  }
+}
+
+async function toggleMaintenance() {
+  const tg = $("maint-toggle"), st = $("maint-status");
+  if (!tg) return;
+  const wantOn = tg.dataset.maintOn !== "1";
+  if (!confirm(wantOn
+      ? "Switch maintenance ON? Members will see the app as down."
+      : "Switch maintenance OFF? The app opens again.")) return;
+  tg.disabled = true;
+  try {
+    await api("/admin/maintenance", { method: "POST",
+      body: JSON.stringify({ on: wantOn }) });
+    setStatus(wantOn ? "Maintenance ON." : "Maintenance OFF — app is open.");
+    loadSiteControls();
+  } catch (e) { setStatus("Could not change maintenance."); }
+  tg.disabled = false;
+}
+
+async function saveAnnouncement() {
+  const box = $("announce-text"), st = $("announce-status");
+  if (!box) return;
+  try {
+    const r = await api("/admin/announcement", { method: "POST",
+      body: JSON.stringify({ text: box.value }) });
+    if (st) st.textContent = r.text
+      ? "Announcement is live on every feed ✓"
+      : "Announcement cleared.";
+    loadAnnouncementBar();
+  } catch (e) {
+    if (st) st.textContent = "Could not save the announcement.";
+  }
+}
+
+async function clearAnnouncement() {
+  const box = $("announce-text");
+  if (box) box.value = "";
+  saveAnnouncement();
+}
+
+async function loadAuditLog() {
+  const box = $("admin-audit-log");
+  if (!box) return;
+  box.innerHTML = "";
+  try {
+    const r = await api("/admin/audit-log?limit=50");
+    if (!r.entries.length) {
+      box.innerHTML = '<p class="hint">No admin actions yet.</p>';
+      return;
+    }
+    r.entries.forEach(e => {
+      const row = document.createElement("div");
+      row.className = "audit-row";
+      const t = document.createElement("div");
+      t.className = "admin-title";
+      t.textContent = e.action + (e.target_id ? " → " + e.target_id : "");
+      const s = document.createElement("div");
+      s.className = "admin-sub";
+      s.textContent = "admin " + e.admin_id + " · " +
+        (e.detail || "") + " · " + relTime(e.created_at);
+      row.append(t, s);
+      box.appendChild(row);
+    });
+  } catch (e) { box.textContent = "Could not load the audit log."; }
+}
+
+async function loadAdminDesigns() {
+  const box = $("admin-designs");
+  if (!box) return;
+  box.innerHTML = "";
+  try {
+    const r = await api("/admin/designs?limit=30");
+    if (!r.designs.length) {
+      box.innerHTML = '<p class="hint">No designs yet.</p>';
+      return;
+    }
+    r.designs.forEach(d => {
+      const row = document.createElement("div");
+      row.className = "card admin-row";
+      const info = document.createElement("div");
+      info.className = "admin-info";
+      const t = document.createElement("div");
+      t.className = "admin-title";
+      t.textContent = "🎨 #" + d.id + " · 🤍 " + d.like_count;
+      const s = document.createElement("div");
+      s.className = "admin-sub";
+      s.textContent = d.prompt || "(no prompt)";
+      info.append(t, s);
+      row.appendChild(info);
+      const btn = document.createElement("button");
+      btn.className = "danger-btn"; btn.textContent = "Remove";
+      btn.onclick = async () => {
+        if (!confirm("Remove design #" + d.id + "?")) return;
+        await api("/admin/designs/" + d.id, { method: "DELETE" });
+        loadAdminDesigns(); loadAdminStats();
+      };
+      row.appendChild(btn);
+      box.appendChild(row);
+    });
+  } catch (e) { box.textContent = "Could not load designs."; }
+}
+
+async function loadAnnouncementBar() {
+  const bar = $("announce-bar");
+  if (!bar) return;
+  try {
+    const a = await api("/announcement");
+    if (a.text) { bar.textContent = "📣 " + a.text; bar.hidden = false; }
+    else bar.hidden = true;
+  } catch (e) { bar.hidden = true; }
+}
+
 function loadAdmin() {
   if (!me || !me.is_admin) return;
   loadEarnings();
@@ -5115,6 +5299,11 @@ function loadAdmin() {
   loadAdminComments();
   prefillOfficial();
   loadAdminPosts();
+  wireControlPanel();
+  wireCpButtons();
+  loadSiteControls();
+  loadAuditLog();
+  loadAdminDesigns();
   wireBackupCard();
 }
 

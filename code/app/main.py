@@ -212,13 +212,34 @@ _CSP = (
 )
 
 
+def _maintenance_on_db() -> bool:
+    """Phase 119: runtime maintenance flag (Control Panel toggle),
+    stored in app_settings as key "maintenance" = "1". A DB failure
+    falls back to the env flag only — the panel toggle never breaks
+    the API by itself."""
+    try:
+        db = SessionLocal()
+        try:
+            row = db.get(models.AppSetting, "maintenance")
+            return bool(row is not None and row.value == "1")
+        finally:
+            db.close()
+    except Exception:
+        return False
+
+
 @app.middleware("http")
 async def security_middleware(request, call_next):
     # Emergency maintenance mode (§14): the API pauses with 503 while
     # the shell and /health stay up, so the platform can be frozen
     # during an incident without stopping the service.
-    if settings.MAINTENANCE_MODE == "1" \
+    # Phase 119: the env flag still wins, but the owner can also flip
+    # maintenance from the Control Panel (the app_settings row
+    # "maintenance"). /admin/maintenance itself stays reachable so
+    # the panel can always switch the site back on.
+    if (settings.MAINTENANCE_MODE == "1" or _maintenance_on_db()) \
             and request.url.path != "/health" \
+            and request.url.path != "/admin/maintenance" \
             and not request.url.path.startswith("/webapp"):
         return JSONResponse(
             status_code=503,
@@ -2581,6 +2602,11 @@ def admin_stats(admin: models.User = Depends(admin_user),
         "banned_users": db.query(models.User).filter_by(is_banned=True).count(),
         "total_points": db.query(models.User).with_entities(
             func.coalesce(func.sum(models.User.points_balance), 0)).scalar(),
+        # Phase 119 (Control Panel Overview): designs + pending
+        # blue-tick applications, so the panel nav shows live counts.
+        "designs": db.query(models.Design).count(),
+        "pending_verifications": db.query(models.VerificationRequest)
+            .filter_by(status="pending").count(),
     }
 
 
@@ -3568,6 +3594,95 @@ def admin_audit_log(limit: int = 100,
         "target_id": r.target_id, "detail": r.detail,
         "created_at": r.created_at.isoformat() if r.created_at else None,
     } for r in rows]}
+
+
+# ---------------------------------------------------------------------------
+# Phase 119: Control Panel — admin design list, maintenance toggle,
+# app-wide announcement banner (admin-only writes, public read).
+# ---------------------------------------------------------------------------
+
+@app.get("/admin/designs")
+def admin_designs(limit: int = 30,
+                  admin: models.User = Depends(admin_user),
+                  db: Session = Depends(get_db)):
+    """Control Panel → Content: the design gallery for the admin —
+    newest first, with prompts and like counts, so a design can be
+    reviewed and removed from the panel. Removing still goes
+    through DELETE /admin/designs/{id}."""
+    rows = db.query(models.Design).order_by(models.Design.id.desc()) \
+        .limit(max(1, min(limit, 50))).all()
+    return {"designs": [{
+        "id": d.id, "prompt": d.prompt, "like_count": d.like_count,
+        "image_file_id": d.image_file_id,
+        "created_at": d.created_at.isoformat() if d.created_at else None,
+    } for d in rows]}
+
+
+class MaintenanceIn(BaseModel):
+    on: bool
+
+
+@app.get("/admin/maintenance")
+def admin_maintenance_state(admin: models.User = Depends(admin_user),
+                            db: Session = Depends(get_db)):
+    """Control Panel → Site controls: is the site in maintenance?
+    env_locked means the MAINTENANCE_MODE env var is "1" — the
+    panel toggle cannot switch that off."""
+    return {"maintenance": settings.MAINTENANCE_MODE == "1"
+            or _maintenance_on_db(),
+            "env_locked": settings.MAINTENANCE_MODE == "1"}
+
+
+@app.post("/admin/maintenance")
+def admin_maintenance_set(body: MaintenanceIn,
+                          admin: models.User = Depends(admin_user),
+                          db: Session = Depends(get_db)):
+    """Flip the runtime maintenance flag (app_settings row
+    "maintenance"). The env flag still wins when set; the
+    middleware exempts this route, so the panel can always switch
+    the site back on."""
+    row = db.get(models.AppSetting, "maintenance")
+    if row is None:
+        row = models.AppSetting(key="maintenance", value="")
+        db.add(row)
+    row.value = "1" if body.on else "0"
+    _audit(db, admin, "maintenance_on" if body.on else "maintenance_off")
+    db.commit()
+    return {"maintenance": settings.MAINTENANCE_MODE == "1"
+            or _maintenance_on_db(),
+            "env_locked": settings.MAINTENANCE_MODE == "1"}
+
+
+class AnnouncementIn(BaseModel):
+    text: str = Field(default="", max_length=256)
+
+
+@app.get("/announcement")
+def public_announcement(db: Session = Depends(get_db)):
+    """Control Panel → Site controls: the app-wide banner text the
+    admin set, or "" when none. Public — the client reads it at
+    boot and shows the banner on the feed."""
+    row = db.get(models.AppSetting, "announcement")
+    return {"text": (row.value if row is not None else "") or ""}
+
+
+@app.post("/admin/announcement")
+def admin_announcement_set(body: AnnouncementIn,
+                           admin: models.User = Depends(admin_user),
+                           db: Session = Depends(get_db)):
+    """Set (or clear, with empty text) the app-wide announcement
+    banner. Shown on every member's feed until cleared."""
+    text = (body.text or "").strip()
+    row = db.get(models.AppSetting, "announcement")
+    if row is None:
+        row = models.AppSetting(key="announcement", value="")
+        db.add(row)
+    row.value = text
+    _audit(db, admin,
+           "announcement_set" if text else "announcement_cleared",
+           detail=text[:200])
+    db.commit()
+    return {"text": text}
 
 
 def _export_payload(db: Session, user: models.User) -> dict:

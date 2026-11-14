@@ -1622,6 +1622,22 @@ button.liked { animation: heartPop .32s cubic-bezier(.22,.9,.3,1); }
 .admin-stats .stat-card:nth-child(6n+5) { background: linear-gradient(150deg, #E1F3FF, #FFFBFC); }
 .admin-stats .stat-card:nth-child(6n)   { background: linear-gradient(150deg, #FFE9E0, #FFFBFC); }
 .admin-stats .stat-num { color: #3A2E33; }
+
+/* Phase 119: Control Panel nav + announcement banner + audit log. */
+.cp-nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 4px; }
+.cp-nav button { flex: 1 1 auto; padding: 9px 12px; border-radius: 999px;
+  background: #FFFBFC; font-weight: 700; font-size: 13px; color: #3A2E33;
+  box-shadow: var(--clay-shadow-sm); }
+.cp-count { display: inline-block; min-width: 20px; padding: 1px 6px;
+  border-radius: 999px; background: #3E8FD0; color: #fff; font-size: 11px;
+  font-weight: 800; margin-left: 2px; }
+.announce-bar { margin: 10px 0; padding: 10px 14px; border-radius: 16px;
+  background: linear-gradient(120deg, #FFE9F3, #E1F3FF); font-weight: 700;
+  font-size: 14px; color: #3A2E33; box-shadow: var(--clay-shadow-sm); }
+.audit-row { padding: 8px 2px; border-bottom: 1px solid rgba(58,46,51,.08); }
+.audit-row:last-child { border-bottom: none; }
+#view-admin [id^="cp-sec-"] { scroll-margin-top: 10px; }
+.admin-hero-stats { grid-template-columns: repeat(3, 1fr); }
 .dash-card { border-top: 3px solid rgba(62, 143, 208, .45); }
 .bar-fill { background: linear-gradient(90deg, #8ED4F7, #3E8FD0, #8E24AA);
   box-shadow: 0 2px 6px rgba(62, 143, 208, .4);
