@@ -20,8 +20,8 @@
 <meta name="twitter:description" content="Share photos, watch reels, discover designs and play classic games — all inside Telegram.">
 <meta name="twitter:image" content="https://nexora-9pip.onrender.com/webapp/og-image.png">
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
-<link rel="stylesheet" href="style.css?v=119">
-<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=119">
+<link rel="stylesheet" href="style.css?v=120">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=120">
 </head>
 <body>
 <div id="entry-screen">
@@ -357,6 +357,7 @@
     <button type="button" data-target="cp-sec-reports">🚩 Reports <span class="cp-count" id="cp-count-reports">–</span></button>
     <button type="button" data-target="cp-sec-members">👥 Members <span class="cp-count" id="cp-count-members">–</span></button>
     <button type="button" data-target="cp-sec-verifs">🛡️ Verifications <span class="cp-count" id="cp-count-verifs">–</span></button>
+    <button type="button" data-target="cp-sec-verify">✅ Verify by Username</button>
     <button type="button" data-target="cp-sec-content">📝 Content</button>
     <button type="button" data-target="cp-sec-broadcast">📣 Broadcast</button>
     <button type="button" data-target="cp-sec-audit">📜 Audit Log</button>
@@ -485,6 +486,17 @@
 
   <h3 class="admin-sec" id="cp-sec-verifs">🛡️ Verification requests</h3>
   <div id="admin-verifications"></div>
+
+  <h3 class="admin-sec" id="cp-sec-verify">✅ Verify by Username</h3>
+  <div class="card bc-card">
+    <p class="hint">Give or remove the blue tick for one person — type their @username below. The tick shows on their profile right away, and they get a notification.</p>
+    <div class="searchbar">
+      <input id="vbu-q" type="text" placeholder="@username" autocomplete="off">
+      <button id="vbu-go" type="button">Search</button>
+    </div>
+    <div id="vbu-result"></div>
+    <p class="hint" id="vbu-status"></p>
+  </div>
   <h3 class="admin-sec">📣 Official account</h3>
   <div class="card bc-card">
     <p class="hint">Post, like, comment and change the photo as
@@ -675,8 +687,8 @@
   <button id="pv-close" type="button" aria-label="Close">✕</button>
 </div>
 
-<script src="vendor/leaflet/leaflet.js?v=119"></script>
-<script src="app.js?v=119"></script>
-<script src="games.js?v=119"></script>
+<script src="vendor/leaflet/leaflet.js?v=120"></script>
+<script src="app.js?v=120"></script>
+<script src="games.js?v=120"></script>
 </body>
 </html>

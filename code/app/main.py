@@ -3070,9 +3070,7 @@ def admin_verify_toggle(telegram_id: int, body: VerifyToggleIn,
     u = db.get(models.User, telegram_id)
     if u is None:
         raise HTTPException(404, "Member not found")
-    u.is_verified = bool(body.verified)
-    _audit(db, admin, "verify_grant" if body.verified else "verify_revoke",
-           target_id=telegram_id)
+    _set_user_verified(db, admin, u, bool(body.verified))
     db.commit()
     return {"telegram_id": telegram_id,
             "is_verified": bool(u.is_verified)}
@@ -3683,6 +3681,100 @@ def admin_announcement_set(body: AnnouncementIn,
            detail=text[:200])
     db.commit()
     return {"text": text}
+
+
+# ---------------------------------------------------------------------------
+# Phase 120: Verify by Username — the Control Panel section where
+# the admin grants or removes the blue tick for one person by
+# @username. Lookup is exact and case-insensitive, @ optional.
+# ---------------------------------------------------------------------------
+
+def _normalize_username(raw) -> str:
+    """Strip whitespace and one leading @, lowercase for lookup."""
+    name = (raw or "").strip()
+    if name.startswith("@"):
+        name = name[1:]
+    return name.strip().lower()
+
+
+def _set_user_verified(db, admin, user, verified):
+    """Shared grant/revoke core: flip the flag, audit the action.
+    Used by the member toggle and by Verify by Username alike."""
+    user.is_verified = bool(verified)
+    _audit(db, admin, "verify_grant" if verified else "verify_revoke",
+           target_id=user.telegram_id)
+
+
+@app.get("/admin/users/by-username/{username}")
+def admin_user_by_username(username: str,
+                           admin: models.User = Depends(admin_user),
+                           db: Session = Depends(get_db)):
+    """Control Panel -> Verify by Username: exact (case-insensitive)
+    lookup for the user card — name, photo, tick status, followers,
+    posts. 404 when nobody has that username."""
+    name = _normalize_username(username)
+    if not name:
+        raise HTTPException(400, "Username cannot be empty")
+    u = db.query(models.User).filter(
+        func.lower(models.User.username) == name).first()
+    if u is None:
+        raise HTTPException(404, "No member with that username")
+    return {
+        "telegram_id": u.telegram_id, "first_name": u.first_name,
+        "username": u.username, "photo_file_id": u.photo_file_id,
+        "is_verified": bool(u.is_verified),
+        "followers": _followers_count(db, u.telegram_id),
+        "posts": db.query(models.Post).filter_by(
+            user_id=u.telegram_id, is_deleted=False).filter(
+            models.Post.type != "repost").count(),
+    }
+
+
+class VerifyByUsernameIn(BaseModel):
+    username: str = Field(max_length=64)
+    action: str = Field(max_length=16)
+
+
+@app.post("/admin/verify-by-username")
+async def admin_verify_by_username(body: VerifyByUsernameIn,
+                                   admin: models.User = Depends(admin_user),
+                                   db: Session = Depends(get_db)):
+    """Control Panel -> Verify by Username: grant or remove the blue
+    tick for one person by @username. A grant/revoke that changes
+    nothing is a harmless no-op (changed: False) — no audit row, no
+    notification. The official account (@nexora) can never change
+    through here. A real change notifies the member, like the
+    verification-approval grant does."""
+    if body.action not in ("grant", "revoke"):
+        raise HTTPException(400, "Action must be 'grant' or 'revoke'")
+    name = _normalize_username(body.username)
+    if not name:
+        raise HTTPException(400, "Username cannot be empty")
+    u = db.query(models.User).filter(
+        func.lower(models.User.username) == name).first()
+    if u is None:
+        raise HTTPException(404, "No member with that username")
+    if u.telegram_id == OFFICIAL_ID:
+        raise HTTPException(400, "The official account is always verified")
+    verified = body.action == "grant"
+    if bool(u.is_verified) == verified:
+        return {"telegram_id": u.telegram_id, "username": u.username,
+                "first_name": u.first_name,
+                "is_verified": bool(u.is_verified), "changed": False}
+    _set_user_verified(db, admin, u, verified)
+    db.commit()
+    if verified:
+        text = ("The admin gave you the blue tick — it now shows "
+                "on your profile \u2713")
+    else:
+        text = "The admin removed the blue tick from your profile."
+    notify.record(db, u.telegram_id, "verification",
+                  actor_id=None, text=text)
+    await notify.notify_user(db, u.telegram_id,
+                             "verification", "\U0001f6e1\ufe0f Nexora Social\n" + text)
+    return {"telegram_id": u.telegram_id, "username": u.username,
+            "first_name": u.first_name,
+            "is_verified": bool(u.is_verified), "changed": True}
 
 
 def _export_payload(db: Session, user: models.User) -> dict:

@@ -5304,6 +5304,7 @@ function loadAdmin() {
   loadSiteControls();
   loadAuditLog();
   loadAdminDesigns();
+  wireVbu();
   wireBackupCard();
 }
 
@@ -5693,6 +5694,92 @@ async function deleteMember(tid, name) {
     loadAdminUsers($("admin-user-q").value.trim());
     loadDashboard(); loadAdminStats();
   } catch (e) { setStatus("Could not delete that member."); }
+}
+
+// --------------------------------------- Phase 120: Verify by Username --
+// Control Panel section: the admin types a @username, sees the
+// member's card, and grants or removes the blue tick on the spot.
+// A grant/revoke that changes nothing is a no-op on the server.
+let vbuUser = null;
+function wireVbu() {
+  const go = $("vbu-go");
+  if (!go || go.dataset.wired) return;
+  go.dataset.wired = "1";
+  go.onclick = searchVbu;
+  const q = $("vbu-q");
+  if (q) q.addEventListener("keydown", e => {
+    if (e.key === "Enter") searchVbu();
+  });
+}
+
+async function searchVbu() {
+  const q = $("vbu-q"), box = $("vbu-result"), st = $("vbu-status");
+  if (!q || !box) return;
+  const name = (q.value || "").trim();
+  if (!name) {
+    if (st) st.textContent = "Type a @username first.";
+    return;
+  }
+  vbuUser = null;
+  box.innerHTML = "";
+  if (st) st.textContent = "Searching\u2026";
+  let u;
+  try {
+    u = await api("/admin/users/by-username/" +
+                  encodeURIComponent(name.replace(/^@/, "")));
+  } catch (e) {
+    if (st) st.textContent = "";
+    box.innerHTML = '<p class="hint">No member with that username — '
+      + "check the spelling and try again.</p>";
+    return;
+  }
+  vbuUser = u;
+  if (st) st.textContent = "";
+  const row = document.createElement("div");
+  row.className = "card admin-row";
+  row.appendChild(avatarEl(u.first_name, u.telegram_id,
+                           false, u.photo_file_id));
+  const info = document.createElement("div");
+  info.className = "admin-info";
+  const t = document.createElement("div");
+  t.className = "admin-title";
+  t.textContent = u.first_name + (u.is_verified ? " \u2713" : "");
+  const s = document.createElement("div");
+  s.className = "admin-sub";
+  s.textContent = (u.username ? "@" + u.username + " \u00b7 " : "") +
+    u.followers + " followers \u00b7 " + u.posts + " posts \u00b7 " +
+    (u.is_verified ? "Blue tick ON" : "No blue tick");
+  info.append(t, s);
+  row.appendChild(info);
+  const btn = document.createElement("button");
+  if (u.is_verified) {
+    btn.className = "danger-btn";
+    btn.textContent = "Remove blue tick";
+    btn.onclick = () => applyVbu("revoke");
+  } else {
+    btn.textContent = "\u2705 Give blue tick";
+    btn.onclick = () => applyVbu("grant");
+  }
+  row.appendChild(btn);
+  box.appendChild(row);
+}
+
+async function applyVbu(action) {
+  const st = $("vbu-status");
+  if (!vbuUser) return;
+  if (!confirm(action === "grant"
+      ? "Give the blue tick to @" + vbuUser.username + "?"
+      : "Remove the blue tick from @" + vbuUser.username + "?")) return;
+  try {
+    const r = await api("/admin/verify-by-username", { method: "POST",
+      body: JSON.stringify({ username: vbuUser.username,
+                             action }) });
+    if (st) st.textContent = r.changed
+      ? (r.is_verified ? "Blue tick granted \u2713."
+                       : "Blue tick removed.")
+      : "Already " + (r.is_verified ? "verified." : "not verified.");
+    searchVbu();
+  } catch (e) { if (st) st.textContent = "Could not change verification."; }
 }
 
 async function loadAdminPosts() {
