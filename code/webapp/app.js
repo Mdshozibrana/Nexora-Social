@@ -4776,6 +4776,7 @@ async function loadDashboard() {
     const ahM = $("ah-members"); if (ahM) ahM.textContent = d.total_members;
     const ahA = $("ah-active"); if (ahA) ahA.textContent = d.active_now;
     const ahP = $("ah-posts"); if (ahP) ahP.textContent = d.posts;
+    syncObsDial();
     const dayLabel = iso => {
       const dt = new Date(iso + "T00:00:00");
       return dt.toLocaleDateString(undefined, { day: "numeric", month: "short" });
@@ -4993,6 +4994,47 @@ async function openUserDetail(telegramId) {
   } catch (e) { box.innerHTML = '<p class="hint">Could not load details.</p>'; }
 }
 
+// --------------------------------------- Phase 121: Obsidian dial --
+// The hero dial shows active members as a purple arc of total
+// members. syncObsDial() reads the two hero numbers (filled by
+// loadDashboard) and drives the SVG arc; it never throws — a
+// missing element just leaves the arc empty.
+function syncObsDial() {
+  const arc = $("obs-dial-arc");
+  if (!arc) return;
+  const members = parseInt(($("ah-members") || {}).textContent, 10) || 0;
+  const active = parseInt(($("ah-active") || {}).textContent, 10) || 0;
+  let ratio = members > 0 ? active / members : 0;
+  ratio = Math.min(1, Math.max(0, ratio));
+  arc.setAttribute("stroke-dasharray", "527.8");
+  arc.setAttribute("stroke-dashoffset", (527.8 * (1 - ratio)).toFixed(1));
+}
+
+// Phase 121: the four round buttons around the hero dial jump to
+// the matching Control Panel action. Guarded by dataset on
+// #view-admin so repeated loadAdmin() calls stay inert.
+function wireObsQuickActions() {
+  const root = $("view-admin");
+  if (!root || root.dataset.obsWired) return;
+  root.dataset.obsWired = "1";
+  const qa = (id, fn) => { const b = $(id); if (b) b.onclick = fn; };
+  qa("obs-qa-maint", () => {
+    const t = $("maint-toggle");
+    if (t) t.click();
+  });
+  qa("obs-qa-announce", () => {
+    const s = $("cp-sec-site");
+    if (s) s.scrollIntoView({ behavior: "smooth", block: "start" });
+    const a = $("announce-text");
+    if (a) a.focus();
+  });
+  qa("obs-qa-backup", () => {
+    const s = $("cp-sec-backup");
+    if (s) s.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+  qa("obs-qa-refresh", () => loadAdmin());
+}
+
 async function loadAdminStats() {
   const box = $("admin-stats");
   box.innerHTML = "";
@@ -5016,6 +5058,7 @@ async function loadAdminStats() {
     if (cpM) cpM.textContent = s.users;
     const cpV = $("cp-count-verifs");
     if (cpV) cpV.textContent = s.pending_verifications;
+    syncObsDial();
   } catch (e) { box.textContent = "Could not load stats."; }
 }
 
@@ -5306,6 +5349,7 @@ function loadAdmin() {
   loadAdminDesigns();
   wireVbu();
   wireBackupCard();
+  wireObsQuickActions();
 }
 
 async function loadAdminReports() {

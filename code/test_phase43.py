@@ -9,7 +9,10 @@ CSS = open("webapp/style.css").read()
 for marker in ('class="admin-hero"', 'id="ah-members"',
                'id="ah-active"', 'id="ah-posts"', 'id="ah-reports"',
                'class="admin-live"', 'class="live-dot"',
-               "Owner control room", "?v=120"):
+               "Good Evening,", "?v=121"):
+    # Phase 121: the hero subtitle "Owner control room" was replaced
+    # by the Obsidian greeting ("Good Evening, Admin"); the hero
+    # itself (class, ids, LIVE pill) is unchanged.
     assert marker in HTML, marker
 # the dashboard's data containers survived the redesign
 for marker in ('id="dash-tiles"', 'id="admin-stats"',

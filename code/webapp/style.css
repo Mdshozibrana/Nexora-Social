@@ -2491,3 +2491,151 @@ html[data-theme] .suggest-follow.on { background: var(--t-chip, #F3DCE7);
 #photo-viewer { animation: pvFadeIn .2s ease-out; }
 #pv-img { animation: pvZoomIn .28s ease-out; }
 #pv-name { animation: pvFadeIn .3s ease-out; }
+
+/* ================================================================
+   Phase 121 — Obsidian Admin: the Admin Control Panel goes
+   dark (Obsidian Home reference) — near-black background,
+   dark cards, purple accent. Presentation only, admin view
+   only: EVERY selector is scoped under #view-admin.
+   ================================================================ */
+#view-admin { background: #0D0D17; border-radius: 28px 28px 0 0;
+  padding: 14px 12px 20px; color: #F4F2FF; }
+#view-admin .admin-hero { background: #1B1B2A; border-radius: 28px;
+  padding: 18px 16px 16px; color: #F4F2FF;
+  box-shadow: 0 18px 38px rgba(0, 0, 0, .5),
+    inset 0 1px 0 rgba(255, 255, 255, .06);
+  background-image: radial-gradient(220px 160px at 85% -10%,
+    rgba(167, 139, 250, .28), rgba(167, 139, 250, 0) 70%); }
+#view-admin .admin-hero::before,
+#view-admin .admin-hero::after { display: none; }
+#view-admin .obs-head { position: relative; }
+#view-admin .obs-eyebrow { font-size: 11px; font-weight: 800;
+  letter-spacing: .22em; color: #A78BFA; }
+#view-admin .obs-greet { font-size: 26px; font-weight: 900;
+  color: #fff; margin-top: 6px; }
+#view-admin .obs-greet .obs-accent { color: #A78BFA; }
+#view-admin .obs-sub { font-size: 13.5px; color: #A8A3C7;
+  margin-top: 4px; }
+#view-admin .obs-head .admin-live { position: absolute; top: 2px;
+  right: 0; background: rgba(167, 139, 250, .14);
+  border: 1px solid rgba(167, 139, 250, .45); color: #C4B5FD; }
+#view-admin .obs-dial-wrap { position: relative; max-width: 320px;
+  margin: 10px auto 6px; }
+#view-admin .obs-dial { display: block; width: 200px; margin: 0 auto; }
+#view-admin .obs-dial-bg { fill: none; stroke: #2A2A40;
+  stroke-width: 10; }
+#view-admin .obs-dial-arc { transition: stroke-dashoffset .6s ease; }
+#view-admin .obs-dial-centre { position: absolute; left: 50%;
+  top: 100px; transform: translate(-50%, -50%); width: 150px;
+  text-align: center; }
+#view-admin .obs-dial-num { font-size: 44px; font-weight: 900;
+  line-height: 1; color: #fff; }
+#view-admin .obs-dial-lab { font-size: 12px; font-weight: 700;
+  color: #A8A3C7; margin-top: 4px; letter-spacing: .06em; }
+#view-admin .obs-dial-sub { font-size: 11.5px; color: #A8A3C7;
+  margin-top: 6px; }
+#view-admin .obs-dial-sub span { color: #C4B5FD; font-weight: 800; }
+#view-admin .obs-qa { position: absolute; width: 52px; height: 52px;
+  border-radius: 50%; border: none; cursor: pointer; font-size: 22px;
+  display: flex; align-items: center; justify-content: center;
+  background: #23233A; color: #fff;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, .5),
+    inset 0 1px 0 rgba(255, 255, 255, .08); }
+#view-admin .obs-qa:active { box-shadow: 0 0 0 3px rgba(167, 139, 250, .5),
+  0 0 22px rgba(167, 139, 250, .55); }
+#view-admin #obs-qa-maint { left: 0; top: 24px; }
+#view-admin #obs-qa-announce { right: 0; top: 24px; }
+#view-admin #obs-qa-backup { left: 0; bottom: 24px; }
+#view-admin #obs-qa-refresh { right: 0; bottom: 24px; }
+#view-admin .obs-hero-strip { display: grid;
+  grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 12px; }
+#view-admin .obs-hero-strip .ah-cell {
+  background: rgba(255, 255, 255, .05);
+  border: 1px solid rgba(255, 255, 255, .07); box-shadow: none; }
+#view-admin .obs-hero-strip .ah-num { font-size: 20px; color: #fff; }
+#view-admin .obs-hero-strip .ah-lab { color: #A8A3C7; font-size: 10.5px;
+  opacity: 1; }
+#view-admin .cp-nav { display: grid; grid-template-columns: 1fr 1fr;
+  gap: 9px; margin: 12px 0 4px; }
+#view-admin .cp-nav button { background: #1B1B2A; color: #F4F2FF;
+  border-radius: 20px; padding: 14px 12px; box-shadow: none;
+  border: 1px solid rgba(255, 255, 255, .07); text-align: left; }
+#view-admin .cp-count { background: #8B5CF6; }
+#view-admin .admin-sec { background: #23233A; color: #C4B5FD;
+  box-shadow: none; }
+#view-admin .card, #view-admin .bc-card, #view-admin .dash-card,
+#view-admin .admin-row, #view-admin .detail-card {
+  background: #1B1B2A; color: #F4F2FF;
+  border: 1px solid rgba(255, 255, 255, .07);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, .35); }
+#view-admin .hint, #view-admin .admin-sub { color: #A8A3C7; }
+#view-admin input, #view-admin textarea { background: #12121F;
+  border: 1px solid #2E2E4A; color: #fff; }
+#view-admin input:focus, #view-admin textarea:focus {
+  border-color: #A78BFA; outline: none; }
+#view-admin input::placeholder,
+#view-admin textarea::placeholder { color: #7E78A3; }
+#view-admin button { background: #23233A; color: #fff; }
+#view-admin button.wide {
+  background: linear-gradient(135deg, #8B5CF6, #A78BFA); color: #fff;
+  box-shadow: 0 8px 18px rgba(139, 92, 246, .4); }
+#view-admin .danger-btn { background: #3A1620; color: #FDA4AF; }
+#view-admin .admin-stats .stat-card { background: #1B1B2A;
+  border: 1px solid rgba(255, 255, 255, .07);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, .35); }
+#view-admin .admin-stats .stat-card:nth-child(6n+1) { background: #1B1B2A; }
+#view-admin .admin-stats .stat-card:nth-child(6n+2) { background: #1B1B2A; }
+#view-admin .admin-stats .stat-card:nth-child(6n+3) { background: #1B1B2A; }
+#view-admin .admin-stats .stat-card:nth-child(6n+4) { background: #1B1B2A; }
+#view-admin .admin-stats .stat-card:nth-child(6n+5) { background: #1B1B2A; }
+#view-admin .admin-stats .stat-card:nth-child(6n) { background: #1B1B2A; }
+#view-admin .stat-num { color: #fff; }
+#view-admin .stat-label { color: #A8A3C7; }
+#view-admin .bar-track { background: #23233A; box-shadow: none; }
+#view-admin .bar-fill {
+  background: linear-gradient(90deg, #8B5CF6, #A78BFA);
+  box-shadow: 0 2px 8px rgba(139, 92, 246, .45); }
+#view-admin .bar-label { color: #A8A3C7; }
+#view-admin .bar-val { color: #F4F2FF; }
+#view-admin .dash-title { color: #fff; }
+#view-admin .dash-note { color: #A8A3C7; }
+#view-admin .dash-card { border-top: 3px solid rgba(139, 92, 246, .55); }
+#view-admin .detail-cell { background: #23233A; box-shadow: none; }
+#view-admin .detail-k { color: #A8A3C7; }
+#view-admin .detail-v { color: #fff; }
+/* Earn panel: sky-blue / rose accents become purple / violet. */
+#view-admin .earn-panel .earn-kpi-num {
+  background: linear-gradient(90deg, #C4B5FD, #8B5CF6); }
+#view-admin .earn-panel .earn-rate {
+  background: rgba(139, 92, 246, .07);
+  border-color: rgba(139, 92, 246, .22); }
+#view-admin .earn-panel .earn-rate-line b { color: #C4B5FD; }
+#view-admin .earn-panel .earn-rate-form input:focus {
+  border-color: #A78BFA; }
+#view-admin .earn-panel .earn-rate-form button {
+  background: linear-gradient(135deg, #8B5CF6, #A78BFA);
+  box-shadow: 0 6px 14px rgba(139, 92, 246, .35); }
+#view-admin .earn-panel .earn-note { color: #C4B5FD;
+  background: rgba(139, 92, 246, .14);
+  border-color: rgba(139, 92, 246, .4); }
+#view-admin .earn-panel .earn-col-val { color: #C4B5FD; }
+#view-admin .earn-panel .earn-col-bar {
+  background: linear-gradient(180deg, #A78BFA, #8B5CF6);
+  box-shadow: 0 0 10px rgba(139, 92, 246, .45); }
+#view-admin .earn-panel .earn-rank {
+  background: linear-gradient(135deg, #8B5CF6, #A78BFA); }
+#view-admin .earn-panel .earn-row:nth-child(2) .earn-rank {
+  background: linear-gradient(135deg, #C4B5FD, #8B5CF6); }
+#view-admin .earn-panel .earn-row:nth-child(3) .earn-rank {
+  background: linear-gradient(135deg, #7C6AA8, #5B3A8E); }
+#view-admin .earn-panel .earn-val { color: #C4B5FD; }
+#view-admin .audit-row { border-bottom: 1px solid rgba(255, 255, 255, .08); }
+#view-admin .admin-title { color: #fff; }
+#view-admin .searchbar button {
+  background: linear-gradient(135deg, #8B5CF6, #A78BFA); color: #fff; }
+@media (prefers-reduced-motion: reduce) {
+  #view-admin .live-dot { animation: none; }
+  #view-admin .obs-dial-arc { transition: none; }
+  #view-admin .bar-fill { transition: none; }
+}
+
