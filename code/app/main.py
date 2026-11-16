@@ -2271,10 +2271,15 @@ def my_referrals(user: models.User = Depends(current_user),
 
 @app.get("/me/points")
 def my_points(user: models.User = Depends(current_user),
-              db: Session = Depends(get_db)):
+              db: Session = Depends(get_db), before: int = 0):
+    # Phase 124: keyset paging for the points-history "Show more"
+    # button — before=<oldest id seen> returns the next 20 older
+    # rows; before=0 (default) is the latest 20, as before.
     me = db.get(models.User, user.telegram_id)
-    rows = db.query(models.PointsLedger).filter_by(user_id=user.telegram_id) \
-        .order_by(models.PointsLedger.id.desc()).limit(20).all()
+    q = db.query(models.PointsLedger).filter_by(user_id=user.telegram_id)
+    if before > 0:
+        q = q.filter(models.PointsLedger.id < before)
+    rows = q.order_by(models.PointsLedger.id.desc()).limit(20).all()
     return {
         "balance": me.points_balance if me else 0,
         "entries": [{

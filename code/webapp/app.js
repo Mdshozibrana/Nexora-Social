@@ -865,6 +865,7 @@ function postCard(p) {
   actions.appendChild(likeBtn);
 
   const cBtn = document.createElement("button");
+  cBtn.className = "cmt-btn";
   cBtn.textContent = "💬 " + p.comment_count;
   actions.appendChild(cBtn);
 
@@ -2828,33 +2829,116 @@ async function myExtras() {
       pHead.appendChild(chip);
     }
     card.appendChild(pHead);
-    pts.entries.forEach(e => {
-      const meta = REASON_META[e.reason] || ["⭐", e.reason];
-      const rowEl = document.createElement("div");
-      rowEl.className = "ph-row";
-      const ic = document.createElement("span");
-      ic.className = "ph-ic";
-      ic.textContent = meta[0];
-      const main = document.createElement("div");
-      main.className = "ph-main";
-      const lb = document.createElement("div");
-      lb.className = "ph-label";
-      lb.textContent = meta[1];
-      main.appendChild(lb);
-      if (e.created_at) {
-        const dt = document.createElement("div");
-        dt.className = "ph-date";
-        dt.textContent = new Date(e.created_at)
-          .toLocaleDateString(undefined,
-            { day: "numeric", month: "short" });
-        main.appendChild(dt);
+    // Phase 124 (owner): the history was one big row per entry —
+    // long, jumbled, space-hungry. Now: grouped by day (newest
+    // first, "Today" / "Yesterday" / date), compact one-line rows,
+    // filter chips per reason type, and "Show more" paging (the
+    // server caps at 20 rows; /me/points?before=<id> fetches older
+    // ones). Grouping only re-orders — no entry is ever dropped.
+    const phState = { all: pts.entries.slice(), filter: "all",
+                      shown: 20, more: pts.entries.length === 20 };
+    const phWrap = document.createElement("div");
+    phWrap.className = "ph-wrap";
+    card.appendChild(phWrap);
+    const phDayLabel = (d) => {
+      const today = new Date(), yest = new Date();
+      yest.setDate(today.getDate() - 1);
+      if (d.toDateString() === today.toDateString()) return "Today";
+      if (d.toDateString() === yest.toDateString()) return "Yesterday";
+      const opts = { day: "numeric", month: "short" };
+      if (d.getFullYear() !== today.getFullYear()) opts.year = "numeric";
+      return d.toLocaleDateString(undefined, opts);
+    };
+    const renderPh = () => {
+      phWrap.innerHTML = "";
+      const list = phState.all.filter(e =>
+        phState.filter === "all" || e.reason === phState.filter);
+      const seen = [];
+      list.forEach(e => {
+        if (seen.indexOf(e.reason) < 0) seen.push(e.reason);
+      });
+      const chips = document.createElement("div");
+      chips.className = "ph-chips";
+      const mkChip = (key, label) => {
+        const ch = document.createElement("button");
+        ch.className = "ph-chip" +
+          (phState.filter === key ? " active" : "");
+        ch.textContent = label;
+        ch.onclick = () => {
+          phState.filter = key; phState.shown = 20; renderPh();
+        };
+        chips.appendChild(ch);
+      };
+      mkChip("all", "All");
+      seen.forEach(r => mkChip(r, (REASON_META[r] || ["⭐", r])[1]));
+      phWrap.appendChild(chips);
+      let lastDay = "";
+      list.slice(0, phState.shown).forEach(e => {
+        const dt = e.created_at ? new Date(e.created_at) : null;
+        const day = dt ? dt.toDateString() : "";
+        if (day !== lastDay) {
+          lastDay = day;
+          const hd = document.createElement("div");
+          hd.className = "ph-day";
+          hd.textContent = dt ? phDayLabel(dt) : "Unknown date";
+          phWrap.appendChild(hd);
+        }
+        const meta = REASON_META[e.reason] || ["⭐", e.reason];
+        const rowEl = document.createElement("div");
+        rowEl.className = "ph-row";
+        const ic = document.createElement("span");
+        ic.className = "ph-ic";
+        ic.textContent = meta[0];
+        const main = document.createElement("div");
+        main.className = "ph-main";
+        const lb = document.createElement("div");
+        lb.className = "ph-label";
+        lb.textContent = meta[1];
+        if (dt) {
+          const when = document.createElement("span");
+          when.className = "ph-when";
+          when.textContent = " · " + dt.toLocaleDateString(undefined,
+            { day: "numeric", month: "short" }) + ", " +
+            dt.toLocaleTimeString(undefined,
+              { hour: "numeric", minute: "2-digit" });
+          lb.appendChild(when);
+        }
+        main.appendChild(lb);
+        const amt = document.createElement("span");
+        amt.className = "ph-amt " + (e.amount >= 0 ? "plus" : "minus");
+        amt.textContent = (e.amount >= 0 ? "+" : "") + e.amount;
+        rowEl.append(ic, main, amt);
+        phWrap.appendChild(rowEl);
+      });
+      const hiddenCount = list.length - phState.shown;
+      if (hiddenCount > 0 || phState.more) {
+        const more = document.createElement("button");
+        more.className = "ph-more btn";
+        more.textContent = hiddenCount > 0
+          ? "Show more (" + hiddenCount + " more)" : "Show more";
+        more.onclick = async () => {
+          if (hiddenCount > 0) { phState.shown += 20; renderPh(); return; }
+          more.disabled = true;
+          more.textContent = "Loading…";
+          try {
+            const oldest = phState.all[phState.all.length - 1];
+            const next = await api("/me/points?before=" + oldest.id);
+            phState.all = phState.all.concat(next.entries || []);
+            phState.more = (next.entries || []).length === 20;
+            phState.shown += 20;
+          } catch (e) { setStatus("Could not load older entries."); }
+          renderPh();
+        };
+        phWrap.appendChild(more);
       }
-      const amt = document.createElement("span");
-      amt.className = "ph-amt " + (e.amount >= 0 ? "plus" : "minus");
-      amt.textContent = (e.amount >= 0 ? "+" : "") + e.amount;
-      rowEl.append(ic, main, amt);
-      card.appendChild(rowEl);
-    });
+      if (!list.length) {
+        const empty = document.createElement("div");
+        empty.className = "ph-empty";
+        empty.textContent = "No entries of this type yet.";
+        phWrap.appendChild(empty);
+      }
+    };
+    renderPh();
     wrap.appendChild(card);
     if (me.bot_username) {
       const link = "https://t.me/" + me.bot_username + "?start=ref_" + me.telegram_id;
@@ -3126,6 +3210,38 @@ async function myExtras() {
 }
 
 // ---------------------------------------------------------------- tasks ---
+// Phase 124 (owner): an incomplete task card is a door, not a
+// label — tap it and you land where the task is done. Claimed
+// tasks go nowhere. The feed is already loaded at boot, so the
+// helpers just wait briefly for the target element to exist.
+function goFeedTo(selector) {
+  showView("feed");
+  let tries = 0;
+  const tick = () => {
+    const el = document.querySelector(selector);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+    if (++tries < 15) setTimeout(tick, 200);
+  };
+  tick();
+}
+function goFeedToFirstComment() {
+  showView("feed");
+  let tries = 0;
+  const tick = () => {
+    const btn = document.querySelector("#feed-list .post .cmt-btn");
+    if (btn) {
+      btn.scrollIntoView({ behavior: "smooth", block: "center" });
+      btn.click();
+      return;
+    }
+    if (++tries < 15) setTimeout(tick, 200);
+  };
+  tick();
+}
+
 async function loadTasks() {
   const box = $("task-list");
   box.innerHTML = "Loading…";
@@ -3135,6 +3251,7 @@ async function loadTasks() {
     data.tasks.forEach(t => {
       const card = document.createElement("div");
       card.className = "task-card";
+      if (!t.claimed) card.classList.add("task-go");
       const top = document.createElement("div");
       top.className = "task-top";
       const icon = document.createElement("span");
@@ -3147,6 +3264,12 @@ async function loadTasks() {
       pts.className = "task-points";
       pts.textContent = "+" + t.points + " pts";
       top.append(icon, title, pts);
+      if (!t.claimed) {
+        const chev = document.createElement("span");
+        chev.className = "task-go-chev";
+        chev.textContent = "›";
+        top.appendChild(chev);
+      }
       const bar = document.createElement("div");
       bar.className = "bar";
       const fill = document.createElement("div");
@@ -3158,6 +3281,7 @@ async function loadTasks() {
       prog.textContent = t.progress + " / " + t.target +
         (t.streak != null ? " · 🔥 " + t.streak + " day streak" : "");
       const btn = document.createElement("button");
+      let doClaim = null;
       if (t.claimed) {
         btn.textContent = "✓ Claimed";
         btn.className = "task-claim claimed btn";
@@ -3165,7 +3289,7 @@ async function loadTasks() {
       } else if (t.claimable) {
         btn.textContent = "Claim";
         btn.className = "task-claim btn";
-        btn.onclick = async () => {
+        doClaim = async () => {
           try {
             const r = await api("/me/tasks/" + t.key + "/claim", { method: "POST" });
             setStatus("+" + r.points_awarded + " points! Balance: " + r.balance);
@@ -3173,6 +3297,7 @@ async function loadTasks() {
             loadTasks();
           } catch (e) { setStatus("Could not claim this task."); }
         };
+        btn.onclick = doClaim;
       } else if (t.key === "adwatch") {
         // Phase 113 (owner): the ad task is done by tapping to watch
         // an ad — a real completed show reports /ads/shown, which is
@@ -3186,6 +3311,21 @@ async function loadTasks() {
       }
       meta.append(prog, btn);
       card.append(top, bar, meta);
+      card.onclick = (ev) => {
+        // Phase 124: a tap on a button keeps that button's own
+        // handler; a tap anywhere else on an incomplete card goes
+        // where the task is done. Claimed cards go nowhere.
+        if (ev.target.closest("button")) return;
+        if (t.claimed) return;
+        if (t.key === "checkin" && doClaim) { doClaim(); return; }
+        if (t.key === "follow3") { goFeedTo("#suggest-card"); return; }
+        if (t.key === "comment5") { goFeedToFirstComment(); return; }
+        if (t.key === "react6") { showView("feed"); return; }
+        // adwatch: the same flow as its Watch ad button (showTaskAd
+        // disables the button first, so a second tap — card or
+        // button — cannot start another show).
+        if (t.key === "adwatch" && !btn.disabled) showTaskAd(btn);
+      };
       box.appendChild(card);
     });
   } catch (e) { box.textContent = "Could not load tasks."; }

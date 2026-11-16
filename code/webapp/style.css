@@ -2691,3 +2691,27 @@ html[data-theme] .suggest-follow.on { background: var(--t-chip, #F3DCE7);
   padding: 8px 10px; border-radius: 10px;
   border: 1px solid rgba(58, 46, 51, .2); background: #FFFDF8; }
 .tool-btn.on { background: #8ED4F7; }
+
+/* ================================================================
+   Phase 124 — points history: grouped, compact, filterable
+   ================================================================ */
+.ph-row { padding: 7px 4px; gap: 8px; }
+.ph-ic { width: 28px; height: 28px; border-radius: 9px; font-size: 15px; }
+.ph-label { font-size: 13px; }
+.ph-when { font-weight: 400; font-size: 11px; color: var(--ink-faint); }
+.ph-amt { font-size: 13px; padding: 3px 10px; }
+.ph-day { font-size: 11px; font-weight: 800; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--ink-dim); margin: 12px 4px 2px; }
+.ph-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 4px; }
+.ph-chip { border: 1px solid rgba(62,143,208,.25); background: #E7F3FB;
+  color: #2F7FBF; font-weight: 700; font-size: 12px; border-radius: 999px;
+  padding: 5px 11px; cursor: pointer; }
+.ph-chip.active { background: linear-gradient(145deg, #8ED4F7, #3E8FD0); color: #fff; }
+.ph-more { width: 100%; margin-top: 10px; }
+.ph-empty { text-align: center; color: var(--ink-dim); font-size: 13px; padding: 14px 0; }
+
+/* ================================================================
+   Phase 124 — tasks: incomplete cards are tappable doors
+   ================================================================ */
+.task-card.task-go { cursor: pointer; }
+.task-go-chev { font-size: 22px; font-weight: 800; color: #2F7FBF; flex: none; }

@@ -83,7 +83,7 @@ CP_TARGETS = ("cp-sec-overview", "cp-sec-site", "cp-sec-backup",
 
 def test_obsidian_markers():
     html = open("webapp/index.html").read()
-    assert html.count("?v=123") == 5, html.count("?v=123")
+    assert html.count("?v=124") == 5, html.count("?v=124")
     assert "?v=120" not in html
     # Obsidian header: eyebrow, greeting (name in purple), subtitle.
     for marker in ("NEXORA ADMIN", "Good Evening,",
