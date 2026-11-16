@@ -83,7 +83,7 @@ CP_TARGETS = ("cp-sec-overview", "cp-sec-site", "cp-sec-backup",
 
 def test_obsidian_markers():
     html = open("webapp/index.html").read()
-    assert html.count("?v=121") == 5, html.count("?v=121")
+    assert html.count("?v=122") == 5, html.count("?v=122")
     assert "?v=120" not in html
     # Obsidian header: eyebrow, greeting (name in purple), subtitle.
     for marker in ("NEXORA ADMIN", "Good Evening,",
@@ -130,7 +130,11 @@ def test_obsidian_markers():
 
     css = open("webapp/style.css").read()
     idx = css.index("Phase 121")
-    block = css[idx:]
+    # Bound the block at the next phase's header: later phases append
+    # their own blocks after this one (Phase 122+), and their selectors
+    # are scoped to their own views, not #view-admin.
+    end = css.find("Phase 122", idx)
+    block = css[idx:end if end != -1 else None]
     # The slice starts mid-comment; drop everything up to its close.
     block = block[block.index("*/") + 2:]
     for marker in ("#0D0D17", "#1B1B2A", "#A78BFA", "#8B5CF6",

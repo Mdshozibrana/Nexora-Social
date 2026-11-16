@@ -664,6 +664,123 @@ def feed(tab: str = "explore", type: str = "", cursor: int = 0,
     return {"posts": out, "next_cursor": next_cursor}
 
 
+# ---------------------------------------------------------------------------
+# Phase 122 — Trending: what is hot right now.
+#
+# VELOCITY FORMULA (PRD Phase 122 addendum, test_phase122):
+#   score = (3 * likes_7d + 5 * comments_7d + 1 * views_7d)
+#           / (1 + age_days)
+# likes_7d / comments_7d / views_7d count only engagement from
+# the last 7 days (Like/Comment/PostView.created_at); age_days
+# is (now - post.created_at) in days, so a fresh post with the
+# same engagement outranks an old one. Only score > 0 trends;
+# ties break by newer post id; top 20. Repost rows are never
+# entries — engagement keys off the original id, so a reposted
+# post trends once, as its original. Blocked authors hidden,
+# deleted posts excluded, all types share one list. No points
+# are paid for trending views; opening a post counts its unique
+# view exactly as the feed does (POST /posts/{id}/view).
+# ---------------------------------------------------------------------------
+
+
+def _engagement_counts(db, model, ids, since):
+    """{post_id: n} rows of `model` (Like/Comment/PostView)
+    created since `since`, grouped by post."""
+    if not ids:
+        return {}
+    rows = db.query(model.post_id, func.count()).filter(
+        model.post_id.in_(ids),
+        model.created_at >= since).group_by(model.post_id).all()
+    return {pid: n for pid, n in rows}
+
+
+def _trending_ranked(db, user, limit=20):
+    """(posts, extra) — non-deleted originals ranked by the
+    velocity formula, plus per-post trend_24h / trend_7d
+    counts for the rank line. `extra` maps post id to
+    {"trend_score": float, "trend_24h": int, "trend_7d": int}."""
+    now = datetime.utcnow()
+    week_ago = now - timedelta(days=7)
+    day_ago = now - timedelta(days=1)
+    hidden = _block_related_ids(db, user.telegram_id)
+    q = db.query(models.Post).filter_by(is_deleted=False).filter(
+        models.Post.type != "repost")
+    if hidden:
+        q = q.filter(~models.Post.user_id.in_(hidden))
+    rows = q.all()
+    ids = [p.id for p in rows]
+    likes7 = _engagement_counts(db, models.Like, ids, week_ago)
+    comments7 = _engagement_counts(db, models.Comment, ids, week_ago)
+    views7 = _engagement_counts(db, models.PostView, ids, week_ago)
+    likes24 = _engagement_counts(db, models.Like, ids, day_ago)
+    comments24 = _engagement_counts(db, models.Comment, ids, day_ago)
+    views24 = _engagement_counts(db, models.PostView, ids, day_ago)
+    scored = []
+    for p in rows:
+        l7 = likes7.get(p.id, 0)
+        c7 = comments7.get(p.id, 0)
+        v7 = views7.get(p.id, 0)
+        if not (l7 or c7 or v7):
+            continue
+        age_days = max(0.0, (now - (p.created_at or now))
+                       .total_seconds() / 86400.0)
+        score = (3 * l7 + 5 * c7 + 1 * v7) / (1.0 + age_days)
+        if score <= 0:
+            continue
+        scored.append((score, p.id, p,
+                       likes24.get(p.id, 0)
+                       + comments24.get(p.id, 0)
+                       + views24.get(p.id, 0),
+                       l7 + c7 + v7))
+    scored.sort(key=lambda t: (-t[0], -t[1]))
+    top = scored[:limit]
+    extra = {p.id: {"trend_score": round(score, 2),
+                    "trend_24h": n24, "trend_7d": n7}
+             for score, _pid, p, n24, n7 in top}
+    return [p for _s, _i, p, _a, _b in top], extra
+
+
+@app.get("/trending/posts")
+def trending_posts(limit: int = 20,
+                   user: models.User = Depends(current_user),
+                   db: Session = Depends(get_db)):
+    """Phase 122: posts ranked by recent engagement velocity."""
+    _enforce_rate("trending", f"u{user.telegram_id}")
+    limit = max(1, min(int(limit or 20), 20))
+    rows, extra = _trending_ranked(db, user, limit=limit)
+    counts = _post_view_counts(db, rows)
+    _warm_authors(db, rows)
+    out = _post_list(db, rows, user.telegram_id, counts=counts)
+    for d in out:
+        d.update(extra.get(d["id"], {}))
+    return {"posts": out}
+
+
+@app.get("/trending/hashtags")
+def trending_hashtags(limit: int = 10,
+                      user: models.User = Depends(current_user),
+                      db: Session = Depends(get_db)):
+    """Phase 122: most-used hashtags on posts from the last
+    7 days, most-used first (ties: alphabetical, so the order
+    is deterministic). Blocked authors and deleted posts are
+    excluded, repost rows carry no hashtags of their own."""
+    _enforce_rate("trending", f"u{user.telegram_id}")
+    limit = max(1, min(int(limit or 10), 20))
+    hidden = _block_related_ids(db, user.telegram_id)
+    q = db.query(models.Post).filter_by(is_deleted=False).filter(
+        models.Post.type != "repost",
+        models.Post.created_at >= datetime.utcnow() - timedelta(days=7))
+    if hidden:
+        q = q.filter(~models.Post.user_id.in_(hidden))
+    counts = {}
+    for p in q.all():
+        for tag in (p.hashtags or "").split():
+            counts[tag] = counts.get(tag, 0) + 1
+    ranked = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+    return {"hashtags": [{"tag": tag, "count": n}
+                         for tag, n in ranked[:limit]]}
+
+
 @app.get("/suggested-users")
 def suggested_users(limit: int = 10, user: models.User = Depends(current_user),
                     db: Session = Depends(get_db)):
@@ -4453,6 +4570,10 @@ _NEXA_SYSTEM = (
     "follow — tap Follow on anyone there, or tap their "
     "photo or name to open their profile first; the cross "
     "hides the card for now. "
+    "TRENDING: the sidebar has a Trending page — the hottest "
+    "posts of the last 7 days, ranked by recent likes, comments "
+    "and views, with the top hashtags on top; tap a hashtag to "
+    "see every post with that tag. "
     "POSTING: write from the Feed composer, or send a photo or "
     "video directly to @NexoraSocial_bot in chat with a "
     "caption and it becomes your post — the most reliable way "

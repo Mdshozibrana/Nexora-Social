@@ -195,8 +195,8 @@ with TestClient(app) as c:
     assert "openPhotoViewer" in js, "Phase 112 wiring gone"
     css = c.get("/webapp/style.css").text
     assert ".qr-card" in css and ".qr-img" in css, "QR CSS gone"
-    for asset in ("style.css?v=121", "app.js?v=121", "games.js?v=121"):
+    for asset in ("style.css?v=122", "app.js?v=122", "games.js?v=122"):
         assert asset in html, asset
-    print("client: sidebar, view, loaders, routing, ?v=121 OK")
+    print("client: sidebar, view, loaders, routing, ?v=122 OK")
 
 print("PHASE 114 OK")

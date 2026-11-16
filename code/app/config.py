@@ -75,6 +75,8 @@ RATE_LIMITS = {
     # suggestions run the heaviest read queries in the app, and a
     # theme save writes the member's row.
     "suggested": (120, 3600),
+    # Phase 122: the Trending page (posts + hashtags).
+    "trending": (120, 3600),
     "theme": (120, 3600),
     # Phase 100: data export (download + send-to-Telegram) — a full
     # account dump is heavy and sensitive; a small hourly budget.

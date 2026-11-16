@@ -2639,3 +2639,21 @@ html[data-theme] .suggest-follow.on { background: var(--t-chip, #F3DCE7);
   #view-admin .bar-fill { transition: none; }
 }
 
+/* ================================================================
+   Phase 122 — Trending: hashtag chips, rank lines and the
+   Trending view. Scoped to #view-trending / .trend-* classes.
+   ================================================================ */
+#view-trending .view-title { margin-bottom: 2px; }
+.trend-tags { display: flex; flex-wrap: wrap; gap: 8px;
+  margin: 10px 0 14px; }
+.trend-tags:empty { display: none; }
+.trend-tag { font-weight: 700; }
+.trend-item { margin-bottom: 14px; }
+.trend-item .post { margin-bottom: 0; }
+.trend-rank { font-size: 13px; font-weight: 800; color: #E8590C;
+  background: linear-gradient(90deg, #FFF1E6, #FFE8D6);
+  border: 1px solid #FFD8B8; border-radius: 999px;
+  display: inline-block; padding: 4px 12px; margin-bottom: 6px; }
+#trend-refresh { margin-top: 4px; }
+
+

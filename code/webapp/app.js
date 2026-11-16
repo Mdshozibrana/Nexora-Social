@@ -225,7 +225,7 @@ function showView(name, viaBack) {
                    games: "nav-games",
                    game: "nav-games", tasks: "nav-tasks",
                    leaderboard: "nav-ranks", profile: "nav-me" };
-  ["feed", "videos", "designs", "search", "tasks", "leaderboard", "profile", "saved", "shared", "games", "game", "admin", "notifications", "messages", "chat", "assistant", "nearby", "museum", "qr"].forEach(v => {
+  ["feed", "videos", "designs", "search", "tasks", "leaderboard", "profile", "saved", "shared", "games", "game", "admin", "notifications", "messages", "chat", "assistant", "nearby", "museum", "qr", "trending"].forEach(v => {
     $("view-" + v).hidden = v !== name;
   });
   // Phase 21: only tab views move the highlight. Views without a tab
@@ -248,6 +248,7 @@ function showView(name, viaBack) {
   if (name === "videos") { loadVideos(true); maybeShowAd(); }
   if (name === "leaderboard") loadRanks();
   if (name === "designs") loadDesigns(true);
+  if (name === "trending") loadTrending();
   if (name === "assistant") openAssistant();
   if (name !== "assistant") nexaStop();
   if (name === "museum") openMuseum();
@@ -979,6 +980,49 @@ async function loadFeed(reset) {
     $("feed-more").hidden = !feedCursor;
     $("feed-empty").hidden = data.posts.length > 0 || !reset;
   } catch (e) { setStatus("Could not load the feed."); }
+}
+
+// ------------------------------------------------------------- trending ---
+// Phase 122: what is hot right now. Hashtag chips on top (tap
+// one to see every post with that tag, via the existing search
+// flow), ranked posts below. Each card is the normal postCard()
+// — likes, comments, repost, save and share all work exactly
+// as in the feed — wrapped with a rank line that says WHY it
+// ranks: its engagement in the last 24 hours, or its 7-day
+// total when nothing happened in the last day.
+async function loadTrending() {
+  const list = $("trend-list");
+  const tagsBox = $("trend-tags");
+  const empty = $("trend-empty");
+  if (!list) return;
+  try {
+    const [posts, tags] = await Promise.all([
+      api("/trending/posts"),
+      api("/trending/hashtags"),
+    ]);
+    tagsBox.innerHTML = "";
+    (tags.hashtags || []).forEach(h => {
+      const chip = document.createElement("button");
+      chip.className = "chip trend-tag";
+      chip.textContent = "#" + h.tag + " · " + h.count;
+      chip.onclick = () => searchTag(h.tag);
+      tagsBox.appendChild(chip);
+    });
+    list.innerHTML = "";
+    (posts.posts || []).forEach((p, i) => {
+      const wrap = document.createElement("div");
+      wrap.className = "trend-item";
+      const rank = document.createElement("div");
+      rank.className = "trend-rank";
+      const hot = (p.trend_24h || 0) > 0
+        ? "🔥 " + p.trend_24h + " in 24h"
+        : "🔥 " + (p.trend_7d || 0) + " this week";
+      rank.textContent = "#" + (i + 1) + " · " + hot;
+      wrap.append(rank, postCard(p));
+      list.appendChild(wrap);
+    });
+    empty.hidden = (posts.posts || []).length > 0;
+  } catch (e) { setStatus("Could not load Trending."); }
 }
 
 async function loadSuggestedInto(slot) {
@@ -3294,7 +3338,8 @@ $("nav-games").onclick = () => showView("games");
 $("nav-tasks").onclick = () => showView("tasks");
 $("nav-ranks").onclick = () => showView("leaderboard");
 $("nav-me").onclick = () => { if (me) openProfile(me.telegram_id); };
-$("hero-search").onclick = () => showView("search");
+  $("hero-search").onclick = () => showView("search");
+  $("trend-refresh").onclick = () => loadTrending();
 $("vtab-explore").onclick = () => setVTab("explore");
 $("vtab-following").onclick = () => setVTab("following");
 $("video-more").onclick = () => loadVideos(false);
@@ -3451,7 +3496,7 @@ function toggleSidebar() {
 function syncSidebarActive() {
   const current = ["feed", "videos", "designs", "search", "tasks",
     "leaderboard", "profile", "saved", "shared", "games", "game",
-    "nearby", "messages", "notifications", "qr"]
+    "nearby", "messages", "notifications", "qr", "trending"]
     .find(v => !$("view-" + v).hidden) || "feed";
   const key = current === "game" ? "games" : current;
   document.querySelectorAll(".gb-item[data-go]").forEach(b =>
