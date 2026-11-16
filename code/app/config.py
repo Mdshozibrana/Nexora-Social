@@ -77,6 +77,12 @@ RATE_LIMITS = {
     "suggested": (120, 3600),
     # Phase 122: the Trending page (posts + hashtags).
     "trending": (120, 3600),
+    # Phase 123: creator tools — pin, drafts, comment likes,
+    # poll votes. Comment likes share the post-like budget.
+    "pin": (120, 3600),
+    "draft": (120, 3600),
+    "comment_like": (600, 3600),
+    "poll_vote": (120, 3600),
     "theme": (120, 3600),
     # Phase 100: data export (download + send-to-Telegram) — a full
     # account dump is heavy and sensitive; a small hourly budget.

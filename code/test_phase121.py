@@ -83,7 +83,7 @@ CP_TARGETS = ("cp-sec-overview", "cp-sec-site", "cp-sec-backup",
 
 def test_obsidian_markers():
     html = open("webapp/index.html").read()
-    assert html.count("?v=122") == 5, html.count("?v=122")
+    assert html.count("?v=123") == 5, html.count("?v=123")
     assert "?v=120" not in html
     # Obsidian header: eyebrow, greeting (name in purple), subtitle.
     for marker in ("NEXORA ADMIN", "Good Evening,",
@@ -182,12 +182,14 @@ def test_admin_endpoints_still_work():
     r = c.post("/admin/announcement", json={"text": ""}, headers=HA)
     assert r.status_code == 200, r.text
     assert c.get("/announcement").json() == {"text": ""}
-    # Full backup (Phase 107 behaviour): format + all 28 tables.
+    # Full backup (Phase 107 behaviour): format + all tables —
+    # 33 since Phase 123 added drafts, comment_likes, polls,
+    # poll_options and poll_votes to the 28.
     r = c.get("/admin/backup", headers=HA)
     assert r.status_code == 200, r.text
     b = r.json()
     assert b["format"] == "nexora-backup" and b["version"] == 1, b
-    assert len(b["tables"]) == 28, len(b["tables"])
+    assert len(b["tables"]) == 33, len(b["tables"])
     print("maintenance + announcement + backup endpoints OK")
 
 

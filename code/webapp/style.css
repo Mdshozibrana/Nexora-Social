@@ -2656,4 +2656,38 @@ html[data-theme] .suggest-follow.on { background: var(--t-chip, #F3DCE7);
   display: inline-block; padding: 4px 12px; margin-bottom: 6px; }
 #trend-refresh { margin-top: 4px; }
 
-
+/* Phase 123: creator tools — pinned badge, poll block, comment
+   likes, drafts list, composer poll form. */
+.pin-badge { display: inline-block; font-size: 12px; font-weight: 700;
+  color: #3A2E33; background: #FFE9A8; border-radius: 999px;
+  padding: 2px 10px; margin: 6px 12px 0; }
+.poll-block { margin: 8px 12px 0; padding: 10px; border-radius: 16px;
+  background: rgba(142, 212, 247, .14); }
+.poll-q { font-weight: 700; margin-bottom: 8px; }
+.poll-opt { position: relative; display: flex; width: 100%;
+  overflow: hidden; text-align: left; border: 1px solid
+  rgba(58, 46, 51, .18); background: #FFFDF8; border-radius: 12px;
+  padding: 8px 10px; margin-top: 6px; cursor: pointer; }
+.poll-opt.voted { border-color: #3E8FD0; }
+.poll-opt:disabled { cursor: default; }
+.poll-fill { position: absolute; left: 0; top: 0; bottom: 0;
+  background: rgba(142, 212, 247, .45); }
+.poll-label { position: relative; flex: 1; }
+.poll-num { position: relative; font-size: 12px; color: #6B5B60; }
+.poll-foot { margin-top: 8px; font-size: 12px; color: #6B5B60; }
+.comment-like-btn { background: none; border: 0; font-size: 12px;
+  color: #8A6D7B; cursor: pointer; padding: 0 0 0 6px; }
+.comment-like-btn.liked { color: #E5484D; }
+.drafts-box { margin: 8px 0; }
+.draft-row { display: flex; gap: 8px; align-items: center;
+  background: #FFFDF8; border: 1px solid rgba(58, 46, 51, .12);
+  border-radius: 12px; padding: 8px 10px; margin-top: 6px; }
+.draft-text { flex: 1; font-size: 13px; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+.draft-row button { font-size: 12px; padding: 5px 8px; }
+.composer-poll { display: flex; flex-direction: column; gap: 6px;
+  margin-top: 8px; }
+.composer-poll input { width: 100%; box-sizing: border-box;
+  padding: 8px 10px; border-radius: 10px;
+  border: 1px solid rgba(58, 46, 51, .2); background: #FFFDF8; }
+.tool-btn.on { background: #8ED4F7; }

@@ -688,6 +688,62 @@ $("photo-viewer").onclick = () => closePhotoViewer();
 $("pv-close").onclick = e => { e.stopPropagation(); closePhotoViewer(); };
 
 // ---------------------------------------------------------------- posts ---
+// -------------------------------------------------------- phase 123 --
+// A poll rides under the caption — tappable options with live
+// percentage bars. Before voting the options are buttons; after
+// voting the results stay, the member's own choice is marked,
+// and the rows stop being clickable (a vote is final).
+function pollBlock(p) {
+  const box = document.createElement("div");
+  box.className = "poll-block";
+  const q = document.createElement("div");
+  q.className = "poll-q";
+  q.textContent = "📊 " + p.poll.question;
+  const paint = () => {
+    box.innerHTML = "";
+    box.appendChild(q);
+    const total = p.poll.total_votes || 0;
+    p.poll.options.forEach(o => {
+      const pct = total ? Math.round(o.votes * 100 / total) : 0;
+      const rowEl = document.createElement("button");
+      rowEl.className = "poll-opt" +
+        (p.poll.voted_option_id === o.id ? " voted" : "");
+      rowEl.type = "button";
+      const fill = document.createElement("span");
+      fill.className = "poll-fill";
+      fill.style.width = pct + "%";
+      const label = document.createElement("span");
+      label.className = "poll-label";
+      label.textContent = o.text;
+      const num = document.createElement("span");
+      num.className = "poll-num";
+      num.textContent = (p.poll.voted_option_id != null
+        ? pct + "% · " + o.votes
+        : o.votes + (o.votes === 1 ? " vote" : " votes"));
+      rowEl.append(fill, label, num);
+      if (p.poll.voted_option_id == null) {
+        rowEl.onclick = async () => {
+          try {
+            const r = await api("/posts/" + p.id + "/poll/vote",
+              { method: "POST",
+                body: JSON.stringify({ option_id: o.id }) });
+            p.poll = r;
+            paint();
+          } catch (e) { setStatus("Could not vote."); }
+        };
+      } else rowEl.disabled = true;
+      box.appendChild(rowEl);
+    });
+    const foot = document.createElement("div");
+    foot.className = "poll-foot";
+    foot.textContent = total + (total === 1 ? " vote" : " votes") +
+      (p.poll.voted_option_id != null ? " · You voted ✓" : "");
+    box.appendChild(foot);
+  };
+  paint();
+  return box;
+}
+
 function postCard(p) {
   const el = document.createElement("article");
   el.className = "post";
@@ -715,6 +771,13 @@ function postCard(p) {
     el.appendChild(rp);
   }
   el.appendChild(head);
+  // Phase 123: a pinned post wears its badge on every card.
+  if (p.is_pinned) {
+    const pin = document.createElement("div");
+    pin.className = "pin-badge";
+    pin.textContent = "📌 Pinned";
+    el.appendChild(pin);
+  }
 
   if (p.media_file_id && p.type === "photo") {
     // Social-media frame: 4:5 portrait (the Instagram/Facebook feed
@@ -780,6 +843,9 @@ function postCard(p) {
     });
     el.appendChild(tags);
   }
+
+  // Phase 123: a poll rides under the caption.
+  if (p.poll) el.appendChild(pollBlock(p));
 
   const actions = document.createElement("div");
   actions.className = "actions";
@@ -928,6 +994,26 @@ function commentRow(cm, onReply) {
     rb.onclick = () => onReply(cm);
     row.appendChild(rb);
   }
+  // Phase 123: a small heart on every comment — the count
+  // rides on the row, in the feed and in reels alike.
+  const lb = document.createElement("button");
+  lb.className = "comment-like-btn";
+  const paintCl = () => {
+    lb.textContent = (cm.liked_by_me ? "❤️ " : "♡ ") +
+      (cm.like_count || 0);
+    lb.classList.toggle("liked", !!cm.liked_by_me);
+  };
+  paintCl();
+  lb.onclick = async () => {
+    try {
+      const r = await api("/posts/" + cm.post_id + "/comments/" +
+        cm.id + "/like", { method: "POST" });
+      cm.liked_by_me = r.liked;
+      cm.like_count = r.like_count;
+      paintCl();
+    } catch (e) { setStatus("Could not like the comment."); }
+  };
+  row.appendChild(lb);
   const replies = document.createElement("div");
   replies.className = "comment-replies";
   (cm.replies || []).forEach(r => replies.appendChild(commentRow(r, onReply)));
@@ -1420,6 +1506,17 @@ async function openReelMenu(p, reelEl) {
       } catch (e) { setStatus("Could not report."); }
     }, true);
   }
+  // Phase 123: pin one of your own posts (a repost cannot be
+  // pinned — only your own originals); pinning a second post
+  // unpins the first.
+  if (mine && !p.reposted) row("📌", p.is_pinned ? "Pinned — tap to unpin" : "Pin to profile", async () => {
+    try {
+      const r = await api("/posts/" + p.id + "/pin", { method: "POST" });
+      p.is_pinned = r.pinned;
+      setStatus(r.pinned ? "Pinned to your profile 📌" : "Pin removed.");
+      if (profileId === (me && me.telegram_id)) loadProfilePosts(true);
+    } catch (e) { setStatus("Could not pin this post."); }
+  });
   if (mine) row("✏️", "Edit", () => openPostEditor(p, reelEl));
   if (mine) row("🗑", "Delete", async () => {
     try {
@@ -2786,6 +2883,69 @@ async function myExtras() {
   sharedBtn.textContent = "📥 Shared with me";
   sharedBtn.onclick = () => showView("shared");
   wrap.appendChild(sharedBtn);
+  // Phase 123: My drafts — unfinished posts saved from the
+  // composer. Resume loads the text back into the composer,
+  // Publish posts it (and earns its points), Delete drops it.
+  const draftsBtn = document.createElement("button");
+  draftsBtn.className = "wide";
+  draftsBtn.textContent = "📝 My drafts";
+  const draftsBox = document.createElement("div");
+  draftsBox.className = "drafts-box";
+  draftsBox.hidden = true;
+  const loadDrafts = async () => {
+    draftsBox.innerHTML = "Loading…";
+    try {
+      const data = await api("/drafts");
+      draftsBox.innerHTML = "";
+      if (!data.drafts.length) {
+        draftsBox.textContent = "No drafts yet — write something in the composer and tap 💾 Save draft.";
+        return;
+      }
+      data.drafts.forEach(d => {
+        const rowEl = document.createElement("div");
+        rowEl.className = "draft-row";
+        const tx = document.createElement("span");
+        tx.className = "draft-text";
+        tx.textContent = (d.text || (d.media_type ? "📷 " + d.media_type : "…")).slice(0, 120);
+        rowEl.appendChild(tx);
+        const resume = document.createElement("button");
+        resume.textContent = "Resume";
+        resume.onclick = () => {
+          $("composer-text").value = d.text || "";
+          showView("feed");
+          setTab("explore");
+          window.scrollTo(0, 0);
+          $("composer-text").focus();
+        };
+        const pub = document.createElement("button");
+        pub.textContent = "Publish";
+        pub.onclick = async () => {
+          try {
+            await api("/drafts/" + d.id + "/publish", { method: "POST" });
+            setStatus("Draft published 📝");
+            loadDrafts();
+            loadMe().catch(() => {});
+          } catch (e) { setStatus("Could not publish the draft."); }
+        };
+        const del = document.createElement("button");
+        del.textContent = "Delete";
+        del.onclick = async () => {
+          try {
+            await api("/drafts/" + d.id, { method: "DELETE" });
+            loadDrafts();
+          } catch (e) { setStatus("Could not delete the draft."); }
+        };
+        rowEl.append(resume, pub, del);
+        draftsBox.appendChild(rowEl);
+      });
+    } catch (e) { draftsBox.textContent = "Could not load drafts."; }
+  };
+  draftsBtn.onclick = () => {
+    draftsBox.hidden = !draftsBox.hidden;
+    if (!draftsBox.hidden) loadDrafts();
+  };
+  wrap.appendChild(draftsBtn);
+  wrap.appendChild(draftsBox);
   try {
     const mon = await api("/me/monetization");
     const card = document.createElement("div");
@@ -3219,12 +3379,57 @@ $("composer-file").onchange = () => {
   paintAttach();
 };
 
+// Phase 123: creator tools in the composer — an optional poll
+// (question + 2–4 options, hidden until 📊 is tapped) and
+// 💾 Draft, which keeps the text for later.
+let composerPollOn = false;
+$("composer-poll-toggle").onclick = () => {
+  composerPollOn = !composerPollOn;
+  $("composer-poll").hidden = !composerPollOn;
+  $("composer-poll-toggle").classList.toggle("on", composerPollOn);
+};
+function composerPoll() {
+  if (!composerPollOn) return null;
+  const q = $("composer-poll-q").value.trim();
+  const opts = [...document.querySelectorAll(".composer-poll-opt")]
+    .map(i => i.value.trim()).filter(Boolean);
+  if (!q && !opts.length) return null;
+  return { question: q, options: opts };
+}
+function clearComposerPoll() {
+  composerPollOn = false;
+  $("composer-poll").hidden = true;
+  $("composer-poll-toggle").classList.remove("on");
+  $("composer-poll-q").value = "";
+  document.querySelectorAll(".composer-poll-opt")
+    .forEach(i => { i.value = ""; });
+}
+$("composer-draft").onclick = async () => {
+  const text = $("composer-text").value.trim();
+  if (!text) {
+    composerStatus("Write something first, then save it as a draft 💾");
+    return;
+  }
+  try {
+    await api("/drafts", { method: "POST",
+      body: JSON.stringify({ text }) });
+    composerStatus("Draft saved ✓ — find it under 📝 My drafts on your profile.");
+    setStatus("Draft saved.");
+  } catch (e) { composerStatus("Could not save the draft."); }
+};
+
 $("composer-post").onclick = async () => {
   const text = $("composer-text").value.trim();
   if (!text && !composerFile) {
     // Phase 26: never a silent no-op — say what is missing, right
     // under the button where the member is looking.
     composerStatus("Write something or attach a photo/video first 📷");
+    return;
+  }
+  // Phase 123: a poll needs a question and at least 2 options.
+  const poll = composerPoll();
+  if (poll && (!poll.question || poll.options.length < 2)) {
+    composerStatus("A poll needs a question and at least 2 options 📊");
     return;
   }
   const btn = $("composer-post");
@@ -3275,9 +3480,18 @@ $("composer-post").onclick = async () => {
       composerUploadId = null;
       $("composer-file").value = "";
       paintAttach();
+      // Phase 123: polls only go with text posts.
+      if (composerPollOn) {
+        composerStatus("Posted without the poll — polls only go with text posts 📊");
+        clearComposerPoll();
+      }
     } else {
+      // Phase 123: the poll rides on text posts only.
+      const body = { type: "text", caption: text };
+      if (poll) body.poll = poll;
       await api("/posts", { method: "POST",
-        body: JSON.stringify({ type: "text", caption: text }) });
+        body: JSON.stringify(body) });
+      clearComposerPoll();
     }
     $("composer-text").value = "";
     setTab("explore");

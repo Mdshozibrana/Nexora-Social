@@ -68,6 +68,8 @@ class Post(Base):
     repost_of_id = Column(Integer, ForeignKey("posts.id"),
                         nullable=True)
     repost_count = Column(Integer, default=0)
+    # Phase 123: creator tools — one pinned post per author.
+    is_pinned = Column(Boolean, default=False)
     is_deleted = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
@@ -92,6 +94,65 @@ class Comment(Base):
     parent_id = Column(Integer, ForeignKey("comments.id"),
                        nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class Draft(Base):
+    """Phase 123: an unfinished post, saved from the composer and
+    finished later — text plus an optional already-uploaded media
+    reference. Publishing it goes through the normal post path
+    (points included) and deletes the draft."""
+    __tablename__ = "drafts"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("users.telegram_id"),
+                     index=True)
+    text = Column(Text, default="")
+    media_file_id = Column(String(256), nullable=True)
+    media_type = Column(String(16), nullable=True)  # photo | video
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+
+
+class CommentLike(Base):
+    """Phase 123: a like on one comment (toggle)."""
+    __tablename__ = "comment_likes"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    comment_id = Column(Integer, ForeignKey("comments.id"), index=True)
+    user_id = Column(BigInteger, ForeignKey("users.telegram_id"))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    __table_args__ = (UniqueConstraint("comment_id", "user_id"),)
+
+
+class Poll(Base):
+    """Phase 123: a post's poll — one per post, question + 2-4
+    options. Members vote once; a vote is final."""
+    __tablename__ = "polls"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    post_id = Column(Integer, ForeignKey("posts.id"), unique=True,
+                     index=True)
+    question = Column(String(200), default="")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class PollOption(Base):
+    __tablename__ = "poll_options"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    poll_id = Column(Integer, ForeignKey("polls.id"), index=True)
+    text = Column(String(100), default="")
+    position = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class PollVote(Base):
+    """One vote per member per poll — the (poll_id, user_id)
+    unique pair enforces it; option_id says what they picked."""
+    __tablename__ = "poll_votes"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    poll_id = Column(Integer, ForeignKey("polls.id"), index=True)
+    option_id = Column(Integer, ForeignKey("poll_options.id"),
+                       index=True)
+    user_id = Column(BigInteger, ForeignKey("users.telegram_id"))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    __table_args__ = (UniqueConstraint("poll_id", "user_id"),)
 
 
 class Follow(Base):

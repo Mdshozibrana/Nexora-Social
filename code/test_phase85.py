@@ -19,5 +19,5 @@ assert "margin-left: auto" in rule
 assert '#design-post::before { content: "✦ "; }' in CSS
 assert "#design-post:active { transform: scale(.96); }" in CSS
 assert 'id="design-post"' in HTML
-assert "app.js?v=122" in HTML and "style.css?v=122" in HTML
+assert "app.js?v=123" in HTML and "style.css?v=123" in HTML
 print("PHASE 85 OK")

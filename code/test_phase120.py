@@ -98,7 +98,7 @@ def is_verified(uid):
 
 def test_client_markers():
     html = open("webapp/index.html").read()
-    assert html.count("?v=122") == 5, html.count("?v=122")
+    assert html.count("?v=123") == 5, html.count("?v=123")
     assert "?v=119" not in html
     for marker in ("cp-sec-verify", "vbu-q", "vbu-go", "vbu-result",
                    "vbu-status", "Verify by Username"):
@@ -116,7 +116,7 @@ def test_client_markers():
     assert "repost-banner" in js and "Replying to" in js
     css = open("webapp/style.css").read()
     assert "comment-replies" in css or "comment-reply-btn" in css
-    print("client markers OK (?v=122, verify-by-username section)")
+    print("client markers OK (?v=123, verify-by-username section)")
 
 
 def test_lookup_by_username():

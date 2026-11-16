@@ -98,6 +98,11 @@ def _migrate():
         if "parent_id" not in comment_cols:
             conn.execute(text(
                 "ALTER TABLE comments ADD COLUMN parent_id INTEGER"))
+    # Phase 123: creator tools — one pinned post per author.
+    with engine.begin() as conn:
+        if "is_pinned" not in post_cols:
+            conn.execute(text(
+                "ALTER TABLE posts ADD COLUMN is_pinned BOOLEAN DEFAULT 0"))
     # Phase 60: a managed account created as "@name" stored the @
     # IN the username, so every "@" + username render showed
     # "@@name". Strip stray leading @s once (idempotent — later
@@ -857,8 +862,35 @@ def suggested_users(limit: int = 10, user: models.User = Depends(current_user),
 # Posts, likes, comments (PRD section 4, MVP items 3-5)
 # ---------------------------------------------------------------------------
 
+def _poll_dict(db, p, viewer_id=None):
+    """Phase 123: a post's poll, if any — options with live vote
+    counts, the total, and which option the viewer picked."""
+    poll = db.query(models.Poll).filter_by(post_id=p.id).first()
+    if poll is None:
+        return None
+    opts = db.query(models.PollOption).filter_by(
+        poll_id=poll.id).order_by(models.PollOption.position).all()
+    counts = {}
+    if opts:
+        rows = db.query(models.PollVote.option_id, func.count()).filter(
+            models.PollVote.option_id.in_([o.id for o in opts])).group_by(
+            models.PollVote.option_id).all()
+        counts = {oid: n for oid, n in rows}
+    voted = None
+    if viewer_id is not None and opts:
+        v = db.query(models.PollVote).filter(
+            models.PollVote.option_id.in_([o.id for o in opts]),
+            models.PollVote.user_id == viewer_id).first()
+        voted = v.option_id if v else None
+    return {"id": poll.id, "question": poll.question,
+            "options": [{"id": o.id, "text": o.text,
+                         "votes": counts.get(o.id, 0)} for o in opts],
+            "total_votes": sum(counts.values()),
+            "voted_option_id": voted}
+
+
 def post_dict(db, p, liked=False, saved=False, views=None,
-              reposted_by_me=False):
+              reposted_by_me=False, viewer_id=None):
     # Phase 118: a repost row shows its ORIGINAL — the card's
     # id, likes, comments and views all belong to the original;
     # the repost itself only adds who shared it and when.
@@ -867,7 +899,8 @@ def post_dict(db, p, liked=False, saved=False, views=None,
         if orig is None or orig.is_deleted:
             return None
         d = post_dict(db, orig, liked=liked, saved=saved,
-                      views=views, reposted_by_me=reposted_by_me)
+                      views=views, reposted_by_me=reposted_by_me,
+                      viewer_id=viewer_id)
         reposter = db.get(models.User, p.user_id)
         d["reposted"] = True
         d["repost_id"] = p.id
@@ -890,6 +923,8 @@ def post_dict(db, p, liked=False, saved=False, views=None,
         "caption": p.caption, "hashtags": p.hashtags,
         "like_count": p.like_count, "comment_count": p.comment_count,
         "repost_count": p.repost_count or 0,
+        "is_pinned": bool(getattr(p, "is_pinned", False)),
+        "poll": _poll_dict(db, p, viewer_id),
         "views": views,
         "liked": liked,
         "saved": saved,
@@ -942,7 +977,8 @@ def _post_list(db, rows, viewer_id, counts=None):
                       saved=_eff_id(p) in saved,
                       views=(counts.get(_eff_id(p), 0)
                              if counts is not None else None),
-                      reposted_by_me=_eff_id(p) in reposted)
+                      reposted_by_me=_eff_id(p) in reposted,
+                      viewer_id=viewer_id)
         if d is not None:
             out.append(d)
     return out
@@ -980,7 +1016,8 @@ def _post_list(db, rows, viewer_id, counts=None):
                       saved=_eff_id(p) in saved,
                       views=(counts.get(_eff_id(p), 0)
                              if counts is not None else None),
-                      reposted_by_me=_eff_id(p) in reposted)
+                      reposted_by_me=_eff_id(p) in reposted,
+                      viewer_id=viewer_id)
         if d is not None:
             out.append(d)
     return out
@@ -1057,16 +1094,39 @@ def _blocked_by(db, blocker_id, user_id):
         blocker_id=blocker_id, blocked_id=user_id).first() is not None
 
 
+class PollIn(BaseModel):
+    """Phase 123: an optional poll on a new post — a question
+    plus 2 to 4 options."""
+    question: str = Field(default="", max_length=200)
+    options: list = Field(default_factory=list)
+
+
 class PostIn(BaseModel):
     type: str = Field(default="text", max_length=16)
     media_file_id: Optional[str] = Field(default=None, max_length=256)
     caption: str = Field(default="", max_length=2000)
+    poll: Optional[PollIn] = None
+
+
+def _validate_poll(poll):
+    """Phase 123: a poll is a question + 2-4 non-empty options.
+    Returns the cleaned (question, [options]) or None."""
+    if poll is None:
+        return None
+    q = (poll.question or "").strip()
+    opts = [str(o).strip() for o in (poll.options or []) if str(o).strip()]
+    if not q:
+        raise HTTPException(400, "Poll needs a question")
+    if len(opts) < 2 or len(opts) > 4:
+        raise HTTPException(400, "A poll needs 2 to 4 options")
+    return q, opts
 
 
 @app.post("/posts")
 def create_post(body: PostIn, user: models.User = Depends(current_user),
                 db: Session = Depends(get_db)):
     _enforce_rate("post", f"u{user.telegram_id}")
+    poll = _validate_poll(body.poll)
     if body.type not in ("photo", "video", "text"):
         raise HTTPException(400, "type must be photo, video or text")
     # Phase 81: a media post carries a Telegram file_id the server
@@ -1080,7 +1140,18 @@ def create_post(body: PostIn, user: models.User = Depends(current_user),
                 400, moderation.block_message(body.type, verdict))
     post, _, _ = register_post(db, user, body.type, body.media_file_id,
                                body.caption)
-    return post_dict(db, post)
+    if poll:
+        q, opts = poll
+        db.add(models.Poll(post_id=post.id, question=q))
+        db.commit()
+        prow = db.query(models.Poll).filter_by(
+            post_id=post.id).first()
+        for i, t in enumerate(opts):
+            db.add(models.PollOption(poll_id=prow.id, text=t,
+                                   position=i))
+        db.commit()
+        db.refresh(post)
+    return post_dict(db, post, viewer_id=user.telegram_id)
 
 
 def _screen_file_id(kind, file_id):
@@ -1503,6 +1574,154 @@ async def toggle_repost(post_id: int, user: models.User = Depends(current_user),
     return {"reposted": reposted, "repost_count": p.repost_count}
 
 
+# ---------------------------------------------------------------------------
+# Phase 123 — Creator tools: pinned posts, drafts, polls.
+# ---------------------------------------------------------------------------
+
+
+@app.post("/posts/{post_id}/pin")
+def toggle_pin(post_id: int, user: models.User = Depends(current_user),
+               db: Session = Depends(get_db)):
+    """Pin ONE of your own posts — it shows first on your profile
+    (📌 badge). Pinning a second post unpins the first; a repost
+    cannot be pinned (only your own originals)."""
+    _enforce_rate("pin", f"u{user.telegram_id}")
+    p = db.get(models.Post, post_id)
+    if p is None or p.is_deleted:
+        raise HTTPException(404, "Post not found")
+    if p.user_id != user.telegram_id:
+        raise HTTPException(403, "Only the author can pin this post")
+    if getattr(p, "repost_of_id", None):
+        raise HTTPException(400, "A repost cannot be pinned")
+    if getattr(p, "is_pinned", False):
+        p.is_pinned = False
+        pinned = False
+    else:
+        for other in db.query(models.Post).filter_by(
+                user_id=user.telegram_id, is_pinned=True,
+                is_deleted=False).all():
+            other.is_pinned = False
+        p.is_pinned = True
+        pinned = True
+    db.commit()
+    return {"pinned": pinned, "post_id": p.id}
+
+
+class DraftIn(BaseModel):
+    text: str = Field(default="", max_length=2000)
+    media_file_id: Optional[str] = Field(default=None, max_length=256)
+    media_type: Optional[str] = Field(default=None, max_length=16)
+
+
+def draft_dict(d):
+    return {"id": d.id, "text": d.text,
+            "media_file_id": d.media_file_id,
+            "media_type": d.media_type,
+            "created_at": d.created_at.isoformat()
+            if d.created_at else None,
+            "updated_at": d.updated_at.isoformat()
+            if d.updated_at else None}
+
+
+@app.post("/drafts")
+def save_draft(body: DraftIn, user: models.User = Depends(current_user),
+               db: Session = Depends(get_db)):
+    """Save an unfinished post as a draft — text plus an optional
+    already-uploaded media reference — and finish it later from
+    the drafts list."""
+    _enforce_rate("draft", f"u{user.telegram_id}")
+    if body.media_type is not None \
+            and body.media_type not in ("photo", "video"):
+        raise HTTPException(400, "media_type must be photo or video")
+    if not (body.text or "").strip() and not body.media_file_id:
+        raise HTTPException(400, "A draft needs text or media")
+    d = models.Draft(user_id=user.telegram_id,
+                     text=(body.text or "").strip(),
+                     media_file_id=body.media_file_id,
+                     media_type=body.media_type)
+    db.add(d)
+    db.commit()
+    db.refresh(d)
+    return draft_dict(d)
+
+
+@app.get("/drafts")
+def list_drafts(user: models.User = Depends(current_user),
+                db: Session = Depends(get_db)):
+    rows = db.query(models.Draft).filter_by(
+        user_id=user.telegram_id).order_by(
+        models.Draft.updated_at.desc()).limit(50).all()
+    return {"drafts": [draft_dict(d) for d in rows]}
+
+
+@app.delete("/drafts/{draft_id}")
+def delete_draft(draft_id: int, user: models.User = Depends(current_user),
+                 db: Session = Depends(get_db)):
+    d = db.get(models.Draft, draft_id)
+    if d is None or d.user_id != user.telegram_id:
+        raise HTTPException(404, "Draft not found")
+    db.delete(d)
+    db.commit()
+    return {"ok": True, "id": draft_id}
+
+
+@app.post("/drafts/{draft_id}/publish")
+def publish_draft(draft_id: int, user: models.User = Depends(current_user),
+                  db: Session = Depends(get_db)):
+    """Publish a draft through the normal post path — it earns its
+    10 points like any post — then the draft is gone."""
+    _enforce_rate("draft", f"u{user.telegram_id}")
+    d = db.get(models.Draft, draft_id)
+    if d is None or d.user_id != user.telegram_id:
+        raise HTTPException(404, "Draft not found")
+    ptype = d.media_type or "text"
+    if ptype not in ("photo", "video", "text"):
+        ptype = "text"
+    if moderation.active() and ptype in ("photo", "video") \
+            and d.media_file_id:
+        verdict = _screen_file_id(ptype, d.media_file_id)
+        if verdict != "clean":
+            raise HTTPException(
+                400, moderation.block_message(ptype, verdict))
+    post, _, _ = register_post(db, user, ptype, d.media_file_id,
+                               d.text or "")
+    db.delete(d)
+    db.commit()
+    return post_dict(db, post, viewer_id=user.telegram_id)
+
+
+class PollVoteIn(BaseModel):
+    option_id: int
+
+
+@app.post("/posts/{post_id}/poll/vote")
+def vote_poll(post_id: int, body: PollVoteIn,
+              user: models.User = Depends(current_user),
+              db: Session = Depends(get_db)):
+    """Vote once in a post's poll. A vote is final — members
+    cannot change it once cast (documented in the PRD)."""
+    _enforce_rate("poll_vote", f"u{user.telegram_id}")
+    p = get_live_post(db, post_id)
+    if p.user_id != user.telegram_id and (
+            _blocked_by(db, p.user_id, user.telegram_id)
+            or _blocked_by(db, user.telegram_id, p.user_id)):
+        raise HTTPException(403, "This member is not available")
+    poll = db.query(models.Poll).filter_by(post_id=p.id).first()
+    if poll is None:
+        raise HTTPException(404, "This post has no poll")
+    opt = db.get(models.PollOption, body.option_id)
+    if opt is None or opt.poll_id != poll.id:
+        raise HTTPException(400, "That poll option does not exist")
+    existing = db.query(models.PollVote).filter_by(
+        poll_id=poll.id, user_id=user.telegram_id).first()
+    if existing is not None:
+        raise HTTPException(400, "You have already voted in this poll")
+    db.add(models.PollVote(poll_id=poll.id, option_id=opt.id,
+                           user_id=user.telegram_id))
+    db.commit()
+    return _poll_dict(db, p, viewer_id=user.telegram_id)
+
+
 @app.post("/posts/{post_id}/view")
 def view_post(post_id: int, user: models.User = Depends(current_user),
               db: Session = Depends(get_db)):
@@ -1645,10 +1864,12 @@ class CommentIn(BaseModel):
     parent_id: Optional[int] = None  # Phase 118: reply target
 
 
-def comment_dict(db, cm, reply_count=0, replies=None):
+def comment_dict(db, cm, reply_count=0, replies=None,
+                 like_count=0, liked_by_me=False):
     author = db.get(models.User, cm.user_id)
     return {
         "id": cm.id, "post_id": cm.post_id, "user_id": cm.user_id,
+        "like_count": like_count, "liked_by_me": liked_by_me,
         "parent_id": getattr(cm, "parent_id", None),
         "author_name": author.first_name if author else "",
         "author_username": author.username if author else None,
@@ -1680,12 +1901,32 @@ def list_comments(post_id: int, user: models.User = Depends(current_user),
     by_parent = {}
     for r in replies:
         by_parent.setdefault(r.parent_id, []).append(r)
+    # Phase 123: comment likes — one grouped count query for
+    # the whole post, plus which comments the viewer liked.
+    all_ids = [cm.id for cm in tops] + [r.id for r in replies]
+    like_counts = {}
+    liked_cm = set()
+    if all_ids:
+        rows = db.query(models.CommentLike.comment_id,
+                      func.count()).filter(
+            models.CommentLike.comment_id.in_(all_ids)).group_by(
+            models.CommentLike.comment_id).all()
+        like_counts = {cid: n for cid, n in rows}
+        liked_cm = {r[0] for r in db.query(
+            models.CommentLike.comment_id).filter(
+            models.CommentLike.comment_id.in_(all_ids),
+            models.CommentLike.user_id == user.telegram_id).all()}
     out = []
     for cm in tops:
         rs = by_parent.get(cm.id, [])
         out.append(comment_dict(
             db, cm, reply_count=len(rs),
-            replies=[comment_dict(db, r) for r in rs[:50]]))
+            replies=[comment_dict(db, r,
+                                  like_count=like_counts.get(r.id, 0),
+                                  liked_by_me=r.id in liked_cm)
+                     for r in rs[:50]],
+            like_count=like_counts.get(cm.id, 0),
+            liked_by_me=cm.id in liked_cm))
     return {"comments": out}
 
 
@@ -1734,6 +1975,38 @@ async def add_comment(post_id: int, body: CommentIn,
         notify.record(db, parent.user_id, "reply",
                       actor_id=user.telegram_id, post_id=p.id)
     return comment_dict(db, cm)
+
+
+@app.post("/posts/{post_id}/comments/{comment_id}/like")
+def toggle_comment_like(post_id: int, comment_id: int,
+                        user: models.User = Depends(current_user),
+                        db: Session = Depends(get_db)):
+    """Phase 123: like/unlike one comment (toggle). Same blocked-
+    author guard as commenting: a comment on a blocked member's
+    post cannot be liked."""
+    _enforce_rate("comment_like", f"u{user.telegram_id}")
+    p = get_live_post(db, post_id)
+    cm = db.get(models.Comment, comment_id)
+    if cm is None or cm.post_id != p.id:
+        raise HTTPException(404, "Comment not found")
+    if p.user_id != user.telegram_id and (
+            _blocked_by(db, p.user_id, user.telegram_id)
+            or _blocked_by(db, user.telegram_id, p.user_id)):
+        raise HTTPException(403, "This member is not available")
+    existing = db.query(models.CommentLike).filter_by(
+        comment_id=cm.id, user_id=user.telegram_id).first()
+    if existing:
+        db.delete(existing)
+        liked = False
+    else:
+        db.add(models.CommentLike(comment_id=cm.id,
+                                  user_id=user.telegram_id))
+        liked = True
+    db.commit()
+    count = db.query(models.CommentLike).filter_by(
+        comment_id=cm.id).count()
+    return {"liked": liked, "like_count": count,
+            "comment_id": cm.id}
 
 
 # ---------------------------------------------------------------------------
@@ -2099,8 +2372,16 @@ def user_posts(telegram_id: int, cursor: int = 0,
         raise HTTPException(404, "User not found")
     q = db.query(models.Post).filter_by(user_id=telegram_id, is_deleted=False)
     if cursor:
-        q = q.filter(models.Post.id < cursor)
-    rows = q.order_by(models.Post.id.desc()).limit(20).all()
+        # Later pages are plain newest-first, and the pinned
+        # post (already shown first on page one) is excluded
+        # so it never appears twice.
+        q = q.filter(models.Post.id < cursor,
+                     models.Post.is_pinned == False)
+        rows = q.order_by(models.Post.id.desc()).limit(20).all()
+    else:
+        # Phase 123: the author's pinned post leads their profile.
+        rows = q.order_by(models.Post.is_pinned.desc(),
+                          models.Post.id.desc()).limit(20).all()
     next_cursor = rows[-1].id if len(rows) == 20 else None
     counts = _post_view_counts(db, rows)
     _warm_authors(db, rows)
@@ -4011,6 +4292,12 @@ _BACKUP_TABLES = [
     ("messages", models.Message),
     ("stories", models.Story),
     ("story_views", models.StoryView),
+    # Phase 123: creator tools — drafts, comment likes, polls.
+    ("drafts", models.Draft),
+    ("comment_likes", models.CommentLike),
+    ("polls", models.Poll),
+    ("poll_options", models.PollOption),
+    ("poll_votes", models.PollVote),
 ]
 _BACKUP_MODELS = {name: m for name, m in _BACKUP_TABLES}
 _BACKUP_MAX_BYTES = 50 * 1024 * 1024
@@ -4574,6 +4861,13 @@ _NEXA_SYSTEM = (
     "posts of the last 7 days, ranked by recent likes, comments "
     "and views, with the top hashtags on top; tap a hashtag to "
     "see every post with that tag. "
+    "CREATOR TOOLS: pin one of your own posts from its menu "
+    "and it shows first on your profile with a 📌 badge; save "
+    "an unfinished post as a draft from the composer and finish "
+    "it later from My drafts in your profile extras; like any "
+    "comment with the little heart under it; and add a poll to "
+    "a post from the composer — members vote once, and the "
+    "results show live as percentages. "
     "POSTING: write from the Feed composer, or send a photo or "
     "video directly to @NexoraSocial_bot in chat with a "
     "caption and it becomes your post — the most reliable way "
