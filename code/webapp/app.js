@@ -4781,15 +4781,22 @@ $("design-more").onclick = () => loadDesigns(false);
   const THRESH = 70;
   const current = () => Object.keys(LOADERS)
     .find(v => !$("view-" + v).hidden);
+
+  // Phase 125: the Videos page scrolls inside its own fixed overlay
+  // (#view-videos), so #app-scroll never moves there and the old
+  // scrollTop guard never disarmed — every upward drag was eaten as
+  // a pull-to-refresh. Guard on the scroller of the open view.
+  const topScroller = () => current() === "videos"
+    ? document.getElementById("view-videos") : sc;
   sc.addEventListener("touchstart", e => {
-    if (busy || !current() || sc.scrollTop > 0) return;
+    if (busy || !current() || topScroller().scrollTop > 0) return;
     startY = e.touches[0].clientY;
     pull = 0;
   }, { passive: true });
   sc.addEventListener("touchmove", e => {
     if (startY === null || busy) return;
     const dy = e.touches[0].clientY - startY;
-    if (dy <= 0 || sc.scrollTop > 0) {
+    if (dy <= 0 || topScroller().scrollTop > 0) {
       startY = null;
       ind.hidden = true;
       ind.style.height = "0px";
