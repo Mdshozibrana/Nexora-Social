@@ -166,7 +166,7 @@ with TestClient(app) as c:
                 "#pv-img { animation: pvZoomIn",
                 "#photo-viewer { animation: pvFadeIn"):
         assert bit in css, bit
-    for asset in ("style.css?v=128", "app.js?v=128", "games.js?v=128"):
+    for asset in ("style.css?v=129", "app.js?v=129", "games.js?v=129"):
         assert asset in html, asset
     for bit in ("maybeLoadMoreDesigns", "loadRelatedDesigns",
                 "loadMyQr", "showTaskAd", "openPhotoViewer"):

@@ -20,8 +20,8 @@
 <meta name="twitter:description" content="Share photos, watch reels, discover designs and play classic games — all inside Telegram.">
 <meta name="twitter:image" content="https://nexora-9pip.onrender.com/webapp/og-image.png">
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
-<link rel="stylesheet" href="style.css?v=128">
-<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=128">
+<link rel="stylesheet" href="style.css?v=129">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=129">
 </head>
 <body>
 <div id="entry-screen">
@@ -522,7 +522,21 @@
     <input id="admin-user-q" type="search" placeholder="Search name, @username or ID">
     <button id="admin-user-go">Search</button>
   </div>
+  <div class="admin-browse" id="admin-browse">
+    <select id="admin-browse-sort" aria-label="Sort members">
+      <option value="points">⭐ Points (high first)</option>
+      <option value="followers">👥 Followers (high first)</option>
+      <option value="joined">🕒 Joined (newest first)</option>
+      <option value="name">🔤 Name (A–Z)</option>
+    </select>
+    <div class="ph-chips" id="admin-browse-chips">
+      <button type="button" class="ph-chip active" data-filter="all">All</button>
+      <button type="button" class="ph-chip" data-filter="verified">✓ Verified</button>
+      <button type="button" class="ph-chip" data-filter="banned">🚫 Banned</button>
+    </div>
+  </div>
   <div id="admin-users"></div>
+  <button id="admin-browse-more" type="button" class="wide" hidden>Show more</button>
 
   <h3 class="admin-sec" id="cp-sec-verifs">🛡️ Verification requests</h3>
   <div id="admin-verifications"></div>
@@ -735,8 +749,8 @@
   <button id="pv-close" type="button" aria-label="Close">✕</button>
 </div>
 
-<script src="vendor/leaflet/leaflet.js?v=128"></script>
-<script src="app.js?v=128"></script>
-<script src="games.js?v=128"></script>
+<script src="vendor/leaflet/leaflet.js?v=129"></script>
+<script src="app.js?v=129"></script>
+<script src="games.js?v=129"></script>
 </body>
 </html>

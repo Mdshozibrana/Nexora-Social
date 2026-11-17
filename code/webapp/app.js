@@ -5998,7 +5998,7 @@ async function markPayoutPaid(id) {
   loadDashboard();
   loadAdminStats();
   loadAdminReports();
-  loadAdminUsers($("admin-user-q").value.trim());
+  refreshAdminMembers();
   loadVerifications();
   loadPayouts();
   loadManaged();
@@ -6059,6 +6059,57 @@ async function loadAdminReports() {
   } catch (e) { box.textContent = "Could not load reports."; }
 }
 
+// --------------------------------------- Phase 129: Members browse ------
+// The Members section was search-only. It now also browses: a sort
+// dropdown + All/Verified/Banned chips above the list, "All members"
+// with a Show more button (offset paging). Searching still shows
+// search results instead; clearing the search returns to browse.
+const adminBrowse = { sort: "points", filter: "all", nextOffset: 0,
+                      loading: false };
+
+function adminBrowseOrder() {
+  return adminBrowse.sort === "name" ? "asc" : "desc";
+}
+
+function adminMemberRow(u) {
+  const row = document.createElement("div");
+  row.className = "card admin-row";
+  const info = document.createElement("div");
+  info.className = "admin-info";
+  const t = document.createElement("div");
+  t.className = "admin-title";
+  t.textContent = u.first_name + (u.is_verified ? " ✓" : "") +
+    (u.is_managed ? " 🤖" : "") +
+    (u.is_banned ? " 🚫" : "");
+  const s = document.createElement("div");
+  s.className = "admin-sub";
+  s.textContent = (u.username ? "@" + u.username + " · " : "") +
+    "ID " + u.telegram_id + " · ⭐ " +
+    (u.lifetime_points != null ? u.lifetime_points : u.points) +
+    (u.followers != null ? " · 👥 " + u.followers : "") +
+    (u.country ? " · 🌍 " + u.country : "") +
+    " · seen " + relTime(u.last_seen_at);
+  info.append(t, s);
+  const details = document.createElement("button");
+  details.textContent = "Details";
+  details.onclick = () => openUserDetail(u.telegram_id);
+  const btn = document.createElement("button");
+  btn.textContent = u.is_banned ? "Unban" : "Ban";
+  if (!u.is_banned) btn.className = "danger-btn";
+  btn.onclick = async () => {
+    if (!u.is_banned &&
+        !confirm("Ban " + u.first_name + "? They will lose access.")) return;
+    try {
+      await api("/admin/ban", { method: "POST", body: JSON.stringify(
+        { telegram_id: u.telegram_id, banned: !u.is_banned }) });
+      refreshAdminMembers();
+      loadAdminStats();
+    } catch (e) { alert(e.message || "Action failed"); }
+  };
+  row.append(info, details, btn);
+  return row;
+}
+
 async function loadAdminUsers(q) {
   const box = $("admin-users");
   box.innerHTML = "";
@@ -6068,43 +6119,46 @@ async function loadAdminUsers(q) {
       box.innerHTML = '<p class="hint">No members found.</p>';
       return;
     }
-    r.users.forEach(u => {
-      const row = document.createElement("div");
-      row.className = "card admin-row";
-      const info = document.createElement("div");
-      info.className = "admin-info";
-      const t = document.createElement("div");
-      t.className = "admin-title";
-      t.textContent = u.first_name + (u.is_verified ? " ✓" : "") +
-        (u.is_managed ? " 🤖" : "") +
-        (u.is_banned ? " 🚫" : "");
-      const s = document.createElement("div");
-      s.className = "admin-sub";
-      s.textContent = (u.username ? "@" + u.username + " · " : "") +
-        "ID " + u.telegram_id + " · ⭐ " + u.points +
-        (u.country ? " · 🌍 " + u.country : "") +
-        " · seen " + relTime(u.last_seen_at);
-      info.append(t, s);
-      const details = document.createElement("button");
-      details.textContent = "Details";
-      details.onclick = () => openUserDetail(u.telegram_id);
-      const btn = document.createElement("button");
-      btn.textContent = u.is_banned ? "Unban" : "Ban";
-      if (!u.is_banned) btn.className = "danger-btn";
-      btn.onclick = async () => {
-        if (!u.is_banned &&
-            !confirm("Ban " + u.first_name + "? They will lose access.")) return;
-        try {
-          await api("/admin/ban", { method: "POST", body: JSON.stringify(
-            { telegram_id: u.telegram_id, banned: !u.is_banned }) });
-          loadAdminUsers($("admin-user-q").value.trim());
-          loadAdminStats();
-        } catch (e) { alert(e.message || "Action failed"); }
-      };
-      row.append(info, details, btn);
-      box.appendChild(row);
-    });
+    r.users.forEach(u => box.appendChild(adminMemberRow(u)));
   } catch (e) { box.textContent = "Could not load members."; }
+}
+
+async function loadAdminBrowse(reset) {
+  if (adminBrowse.loading) return;
+  if (!reset && adminBrowse.nextOffset == null) return;
+  adminBrowse.loading = true;
+  const box = $("admin-users");
+  const more = $("admin-browse-more");
+  if (reset) { adminBrowse.nextOffset = 0; box.innerHTML = ""; }
+  try {
+    const r = await api("/admin/users?sort=" + adminBrowse.sort +
+      "&order=" + adminBrowseOrder() +
+      "&filter=" + adminBrowse.filter +
+      "&limit=20&offset=" + adminBrowse.nextOffset);
+    if (!r.users.length && adminBrowse.nextOffset === 0) {
+      box.innerHTML = '<p class="hint">No members found.</p>';
+    }
+    r.users.forEach(u => box.appendChild(adminMemberRow(u)));
+    adminBrowse.nextOffset = r.next_offset;
+    more.hidden = r.next_offset == null;
+  } catch (e) {
+    if (adminBrowse.nextOffset === 0) box.textContent = "Could not load members.";
+  }
+  adminBrowse.loading = false;
+}
+
+function refreshAdminMembers() {
+  const q = ($("admin-user-q").value || "").trim();
+  const browse = $("admin-browse");
+  const more = $("admin-browse-more");
+  if (q) {
+    browse.hidden = true;
+    more.hidden = true;
+    loadAdminUsers(q);
+  } else {
+    browse.hidden = false;
+    loadAdminBrowse(true);
+  }
 }
 
 async function loadManaged() {
@@ -6374,7 +6428,7 @@ async function toggleVerify(tid, verified) {
       { method: "POST", body: JSON.stringify({ verified }) });
     setStatus(verified ? "Blue tick granted ✓." : "Blue tick removed.");
     openUserDetail(tid);
-    loadAdminUsers($("admin-user-q").value.trim());
+    refreshAdminMembers();
   } catch (e) { setStatus("Could not change verification."); }
 }
 
@@ -6386,7 +6440,7 @@ async function saveMemberProfile(tid) {
                                bio: $("pe-bio").value }) });
     setStatus("Profile saved.");
     openUserDetail(tid);
-    loadAdminUsers($("admin-user-q").value.trim());
+    refreshAdminMembers();
   } catch (e) { setStatus("Could not save (name cannot be empty)."); }
 }
 
@@ -6399,7 +6453,7 @@ async function deleteMember(tid, name) {
     setStatus(name + " has been deleted completely.");
     const box = $("admin-user-detail");
     box.hidden = true; box.innerHTML = "";
-    loadAdminUsers($("admin-user-q").value.trim());
+    refreshAdminMembers();
     loadDashboard(); loadAdminStats();
   } catch (e) { setStatus("Could not delete that member."); }
 }
@@ -6530,11 +6584,27 @@ async function loadAdminPosts() {
   } catch (e) { box.textContent = "Could not load posts."; }
 }
 
-$("admin-user-go").onclick = () =>
-  loadAdminUsers($("admin-user-q").value.trim());
+$("admin-user-go").onclick = () => refreshAdminMembers();
 $("admin-user-q").addEventListener("keydown", e => {
-  if (e.key === "Enter") loadAdminUsers(e.target.value.trim());
+  if (e.key === "Enter") refreshAdminMembers();
 });
+$("admin-user-q").addEventListener("input", e => {
+  if (!e.target.value.trim()) refreshAdminMembers();
+});
+$("admin-browse-sort").onchange = e => {
+  adminBrowse.sort = e.target.value;
+  loadAdminBrowse(true);
+};
+document.querySelectorAll("#admin-browse-chips .ph-chip").forEach(ch => {
+  ch.onclick = () => {
+    document.querySelectorAll("#admin-browse-chips .ph-chip")
+      .forEach(c => c.classList.remove("active"));
+    ch.classList.add("active");
+    adminBrowse.filter = ch.dataset.filter;
+    loadAdminBrowse(true);
+  };
+});
+$("admin-browse-more").onclick = () => loadAdminBrowse(false);
 $("earn-rate-save").onclick = async () => {
   const v = parseFloat($("earn-rate-in").value);
   if (isNaN(v) || v < 0) { setStatus("Enter a valid rate."); return; }

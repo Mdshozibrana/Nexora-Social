@@ -3230,10 +3230,35 @@ def admin_stats(admin: models.User = Depends(admin_user),
     }
 
 
+# Phase 129: Members browse — the Members section was search-only.
+# Without `q` the endpoint now browses: sort (points|followers|
+# joined|name), order (desc|asc), filter (all|verified|banned),
+# limit (default 20, max 100) + offset paging, with `total` and
+# `next_offset`. Search mode (q present) is byte-identical to
+# before: same dicts, no total/next_offset. Points sort uses
+# lifetime points (sum of positive ledger rows — the same figure
+# the admin detail and monetization gate use), not the balance.
+_BROWSE_SORTS = ("points", "followers", "joined", "name")
+_BROWSE_FILTERS = ("all", "verified", "banned")
+
+
 @app.get("/admin/users")
-def admin_users(q: str = "", limit: int = 50, managed: int = 0,
+def admin_users(q: str = "", limit: Optional[int] = None, managed: int = 0,
+                sort: str = "points", order: str = "desc",
+                filter: str = "all", offset: int = 0,
                 admin: models.User = Depends(admin_user),
                 db: Session = Depends(get_db)):
+    def _user_dict(u):
+        return {
+            "telegram_id": u.telegram_id, "first_name": u.first_name,
+            "username": u.username, "is_banned": bool(u.is_banned),
+            "is_verified": bool(u.is_verified), "points": u.points_balance,
+            "is_managed": bool(u.is_managed),
+            "country": u.country, "language_code": u.language_code,
+            "last_seen_at": u.last_seen_at.isoformat() if u.last_seen_at else None,
+            "created_at": u.created_at.isoformat() if u.created_at else None,
+        }
+
     query = db.query(models.User)
     if managed:
         query = query.filter(models.User.is_managed.is_(True))
@@ -3243,17 +3268,64 @@ def admin_users(q: str = "", limit: int = 50, managed: int = 0,
             models.User.first_name.ilike(like, escape="\\"),
             models.User.username.ilike(like, escape="\\"),
             models.User.telegram_id == (int(q) if q.isdigit() else -1)))
-    rows = query.order_by(models.User.telegram_id.desc()) \
-        .limit(max(1, min(limit, 100))).all()
-    return {"users": [{
-        "telegram_id": u.telegram_id, "first_name": u.first_name,
-        "username": u.username, "is_banned": bool(u.is_banned),
-        "is_verified": bool(u.is_verified), "points": u.points_balance,
-        "is_managed": bool(u.is_managed),
-        "country": u.country, "language_code": u.language_code,
-        "last_seen_at": u.last_seen_at.isoformat() if u.last_seen_at else None,
-        "created_at": u.created_at.isoformat() if u.created_at else None,
-    } for u in rows]}
+        rows = query.order_by(models.User.telegram_id.desc()) \
+            .limit(max(1, min(limit if limit is not None else 50, 100))).all()
+        return {"users": [_user_dict(u) for u in rows]}
+
+    if sort not in _BROWSE_SORTS:
+        raise HTTPException(400, "Unknown sort")
+    if order not in ("desc", "asc"):
+        raise HTTPException(400, "Unknown order")
+    if filter not in _BROWSE_FILTERS:
+        raise HTTPException(400, "Unknown filter")
+    limit = max(1, min(limit if limit is not None else 20, 100))
+    offset = max(0, offset)
+    lifetime_sq = db.query(
+        models.PointsLedger.user_id.label("uid"),
+        func.coalesce(func.sum(models.PointsLedger.amount), 0).label("pts")) \
+        .filter(models.PointsLedger.amount > 0) \
+        .group_by(models.PointsLedger.user_id).subquery()
+    followers_sq = db.query(
+        models.Follow.following_id.label("uid"),
+        func.count().label("cnt")) \
+        .group_by(models.Follow.following_id).subquery()
+    lp = func.coalesce(lifetime_sq.c.pts, 0)
+    fc = func.coalesce(followers_sq.c.cnt, 0)
+    bquery = db.query(models.User, lp.label("lifetime_points"),
+                      fc.label("followers")) \
+        .outerjoin(lifetime_sq,
+                   lifetime_sq.c.uid == models.User.telegram_id) \
+        .outerjoin(followers_sq,
+                   followers_sq.c.uid == models.User.telegram_id)
+    if managed:
+        bquery = bquery.filter(models.User.is_managed.is_(True))
+    if filter == "verified":
+        bquery = bquery.filter(models.User.is_verified.is_(True))
+    elif filter == "banned":
+        bquery = bquery.filter(models.User.is_banned.is_(True))
+    total = bquery.count()
+    if sort == "points":
+        key = lp
+    elif sort == "followers":
+        key = fc
+    elif sort == "joined":
+        key = models.User.created_at
+    else:
+        key = func.lower(models.User.first_name)
+    if sort == "name":
+        cols = [key, func.lower(models.User.username)]
+    else:
+        cols = [key, models.User.telegram_id]
+    cols = [c.desc() if order == "desc" else c.asc() for c in cols]
+    rows = bquery.order_by(*cols).offset(offset).limit(limit).all()
+    users = []
+    for u, lifetime, nfollowers in rows:
+        d = _user_dict(u)
+        d["lifetime_points"] = int(lifetime or 0)
+        d["followers"] = int(nfollowers or 0)
+        users.append(d)
+    nxt = offset + len(users) if offset + len(users) < total else None
+    return {"users": users, "total": total, "next_offset": nxt}
 
 
 @app.get("/admin/users/{telegram_id}")

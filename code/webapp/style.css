@@ -2707,6 +2707,12 @@ html[data-theme] .suggest-follow.on { background: var(--t-chip, #F3DCE7);
   color: #2F7FBF; font-weight: 700; font-size: 12px; border-radius: 999px;
   padding: 5px 11px; cursor: pointer; }
 .ph-chip.active { background: linear-gradient(145deg, #8ED4F7, #3E8FD0); color: #fff; }
+
+/* Phase 129: Members browse controls (sort dropdown + filter chips). */
+.admin-browse { margin: 8px 0 4px; }
+.admin-browse select { width: 100%; padding: 10px 12px; border-radius: 14px;
+  border: 1px solid rgba(62,143,208,.25); background: #FFFDF8;
+  color: #3A2E33; font-size: 15px; margin-bottom: 6px; }
 .ph-more { width: 100%; margin-top: 10px; }
 .ph-empty { text-align: center; color: var(--ink-dim); font-size: 13px; padding: 14px 0; }
 
