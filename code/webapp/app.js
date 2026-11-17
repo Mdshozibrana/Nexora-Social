@@ -5702,6 +5702,42 @@ async function loadAuditLog() {
   } catch (e) { box.textContent = "Could not load the audit log."; }
 }
 
+// ------------------------------------- Phase 131: broadcast history ------
+// The Broadcast section used to be fire-and-forget. Past broadcasts
+// now list here (newest first) with the target group and how many
+// of the targeted members actually got the DM.
+const BC_TARGET_LABELS = {
+  all: "Everyone", verified: "Verified only",
+  new_7d: "Joined in last 7 days", inactive_30d: "Inactive 30+ days",
+};
+async function loadBroadcasts() {
+  const box = $("admin-bc-history");
+  if (!box) return;
+  box.innerHTML = "";
+  try {
+    const r = await api("/admin/broadcasts?limit=20");
+    if (!r.broadcasts.length) {
+      box.innerHTML = '<p class="hint">No broadcasts sent yet.</p>';
+      return;
+    }
+    r.broadcasts.forEach(b => {
+      const row = document.createElement("div");
+      row.className = "audit-row";
+      const t = document.createElement("div");
+      t.className = "admin-title";
+      t.textContent = (BC_TARGET_LABELS[b.target] || b.target) +
+        " \u00b7 " + b.delivered_count + " of " + b.total_count +
+        " delivered";
+      const s = document.createElement("div");
+      s.className = "admin-sub";
+      s.textContent = b.text.slice(0, 120) + " \u00b7 " + relTime(b.sent_at);
+      row.append(t, s);
+      box.appendChild(row);
+    });
+  } catch (e) { box.textContent = "Could not load broadcast history."; }
+}
+
+
 let secKind = "";
 let secEntries = [];
 async function loadSecurityLog() {
@@ -6098,6 +6134,7 @@ async function markPayoutPaid(id) {
   loadAdminDesigns();
   wireVbu();
   wireBackupCard();
+  loadBroadcasts();
   wireObsQuickActions();
 }
 
@@ -6703,14 +6740,18 @@ $("earn-rate-save").onclick = async () => {
 $("admin-bc-send").onclick = async () => {
   const text = $("admin-bc-text").value.trim();
   if (!text) return;
-  if (!confirm("Send this announcement to ALL members via the bot?")) return;
+  const target = ($("admin-bc-target") || {}).value || "all";
+  const label = BC_TARGET_LABELS[target] || "Everyone";
+  if (!confirm("Send this announcement to " + label +
+               " via the bot?")) return;
   $("admin-bc-send").disabled = true;
   try {
     const r = await api("/admin/broadcast",
-      { method: "POST", body: JSON.stringify({ text }) });
+      { method: "POST", body: JSON.stringify({ text, target }) });
     $("admin-bc-result").textContent =
-      "Sent to " + r.sent + " of " + r.recipients + " members.";
+      "Delivered " + r.sent + " of " + r.recipients + " members.";
     $("admin-bc-text").value = "";
+    loadBroadcasts();
   } catch (e) { $("admin-bc-result").textContent = "Broadcast failed."; }
   $("admin-bc-send").disabled = false;
 };

@@ -13,7 +13,7 @@ points, over balance, gate locked, second pending); admin list +
 decide (approve needs amount + currency, deducts points, notifies,
 audits; reject costs nothing; non-admin 403; paid only from
 approved); backup carries 35 tables incl. payout_requests with a
-restore round-trip; ?v=130 (x5), ?v=130 gone; client markers; the
+restore round-trip; ?v=131 (x5), ?v=131 gone; client markers; the
 monetization endpoint still works after the gate-helper refactor.
 """
 import hashlib
@@ -330,7 +330,7 @@ with TestClient(app) as c:
     assert b["format"] == "nexora-backup" and b["version"] == 1
     from app.main import _BACKUP_TABLES  # noqa: E402
     assert set(b["tables"]) == {n for n, _ in _BACKUP_TABLES}
-    assert len(b["tables"]) == 35, len(b["tables"])
+    assert len(b["tables"]) == 36, len(b["tables"])
     assert "payout_requests" in b["tables"]
     assert len(b["tables"]["payout_requests"]) == 4, \
         len(b["tables"]["payout_requests"])
@@ -338,7 +338,7 @@ with TestClient(app) as c:
                for q in b["tables"]["payout_requests"])
     r = c.get("/admin/backup", headers=H(UID["A"], "A"))
     assert r.status_code == 403, r.status_code
-    print("backup: 35 tables incl. payout_requests, rows present OK")
+    print("backup: 36 tables incl. payout_requests, rows present OK")
     # Round-trip: wipe payout_requests, restore, they come back.
     db = SessionLocal()
     db.query(models.PayoutRequest).delete()
@@ -357,9 +357,9 @@ with TestClient(app) as c:
     print("backup restore round-trip: payout rows back identical OK")
 
     # ------------------------------------------------------------- client --
-    assert HTML.count("?v=130") == 5, HTML.count("?v=130")
+    assert HTML.count("?v=131") == 5, HTML.count("?v=131")
     assert "?v=126" not in HTML
-    assert "app.js?v=130" in HTML and "style.css?v=130" in HTML
+    assert "app.js?v=131" in HTML and "style.css?v=131" in HTML
     for marker in ("loadPayoutBox", "loadPayoutList", "loadPayouts",
                    "decidePayout", "markPayoutPaid", "payout-network",
                    "payout-address", "payout-points", "payout-request",
@@ -372,6 +372,6 @@ with TestClient(app) as c:
     for marker in ("topScroller", "pollBlock", "loadDrafts",
                    "renderPh", "goFeedTo", "loadTrending"):
         assert marker in JS, marker
-    print("client: ?v=130 + payout markers + 123-126 markers OK")
+    print("client: ?v=131 + payout markers + 123-126 markers OK")
 
 print("phase127: wallet + request + admin + backup + client OK")

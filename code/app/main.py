@@ -3527,8 +3527,38 @@ def admin_resolve_report(report_id: int, body: ResolveIn,
     return {"ok": True, "id": r.id, "status": r.status}
 
 
+# Phase 131: broadcast history + targeting. Targets: all (every
+# member), verified (blue-tick members only), new_7d (joined in the
+# last 7 days), inactive_30d (no post AND no app activity in the
+# last 30 days — activity comes from the per-day UserActivity rows,
+# which carry last_beat_at; a brand-new member with no activity yet
+# matches inactive_30d too, by that definition).
+_BROADCAST_TARGETS = ("all", "verified", "new_7d", "inactive_30d")
+
+
+def _broadcast_targets(db, target):
+    now = datetime.utcnow()
+    q = db.query(models.User).filter_by(is_banned=False) \
+        .filter(models.User.telegram_id != OFFICIAL_ID)
+    if target == "verified":
+        q = q.filter(models.User.is_verified.is_(True))
+    elif target == "new_7d":
+        q = q.filter(models.User.created_at >= now - timedelta(days=7))
+    elif target == "inactive_30d":
+        cutoff = now - timedelta(days=30)
+        recent_post = db.query(models.Post.id).filter(
+            models.Post.user_id == models.User.telegram_id,
+            models.Post.created_at >= cutoff).exists()
+        recent_app = db.query(models.UserActivity.id).filter(
+            models.UserActivity.user_id == models.User.telegram_id,
+            models.UserActivity.last_beat_at >= cutoff).exists()
+        q = q.filter(~recent_post).filter(~recent_app)
+    return q.all()
+
+
 class BroadcastIn(BaseModel):
     text: str = Field(max_length=4000)
+    target: str = "all"
 
 
 @app.post("/admin/broadcast")
@@ -3538,11 +3568,23 @@ async def admin_broadcast(body: BroadcastIn,
     text = body.text.strip()
     if not text:
         raise HTTPException(400, "Broadcast text is empty")
-    targets = db.query(models.User).filter_by(is_banned=False) \
-        .filter(models.User.telegram_id != OFFICIAL_ID).all()
+    if body.target not in _BROADCAST_TARGETS:
+        raise HTTPException(400, "Unknown broadcast target")
+    targets = _broadcast_targets(db, body.target)
+    # The history row is recorded first, so a broadcast is never
+    # lost even if sending fails part-way through.
+    row = models.Broadcast(text=text, target=body.target,
+                           sent_by=admin.telegram_id,
+                           total_count=len(targets))
+    db.add(row)
+    db.flush()
     sent = 0
     for u in targets:
-        if await notify.send_message(u.telegram_id, text):
+        try:
+            ok = await notify.send_message(u.telegram_id, text)
+        except Exception:
+            ok = False
+        if ok:
             sent += 1
             db.add(models.NotificationLog(user_id=u.telegram_id,
                                            type="broadcast"))
@@ -3552,10 +3594,28 @@ async def admin_broadcast(body: BroadcastIn,
         db.add(models.Notification(
             user_id=u.telegram_id, type="announcement",
             text=text[:250]))
+    row.delivered_count = sent
     _audit(db, admin, "broadcast",
-           detail=f"{len(targets)} recipients")
+           detail=f"{body.target}: {sent}/{len(targets)} delivered")
     db.commit()
-    return {"recipients": len(targets), "sent": sent}
+    return {"recipients": len(targets), "sent": sent,
+            "broadcast_id": row.id}
+
+
+@app.get("/admin/broadcasts")
+def admin_broadcasts(limit: int = 20,
+                     admin: models.User = Depends(admin_user),
+                     db: Session = Depends(get_db)):
+    rows = db.query(models.Broadcast) \
+        .order_by(models.Broadcast.id.desc()) \
+        .limit(max(1, min(limit, 100))).all()
+    return {"broadcasts": [{
+        "id": r.id, "text": r.text, "target": r.target,
+        "sent_by": r.sent_by,
+        "sent_at": r.sent_at.isoformat() if r.sent_at else None,
+        "delivered_count": r.delivered_count,
+        "total_count": r.total_count,
+    } for r in rows]}
 
 
 # ---------------------------------------------------------------------------
@@ -4820,6 +4880,8 @@ _BACKUP_TABLES = [
     ("payout_requests", models.PayoutRequest),
     # Phase 128: persistent security log.
     ("security_events", models.SecurityEvent),
+    # Phase 131: broadcast history.
+    ("broadcasts", models.Broadcast),
 ]
 _BACKUP_MODELS = {name: m for name, m in _BACKUP_TABLES}
 _BACKUP_MAX_BYTES = 50 * 1024 * 1024

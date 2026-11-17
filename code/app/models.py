@@ -483,3 +483,19 @@ class SecurityEvent(Base):
     target_id = Column(BigInteger, nullable=True)
     detail = Column(Text, default="")
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
+
+class Broadcast(Base):
+    """Phase 131: broadcast history — one row per admin broadcast:
+    the text, the target group, who sent it, when, and how many of
+    the targeted members actually received the DM."""
+    __tablename__ = "broadcasts"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    text = Column(Text, nullable=False)
+    target = Column(String(16), default="all", nullable=False)
+    # all | verified | new_7d | inactive_30d
+    sent_by = Column(BigInteger, nullable=False)
+    sent_at = Column(DateTime, default=datetime.utcnow, index=True)
+    delivered_count = Column(Integer, default=0, nullable=False)
+    total_count = Column(Integer, default=0, nullable=False)
