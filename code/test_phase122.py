@@ -15,7 +15,7 @@ points are paid for trending views, and the feed order / post
 counts are unchanged.
 Client: the Trending view + sidebar entry, hashtag chips that reuse
 searchTag, ranked postCards with a "#N · 🔥 M in 24h" rank line,
-empty state, ?v=129, Nexa manual sentence.
+empty state, ?v=130, Nexa manual sentence.
 """
 import hashlib
 import hmac
@@ -247,7 +247,7 @@ with TestClient(app) as c:
     js = open("webapp/app.js").read()
     css = open("webapp/style.css").read()
     main = open("app/main.py").read()
-    assert html.count("?v=129") == 5, html.count("?v=129")
+    assert html.count("?v=130") == 5, html.count("?v=130")
     assert "?v=121" not in html
     for bit in ('id="view-trending"', 'id="trend-tags"',
                 'id="trend-list"', 'id="trend-empty"',
@@ -272,6 +272,6 @@ with TestClient(app) as c:
                 "wireObsQuickActions", "maybeLoadMoreDesigns",
                 "loadRelatedDesigns", "loadMyQr", "openPhotoViewer"):
         assert bit in js, bit
-    print("client: view + sidebar + chips + rank line + ?v=129 + Nexa OK")
+    print("client: view + sidebar + chips + rank line + ?v=130 + Nexa OK")
 
 print("PHASE 122 OK")

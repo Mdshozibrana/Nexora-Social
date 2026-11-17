@@ -79,12 +79,13 @@ CP_TARGETS = ("cp-sec-overview", "cp-sec-site", "cp-sec-backup",
               "cp-sec-earnings", "cp-sec-payouts", "cp-sec-reports",
               "cp-sec-members", "cp-sec-verifs", "cp-sec-verify",
               "cp-sec-content", "cp-sec-broadcast", "cp-sec-audit",
-              "cp-sec-security")
+              "cp-sec-security",
+              "cp-sec-health")
 
 
 def test_obsidian_markers():
     html = open("webapp/index.html").read()
-    assert html.count("?v=129") == 5, html.count("?v=129")
+    assert html.count("?v=130") == 5, html.count("?v=130")
     assert "?v=120" not in html
     # Obsidian header: eyebrow, greeting (name in purple), subtitle.
     for marker in ("NEXORA ADMIN", "Good Evening,",
@@ -107,12 +108,12 @@ def test_obsidian_markers():
         n = html.count('id="%s"' % fid)
         assert n == 1, (fid, n)
     # All 12 Control Panel nav buttons + their targets.
-    assert html.count('data-target="cp-sec-') == 13, \
+    assert html.count('data-target="cp-sec-') == 14, \
         html.count('data-target="cp-sec-')
     for tgt in CP_TARGETS:
         assert 'data-target="%s"' % tgt in html, tgt
         assert 'id="%s"' % tgt in html, tgt
-    print("obsidian hero + dial + frozen ids + 13 nav targets OK")
+    print("obsidian hero + dial + frozen ids + 14 nav targets OK")
 
     js = open("webapp/app.js").read()
     for marker in ("syncObsDial", "wireObsQuickActions",

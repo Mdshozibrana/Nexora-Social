@@ -5607,6 +5607,10 @@ function wireCpButtons() {
   if (sr && !sr.dataset.wired) {
     sr.dataset.wired = "1"; sr.onclick = loadSecurityLog;
   }
+  const hr = $("health-refresh");
+  if (hr && !hr.dataset.wired) {
+    hr.dataset.wired = "1"; hr.onclick = loadHealth;
+  }
 }
 
 async function loadSiteControls() {
@@ -5744,6 +5748,86 @@ function renderSecLog() {
     row.append(t, s);
     box.appendChild(row);
   });
+}
+
+// --------------------------------------- Phase 130: System Health --------
+// The Admin Panel had no in-app view of the platform's health — a
+// failed deploy was only visible in the Render dashboard. The new
+// System Health section shows the live version, commit, uptime,
+// database size, row counts for the key tables, and recent server
+// errors (from the Phase 128 security log).
+function fmtUptime(sec) {
+  sec = Math.max(0, Math.floor(sec || 0));
+  const d = Math.floor(sec / 86400);
+  const h = Math.floor((sec % 86400) / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  if (d) return d + "d " + h + "h " + m + "m";
+  if (h) return h + "h " + m + "m";
+  return m + "m";
+}
+
+function fmtBytes(n) {
+  if (n == null) return "—";
+  if (n < 1024) return n + " B";
+  if (n < 1048576) return (n / 1024).toFixed(1) + " KB";
+  return (n / 1048576).toFixed(1) + " MB";
+}
+
+async function loadHealth() {
+  const box = $("admin-health");
+  if (!box) return;
+  box.innerHTML = "";
+  try {
+    const h = await api("/admin/health");
+    const grid = document.createElement("div");
+    grid.className = "admin-stats";
+    grid.appendChild(statCard("🔖 Version",
+      h.version == null ? "—" : "?v=" + h.version));
+    grid.appendChild(statCard("💾 Commit", h.commit || "—"));
+    grid.appendChild(statCard("⏱️ Uptime", fmtUptime(h.uptime_seconds)));
+    grid.appendChild(statCard("🗄️ Database", fmtBytes(h.db_size_bytes)));
+    box.appendChild(grid);
+    const title = document.createElement("div");
+    title.className = "admin-title";
+    title.textContent = "📊 Rows";
+    box.appendChild(title);
+    Object.entries(h.tables || {}).forEach(([name, n]) => {
+      const row = document.createElement("div");
+      row.className = "audit-row";
+      const t = document.createElement("div");
+      t.className = "admin-title";
+      t.textContent = name;
+      const s = document.createElement("div");
+      s.className = "admin-sub";
+      s.textContent = String(n);
+      row.append(t, s);
+      box.appendChild(row);
+    });
+    const err = document.createElement("div");
+    err.className = "admin-title";
+    err.textContent = "⚠️ Server errors (24h): " + h.errors_24h;
+    box.appendChild(err);
+    (h.recent_errors || []).forEach(e => {
+      const row = document.createElement("div");
+      row.className = "audit-row";
+      const t = document.createElement("div");
+      t.className = "admin-title";
+      t.textContent = "server_error #" + e.id;
+      const s = document.createElement("div");
+      s.className = "admin-sub";
+      s.textContent = (e.detail || "") + " · " + relTime(e.created_at);
+      row.append(t, s);
+      box.appendChild(row);
+    });
+    if (!h.recent_errors || !h.recent_errors.length) {
+      const none = document.createElement("p");
+      none.className = "hint";
+      none.textContent = "No server errors recorded.";
+      box.appendChild(none);
+    }
+    const chk = $("health-checked");
+    if (chk) chk.textContent = "Last checked: " + new Date().toLocaleString();
+  } catch (e) { box.textContent = "Could not load system health."; }
 }
 
 async function loadAdminDesigns() {
@@ -6010,6 +6094,7 @@ async function markPayoutPaid(id) {
   loadSiteControls();
   loadAuditLog();
   loadSecurityLog();
+  loadHealth();
   loadAdminDesigns();
   wireVbu();
   wireBackupCard();

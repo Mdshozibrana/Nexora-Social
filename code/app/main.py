@@ -43,6 +43,9 @@ from .users import get_or_create_user
 # NEVER log initData, tokens or message content.
 sec_log = logging.getLogger("nexora.security")
 
+# Phase 130: process start time, for the System Health card.
+_STARTED_AT = time.time()
+
 Base.metadata.create_all(bind=engine)
 
 
@@ -4422,6 +4425,89 @@ def admin_security_log(kind: str = "", limit: int = 100,
         "target_id": r.target_id, "detail": r.detail,
         "created_at": r.created_at.isoformat() if r.created_at else None,
     } for r in rows]}
+
+
+# ---------------------------------------------------------------------------
+# Phase 130: System Health — one admin-only snapshot: live version,
+# commit, uptime, database size, row counts for the key tables, and
+# recent server errors (reusing the Phase 128 security_events table).
+# ---------------------------------------------------------------------------
+_HEALTH_TABLES = [
+    ("users", models.User),
+    ("posts", models.Post),
+    ("designs", models.Design),
+    ("comments", models.Comment),
+    ("likes", models.Like),
+    ("points_ledger", models.PointsLedger),
+    ("messages", models.Message),
+    ("security_events", models.SecurityEvent),
+    ("payout_requests", models.PayoutRequest),
+]
+
+
+def _health_db_size_bytes():
+    """Database size in bytes. Postgres: pg_database_size. SQLite:
+    the size of the DATABASE_URL file. Anything else: None."""
+    if engine.dialect.name == "postgresql":
+        try:
+            with engine.connect() as conn:
+                return int(conn.execute(
+                    text("SELECT pg_database_size(current_database())"))
+                    .scalar())
+        except Exception:
+            return None
+    url = settings.DATABASE_URL
+    if url.startswith("sqlite:///"):
+        try:
+            return os.path.getsize(url[len("sqlite:///"):])
+        except OSError:
+            return None
+    return None
+
+
+def _health_version():
+    """Live asset version: the first ?v=NN in the deployed
+    webapp/index.html on disk (the served shell IS that file)."""
+    try:
+        html = (Path(__file__).resolve().parent.parent
+                / "webapp" / "index.html").read_text()
+    except OSError:
+        return None
+    m = re.search(r"\?v=(\d+)", html)
+    return int(m.group(1)) if m else None
+
+
+@app.get("/admin/health")
+def admin_health(admin: models.User = Depends(admin_user),
+                 db: Session = Depends(get_db)):
+    """System Health card: version, commit, uptime, DB size, row
+    counts, server errors in the last 24h + the last 5 of them."""
+    commit = os.environ.get("RENDER_GIT_COMMIT") or None
+    if commit:
+        commit = commit[:7]
+    since = datetime.utcnow() - timedelta(hours=24)
+    tables = {}
+    for name, model in _HEALTH_TABLES:
+        tables[name] = db.query(model).count()
+    errors = db.query(models.SecurityEvent) \
+        .filter(models.SecurityEvent.kind == "server_error",
+                models.SecurityEvent.created_at >= since) \
+        .count()
+    recent = db.query(models.SecurityEvent) \
+        .filter(models.SecurityEvent.kind == "server_error") \
+        .order_by(models.SecurityEvent.id.desc()).limit(5).all()
+    return {
+        "version": _health_version(),
+        "commit": commit,
+        "uptime_seconds": int(time.time() - _STARTED_AT),
+        "db_size_bytes": _health_db_size_bytes(),
+        "tables": tables,
+        "errors_24h": errors,
+        "recent_errors": [{
+            "id": e.id, "detail": e.detail,
+            "created_at": e.created_at.isoformat() if e.created_at else None,
+        } for e in recent],
+    }
 
 
 # ---------------------------------------------------------------------------

@@ -42,9 +42,9 @@ with TestClient(app) as c:
     print("hero inset + Phase 105 markers OK")
 
     html = c.get("/webapp/").text
-    for asset in ("style.css?v=129", "app.js?v=129", "games.js?v=129"):
+    for asset in ("style.css?v=130", "app.js?v=130", "games.js?v=130"):
         assert asset in html, asset
-    print("asset version ?v=129 OK")
+    print("asset version ?v=130 OK")
 
     js = c.get("/webapp/app.js").text
     assert "hero.append(headWrap, bio, stats)" in js
