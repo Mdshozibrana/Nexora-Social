@@ -102,7 +102,7 @@ def _migrate():
     with engine.begin() as conn:
         if "is_pinned" not in post_cols:
             conn.execute(text(
-                "ALTER TABLE posts ADD COLUMN is_pinned BOOLEAN DEFAULT 0"))
+                "ALTER TABLE posts ADD COLUMN is_pinned BOOLEAN DEFAULT FALSE"))
     # Phase 60: a managed account created as "@name" stored the @
     # IN the username, so every "@" + username render showed
     # "@@name". Strip stray leading @s once (idempotent — later

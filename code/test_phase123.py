@@ -17,7 +17,7 @@ results shape (options with votes, total_votes, voted_option_id);
 404 voting on a post with no poll; 400 for a bad option.
 Backup: the format now carries 33 tables incl. the five new ones,
 with their rows; a restore round-trip brings them back.
-Client: ?v=125, composer poll form + Save draft, pin badge + pin
+Client: ?v=126, composer poll form + Save draft, pin badge + pin
 menu row, poll block, comment heart, My drafts in profile extras,
 Nexa manual line.
 """
@@ -436,7 +436,7 @@ with TestClient(app) as c:
     js = open("webapp/app.js").read()
     css = open("webapp/style.css").read()
     main = open("app/main.py").read()
-    assert html.count("?v=125") == 5, html.count("?v=125")
+    assert html.count("?v=126") == 5, html.count("?v=126")
     assert "?v=122" not in html
     for bit in ('id="composer-poll-toggle"', 'id="composer-draft"',
                 'id="composer-poll"', 'id="composer-poll-q"',
@@ -463,6 +463,6 @@ with TestClient(app) as c:
                 "repost-banner", "Replying to"):
         assert bit in js, bit
     print("client: composer poll + draft, pin, poll block, comment "
-          "heart, My drafts, ?v=125, Nexa OK")
+          "heart, My drafts, ?v=126, Nexa OK")
 
 print("PHASE 123 OK")
