@@ -20,8 +20,8 @@
 <meta name="twitter:description" content="Share photos, watch reels, discover designs and play classic games — all inside Telegram.">
 <meta name="twitter:image" content="https://nexora-9pip.onrender.com/webapp/og-image.png">
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
-<link rel="stylesheet" href="style.css?v=127">
-<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=127">
+<link rel="stylesheet" href="style.css?v=128">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=128">
 </head>
 <body>
 <div id="entry-screen">
@@ -397,6 +397,7 @@
     <button type="button" data-target="cp-sec-content">📝 Content</button>
     <button type="button" data-target="cp-sec-broadcast">📣 Broadcast</button>
     <button type="button" data-target="cp-sec-audit">📜 Audit Log</button>
+    <button type="button" data-target="cp-sec-security">🛡️ Security Log</button>
   </div>
 
   <h3 class="admin-sec" id="cp-sec-site">⚙️ Site Controls</h3>
@@ -583,6 +584,13 @@
     <button id="audit-refresh" type="button" class="wide">↻ Refresh audit log</button>
     <div id="admin-audit-log"></div>
   </div>
+  <h3 class="admin-sec" id="cp-sec-security">🛡️ Security Log</h3>
+  <div class="card bc-card">
+    <p class="hint">Screening rejections, rate-limit hits, rejected logins, denied admin routes, server errors and self-deletions — newest first.</p>
+    <div id="sec-chips" class="ph-chips"></div>
+    <button id="sec-refresh" type="button" class="wide">↻ Refresh security log</button>
+    <div id="admin-security-log"></div>
+  </div>
 </section>
 </div><!-- /#app-scroll -->
 
@@ -727,8 +735,8 @@
   <button id="pv-close" type="button" aria-label="Close">✕</button>
 </div>
 
-<script src="vendor/leaflet/leaflet.js?v=127"></script>
-<script src="app.js?v=127"></script>
-<script src="games.js?v=127"></script>
+<script src="vendor/leaflet/leaflet.js?v=128"></script>
+<script src="app.js?v=128"></script>
+<script src="games.js?v=128"></script>
 </body>
 </html>

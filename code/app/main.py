@@ -280,6 +280,9 @@ async def unhandled_error(request, exc):
     more specific handler and never lands here.)"""
     sec_log.exception("unhandled error on %s %s",
                       request.method, request.url.path)
+    log_security_event(None, "server_error", detail=
+                       f"{request.method} {request.url.path} "
+                       f"({type(exc).__name__})")
     return JSONResponse(status_code=500,
                         content={"detail": "Something went wrong — "
                                            "please try again"})
@@ -298,6 +301,11 @@ def _enforce_rate(bucket: str, key: str):
     limit, window = RATE_LIMITS[bucket]
     if not ratelimit.hit(bucket, key, limit, window):
         sec_log.warning("rate limit hit: %s key=%s", bucket, key)
+        actor = None
+        if key.startswith("u") and key[1:].isdigit():
+            actor = int(key[1:])
+        log_security_event(None, "rate_limit", actor_id=actor,
+                           detail=f"bucket {bucket} key {key}")
         raise HTTPException(
             429, "Too many requests — please slow down a little",
             headers={"Retry-After": str(min(window, 300))})
@@ -312,6 +320,43 @@ def _audit(db, admin, action, target_id=None, detail=""):
         target_id=target_id, detail=(detail or "")[:512]))
     sec_log.info("admin action: %s by %s target=%s",
                  action, admin.telegram_id, target_id)
+
+
+_SECURITY_KINDS = ("screen_reject", "rate_limit", "auth_reject",
+                   "admin_denied", "server_error", "account_delete")
+_SECURITY_EVENT_MAX = 1000
+
+
+def log_security_event(db, kind, actor_id=None, target_id=None,
+                       detail=""):
+    """Phase 128: persist one security event. The write rides its
+    OWN session when no db is passed — and commits at once even
+    when one is: most call sites raise right after logging, which
+    would roll a caller-bound row back, and the middleware has no
+    db at all. A failure to log must never break the request, so
+    every error is swallowed. Details are one-line summaries only
+    — never a traceback."""
+    try:
+        own = db is None
+        s = SessionLocal() if own else db
+        try:
+            s.add(models.SecurityEvent(
+                kind=kind, actor_id=actor_id, target_id=target_id,
+                detail=(detail or "")[:512]))
+            s.flush()
+            n = s.query(models.SecurityEvent).count()
+            if n > _SECURITY_EVENT_MAX:
+                old = s.query(models.SecurityEvent) \
+                    .order_by(models.SecurityEvent.id.asc()) \
+                    .limit(n - _SECURITY_EVENT_MAX).all()
+                for row in old:
+                    s.delete(row)
+            s.commit()
+        finally:
+            if own:
+                s.close()
+    except Exception:
+        pass
 
 
 def _check_revoked(user, init_data: str):
@@ -545,6 +590,8 @@ def current_user(x_init_data: str = Header(default=""),
     tg_user = validate_init_data(x_init_data, settings.BOT_TOKEN)
     if not tg_user:
         sec_log.warning("rejected initData on API request")
+        log_security_event(db, "auth_reject", detail=
+                           "Invalid initData on API request")
         raise HTTPException(401, "Invalid Telegram login")
     user, _ = get_or_create_user(db, tg_user)
     if user.is_banned:
@@ -590,6 +637,8 @@ async def auth(body: AuthIn, request: Request,
     if not tg_user:
         sec_log.warning("rejected initData at /auth from %s",
                         _client_ip(request))
+        log_security_event(db, "auth_reject", detail=
+                           "Invalid initData at /auth")
         raise HTTPException(401, "Invalid Telegram login")
     user, is_new = get_or_create_user(db, tg_user)
     _check_revoked(user, body.initData)
@@ -1148,6 +1197,9 @@ def create_post(body: PostIn, user: models.User = Depends(current_user),
             and body.media_file_id:
         verdict = _screen_file_id(body.type, body.media_file_id)
         if verdict != "clean":
+            log_security_event(db, "screen_reject",
+                               actor_id=user.telegram_id, detail=
+                               f"{body.type} screened out ({verdict})")
             raise HTTPException(
                 400, moderation.block_message(body.type, verdict))
     post, _, _ = register_post(db, user, body.type, body.media_file_id,
@@ -1252,6 +1304,9 @@ async def _finish_video_post(author_id, send_chat_id, src_path,
                 sec_log.warning(
                     "video screened out (%s) for user %s",
                     verdict, author_id)
+                log_security_event(None, "screen_reject",
+                                   actor_id=author_id, detail=
+                                   f"video screened out ({verdict})")
                 await notify.send_message(
                     send_chat_id,
                     moderation.block_message("video", verdict))
@@ -1370,6 +1425,9 @@ async def _telegram_upload_or_400(user, file: UploadFile, caption=""):
                 sec_log.warning(
                     "media screened out (%s) for user %s",
                     verdict, user.telegram_id)
+                log_security_event(None, "screen_reject",
+                                   actor_id=user.telegram_id, detail=
+                                   f"photo screened out ({verdict})")
                 raise HTTPException(
                     400, moderation.block_message("photo", verdict))
         return await _send_to_telegram(
@@ -1693,6 +1751,9 @@ def publish_draft(draft_id: int, user: models.User = Depends(current_user),
             and d.media_file_id:
         verdict = _screen_file_id(ptype, d.media_file_id)
         if verdict != "clean":
+            log_security_event(db, "screen_reject",
+                               actor_id=user.telegram_id, detail=
+                               f"{ptype} screened out ({verdict})")
             raise HTTPException(
                 400, moderation.block_message(ptype, verdict))
     post, _, _ = register_post(db, user, ptype, d.media_file_id,
@@ -2925,6 +2986,9 @@ def admin_user(user: models.User = Depends(current_user)):
     if user.telegram_id not in settings.ADMIN_IDS:
         sec_log.warning("admin route denied for user %s",
                         user.telegram_id)
+        log_security_event(None, "admin_denied",
+                           actor_id=user.telegram_id,
+                           detail="Admin route denied")
         raise HTTPException(403, "Admins only")
     return user
 
@@ -2938,6 +3002,9 @@ def moderator_user(user: models.User = Depends(current_user)):
             and user.telegram_id not in settings.MODERATOR_IDS:
         sec_log.warning("moderator route denied for user %s",
                         user.telegram_id)
+        log_security_event(None, "admin_denied",
+                           actor_id=user.telegram_id,
+                           detail="Moderator route denied")
         raise HTTPException(403, "Moderators only")
     return user
 
@@ -4261,6 +4328,31 @@ def admin_audit_log(limit: int = 100,
 
 
 # ---------------------------------------------------------------------------
+# Phase 128: Security Log — persistent security events for the Admin
+# Panel (screening rejections, rate-limit hits, rejected logins,
+# denied admin routes, server errors, self-deletions).
+# ---------------------------------------------------------------------------
+
+@app.get("/admin/security-log")
+def admin_security_log(kind: str = "", limit: int = 100,
+                       admin: models.User = Depends(admin_user),
+                       db: Session = Depends(get_db)):
+    """Newest first; ?kind= filters to one of the six kinds."""
+    if kind and kind not in _SECURITY_KINDS:
+        raise HTTPException(400, "Unknown security kind")
+    q = db.query(models.SecurityEvent) \
+        .order_by(models.SecurityEvent.id.desc())
+    if kind:
+        q = q.filter(models.SecurityEvent.kind == kind)
+    rows = q.limit(max(1, min(limit, 200))).all()
+    return {"entries": [{
+        "id": r.id, "kind": r.kind, "actor_id": r.actor_id,
+        "target_id": r.target_id, "detail": r.detail,
+        "created_at": r.created_at.isoformat() if r.created_at else None,
+    } for r in rows]}
+
+
+# ---------------------------------------------------------------------------
 # Phase 119: Control Panel — admin design list, maintenance toggle,
 # app-wide announcement banner (admin-only writes, public read).
 # ---------------------------------------------------------------------------
@@ -4568,6 +4660,8 @@ _BACKUP_TABLES = [
     ("poll_votes", models.PollVote),
     # Phase 127: crypto payout requests.
     ("payout_requests", models.PayoutRequest),
+    # Phase 128: persistent security log.
+    ("security_events", models.SecurityEvent),
 ]
 _BACKUP_MODELS = {name: m for name, m in _BACKUP_TABLES}
 _BACKUP_MAX_BYTES = 50 * 1024 * 1024
@@ -4770,6 +4864,10 @@ def my_delete_account(body: DeleteAccountIn,
     db.commit()
     sec_log.warning("member self-deleted account %s",
                     user.telegram_id)
+    log_security_event(db, "account_delete",
+                       actor_id=user.telegram_id,
+                       detail=f"Member {user.telegram_id} deleted "
+                              "their account")
     return {"ok": True, "deleted": user.telegram_id}
 
 

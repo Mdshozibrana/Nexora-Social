@@ -5603,6 +5603,10 @@ function wireCpButtons() {
   if (ar && !ar.dataset.wired) {
     ar.dataset.wired = "1"; ar.onclick = loadAuditLog;
   }
+  const sr = $("sec-refresh");
+  if (sr && !sr.dataset.wired) {
+    sr.dataset.wired = "1"; sr.onclick = loadSecurityLog;
+  }
 }
 
 async function loadSiteControls() {
@@ -5692,6 +5696,54 @@ async function loadAuditLog() {
       box.appendChild(row);
     });
   } catch (e) { box.textContent = "Could not load the audit log."; }
+}
+
+let secKind = "";
+let secEntries = [];
+async function loadSecurityLog() {
+  const box = $("admin-security-log");
+  if (!box) return;
+  box.innerHTML = "";
+  try {
+    const r = await api("/admin/security-log?limit=100");
+    secEntries = r.entries || [];
+    renderSecLog();
+  } catch (e) { box.textContent = "Could not load the security log."; }
+}
+function renderSecLog() {
+  const box = $("admin-security-log");
+  if (!box) return;
+  const chips = $("sec-chips");
+  if (chips) {
+    chips.innerHTML = "";
+    const kinds = ["", ...new Set(secEntries.map(e => e.kind))];
+    kinds.forEach(k => {
+      const ch = document.createElement("button");
+      ch.type = "button";
+      ch.className = "ph-chip" + (secKind === k ? " active" : "");
+      ch.textContent = k === "" ? "All" : k;
+      ch.onclick = () => { secKind = k; renderSecLog(); };
+      chips.appendChild(ch);
+    });
+  }
+  box.innerHTML = "";
+  const rows = secEntries.filter(e => !secKind || e.kind === secKind);
+  if (!rows.length) {
+    box.innerHTML = '<p class="hint">No security events yet.</p>';
+    return;
+  }
+  rows.forEach(e => {
+    const row = document.createElement("div");
+    row.className = "audit-row";
+    const t = document.createElement("div");
+    t.className = "admin-title";
+    t.textContent = e.kind + (e.actor_id ? " · " + e.actor_id : "");
+    const s = document.createElement("div");
+    s.className = "admin-sub";
+    s.textContent = (e.detail || "") + " · " + relTime(e.created_at);
+    row.append(t, s);
+    box.appendChild(row);
+  });
 }
 
 async function loadAdminDesigns() {
@@ -5957,6 +6009,7 @@ async function markPayoutPaid(id) {
   wireCpButtons();
   loadSiteControls();
   loadAuditLog();
+  loadSecurityLog();
   loadAdminDesigns();
   wireVbu();
   wireBackupCard();

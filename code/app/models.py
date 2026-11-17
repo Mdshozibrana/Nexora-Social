@@ -469,3 +469,17 @@ class PayoutRequest(Base):
     decided_by = Column(BigInteger, nullable=True)
     paid_at = Column(DateTime, nullable=True)
 
+
+
+class SecurityEvent(Base):
+    """Phase 128: persistent security log — screening rejections,
+    rate-limit hits, rejected logins, denied admin routes, server
+    errors, self-deletions. One-line details only, never a
+    traceback; pruned to the newest 1000 rows on insert."""
+    __tablename__ = "security_events"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    kind = Column(String(32), nullable=False, index=True)
+    actor_id = Column(BigInteger, nullable=True)
+    target_id = Column(BigInteger, nullable=True)
+    detail = Column(Text, default="")
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)

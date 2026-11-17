@@ -8,7 +8,7 @@ HTML = open("webapp/index.html").read()
 JS = open("webapp/app.js").read()
 CSS = open("webapp/style.css").read()
 
-assert 'id="gb-dot"' in HTML and "?v=127" in HTML
+assert 'id="gb-dot"' in HTML and "?v=128" in HTML
 print("markup OK")
 
 for marker in ("#glassbar:not(.open) .gb-item",
