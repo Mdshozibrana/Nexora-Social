@@ -92,6 +92,11 @@ RATE_LIMITS = {
     # rewrites everything, so both budgets stay small.
     "backup": (10, 3600),
     "restore": (3, 3600),
+    # Phase 127: crypto payouts — a member may ask for a payout at
+    # most 10 times an hour (validation rejects nearly all of them);
+    # the admin's decide/paid calls get a separate, larger budget.
+    "payout": (10, 3600),
+    "payout_admin": (120, 3600),
 }
 
 # Points economy (PRD section 5). PLACEHOLDER defaults — these are product
@@ -133,6 +138,11 @@ MONETIZATION = {
     "lifetime_points": 5000,  # at least this many points earned in total
     "checkin_streak": 30,    # consecutive daily check-ins, no misses
 }
+
+# Phase 127: crypto payout networks — the only wallets a member may
+# save. The admin sets the crypto amount at approval; no
+# points->money rate is hardcoded anywhere.
+PAYOUT_NETWORKS = ("TON", "Gram", "USDT")
 
 # Official account (owner request, Oct 31): a system account named
 # "Nexora Social" with a verified mark. Every member follows it

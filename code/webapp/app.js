@@ -2800,6 +2800,7 @@ async function myExtras() {
       "referral": ["🔗", "Referral bonus"],
       "post": ["📝", "New post"],
       "admin_adjust": ["🛡️", "Admin adjustment"],
+      "payout": ["💸", "Payout"],
     };
     const card = document.createElement("div");
     card.className = "points-card";
@@ -3109,6 +3110,7 @@ async function myExtras() {
       ? "You meet every target — monetization is unlocked for your account."
       : "Meet every target to unlock monetization for your account.";
     card.appendChild(note);
+    loadPayoutBox(card, mon);
     wrap.appendChild(card);
   } catch (e) { /* monetization card is optional decoration */ }
   try {
@@ -5464,6 +5466,8 @@ async function loadAdminStats() {
     if (cpM) cpM.textContent = s.users;
     const cpV = $("cp-count-verifs");
     if (cpV) cpV.textContent = s.pending_verifications;
+    const cpP = $("cp-count-payouts");
+    if (cpP) cpP.textContent = s.pending_payouts;
     syncObsDial();
   } catch (e) { box.textContent = "Could not load stats."; }
 }
@@ -5737,6 +5741,206 @@ async function loadAnnouncementBar() {
 }
 
 function loadAdmin() {
+// Phase 127: crypto payout — wallet form, payout request and the
+// member's own requests, inside the Monetization card on Me.
+async function loadPayoutBox(card, mon) {
+  const box = document.createElement("div");
+  box.className = "payout-box";
+  box.id = "payout-box";
+  const title = document.createElement("b");
+  title.textContent = "💸 Payout (crypto)";
+  box.appendChild(title);
+  const hint = document.createElement("p");
+  hint.className = "hint";
+  hint.textContent = "Save your wallet, then request a payout in " +
+    "points. The admin reviews it, sets the crypto amount and pays " +
+    "it manually.";
+  box.appendChild(hint);
+  try {
+    const w = await api("/me/wallet");
+    const netSel = document.createElement("select");
+    netSel.id = "payout-network";
+    ["TON", "Gram", "USDT"].forEach(n => {
+      const o = document.createElement("option");
+      o.value = n;
+      o.textContent = n;
+      netSel.appendChild(o);
+    });
+    if (w.wallet_network) netSel.value = w.wallet_network;
+    const addr = document.createElement("input");
+    addr.id = "payout-address";
+    addr.type = "text";
+    addr.maxLength = 256;
+    addr.placeholder = "Your wallet address";
+    addr.value = w.wallet_address || "";
+    const saveBtn = document.createElement("button");
+    saveBtn.id = "payout-save-wallet";
+    saveBtn.textContent = "Save wallet";
+    saveBtn.onclick = async () => {
+      try {
+        await api("/me/wallet", { method: "POST",
+          body: JSON.stringify({ network: netSel.value,
+                                 address: addr.value.trim() }) });
+        setStatus("Wallet saved.");
+      } catch (e) { setStatus("Could not save the wallet."); }
+    };
+    box.append(netSel, addr, saveBtn);
+    const pts = document.createElement("input");
+    pts.id = "payout-points";
+    pts.type = "number";
+    pts.min = "1";
+    pts.placeholder = "Points";
+    const reqBtn = document.createElement("button");
+    reqBtn.id = "payout-request";
+    reqBtn.textContent = "Request payout";
+    if (!mon.unlocked) {
+      reqBtn.disabled = true;
+      const lockNote = document.createElement("p");
+      lockNote.className = "hint";
+      lockNote.textContent = "Payout unlocks with monetization — " +
+        "meet every target above first.";
+      box.appendChild(lockNote);
+    }
+    reqBtn.onclick = async () => {
+      const n = parseInt(pts.value, 10);
+      if (!n || n <= 0) { setStatus("Enter the points to pay out."); return; }
+      try {
+        await api("/me/payout/request", { method: "POST",
+          body: JSON.stringify({ points: n }) });
+        setStatus("Payout requested — the admin will review it.");
+        loadPayoutList();
+      } catch (e) { setStatus(e.message || "Could not request the payout."); }
+    };
+    box.append(pts, reqBtn);
+    const list = document.createElement("div");
+    list.id = "payout-my-list";
+    box.appendChild(list);
+    loadPayoutList();
+  } catch (e) {
+    const err = document.createElement("p");
+    err.className = "hint";
+    err.textContent = "Could not load the payout section.";
+    box.appendChild(err);
+  }
+  card.appendChild(box);
+}
+
+async function loadPayoutList() {
+  const list = $("payout-my-list");
+  if (!list) return;
+  list.innerHTML = "";
+  try {
+    const r = await api("/me/payouts");
+    if (!r.requests.length) {
+      list.innerHTML = '<p class="hint">No payout requests yet.</p>';
+      return;
+    }
+    r.requests.forEach(q => {
+      const row = document.createElement("div");
+      row.className = "mon-row";
+      const left = document.createElement("span");
+      left.textContent = "💸 " + q.points + " points · " +
+        q.status.toUpperCase() +
+        (q.amount ? " · " + q.amount + " " + (q.currency || "") : "") +
+        (q.tx_ref ? " · tx " + q.tx_ref : "");
+      row.appendChild(left);
+      list.appendChild(row);
+    });
+  } catch (e) { list.textContent = "Could not load payout requests."; }
+}
+
+// Phase 127: admin payout queue — approve (set amount), reject,
+// and mark paid with the transaction reference.
+async function loadPayouts() {
+  const box = $("admin-payouts");
+  if (!box) return;
+  box.innerHTML = "";
+  try {
+    const r = await api("/admin/payouts");
+    if (!r.requests.length) {
+      box.innerHTML = '<p class="hint">No payout requests yet.</p>';
+      return;
+    }
+    r.requests.forEach(q => {
+      const rowEl = document.createElement("div");
+      rowEl.className = "card admin-row";
+      const info = document.createElement("div");
+      info.className = "admin-info";
+      const t = document.createElement("div");
+      t.className = "admin-title";
+      t.textContent = (q.first_name || ("ID " + q.user_id)) +
+        (q.username ? " (@" + q.username + ")" : "") +
+        " — " + q.points + " points · " + q.status.toUpperCase();
+      const s = document.createElement("div");
+      s.className = "admin-sub";
+      s.textContent = (q.wallet_network || "") + " " +
+        (q.wallet_address || "") +
+        (q.amount ? " · " + q.amount + " " + (q.currency || "") : "") +
+        (q.tx_ref ? " · tx " + q.tx_ref : "") +
+        " · requested " + relTime(q.requested_at);
+      info.append(t, s);
+      rowEl.appendChild(info);
+      if (q.status === "pending") {
+        const amt = document.createElement("input");
+        amt.id = "payout-amount-" + q.id;
+        amt.type = "text";
+        amt.placeholder = "Amount";
+        amt.style.width = "90px";
+        const cur = document.createElement("select");
+        cur.id = "payout-currency-" + q.id;
+        ["TON", "Gram", "USDT"].forEach(n => {
+          const o = document.createElement("option");
+          o.value = n; o.textContent = n; cur.appendChild(o);
+        });
+        const ok = document.createElement("button");
+        ok.textContent = "✓ Approve";
+        ok.onclick = () => decidePayout(q.id, "approve");
+        const no = document.createElement("button");
+        no.className = "danger-btn";
+        no.textContent = "Reject";
+        no.onclick = () => decidePayout(q.id, "reject");
+        rowEl.append(amt, cur, ok, no);
+      } else if (q.status === "approved") {
+        const tx = document.createElement("input");
+        tx.id = "payout-tx-" + q.id;
+        tx.type = "text";
+        tx.placeholder = "Transaction reference";
+        const paid = document.createElement("button");
+        paid.textContent = "Mark paid";
+        paid.onclick = () => markPayoutPaid(q.id);
+        rowEl.append(tx, paid);
+      }
+      box.appendChild(rowEl);
+    });
+  } catch (e) { box.textContent = "Could not load payout requests."; }
+}
+
+async function decidePayout(id, action) {
+  try {
+    const body = { action };
+    if (action === "approve") {
+      body.amount = ($("payout-amount-" + id) || {}).value || "";
+      body.currency = ($("payout-currency-" + id) || {}).value || "";
+    }
+    await api("/admin/payouts/" + id + "/decide",
+              { method: "POST", body: JSON.stringify(body) });
+    setStatus(action === "approve" ? "Payout approved."
+                                   : "Payout rejected.");
+    loadPayouts();
+  } catch (e) { setStatus(e.message || "Could not decide that payout."); }
+}
+
+async function markPayoutPaid(id) {
+  try {
+    const tx = (($("payout-tx-" + id) || {}).value || "").trim();
+    if (!tx) { setStatus("Enter the transaction reference first."); return; }
+    await api("/admin/payouts/" + id + "/paid",
+              { method: "POST", body: JSON.stringify({ tx_ref: tx }) });
+    setStatus("Payout marked as paid.");
+    loadPayouts();
+  } catch (e) { setStatus(e.message || "Could not mark the payout paid."); }
+}
+
   if (!me || !me.is_admin) return;
   loadEarnings();
   loadDashboard();
@@ -5744,6 +5948,7 @@ function loadAdmin() {
   loadAdminReports();
   loadAdminUsers($("admin-user-q").value.trim());
   loadVerifications();
+  loadPayouts();
   loadManaged();
   loadAdminComments();
   prefillOfficial();

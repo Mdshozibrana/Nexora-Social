@@ -3,6 +3,7 @@ referrals, points, search, reports, media proxy, and the Mini App host.
 Only the PRD section-8 admin endpoints remain for a later phase."""
 import asyncio
 import contextvars
+from decimal import Decimal, InvalidOperation
 import json
 import logging
 import os
@@ -29,8 +30,8 @@ from . import filesig, geoip, imgconv, models, moderation, notify, \
     ratelimit, \
     tgupload, videoutil
 from .config import (DAILY_TASKS, MONETIZATION, OFFICIAL_FOLLOWER_BASE,
-                     OFFICIAL_ID, OFFICIAL_NAME, RATE_LIMITS,
-                     VERIFICATION_MIN_FOLLOWERS,
+                     OFFICIAL_ID, OFFICIAL_NAME, PAYOUT_NETWORKS,
+                     RATE_LIMITS, VERIFICATION_MIN_FOLLOWERS,
                      VERIFICATION_MIN_REFERRALS, settings)
 from .db import Base, SessionLocal, engine, get_db
 from .security import init_data_auth_date, validate_init_data
@@ -103,6 +104,17 @@ def _migrate():
         if "is_pinned" not in post_cols:
             conn.execute(text(
                 "ALTER TABLE posts ADD COLUMN is_pinned BOOLEAN DEFAULT FALSE"))
+    # Phase 127: crypto payout wallet columns on users (plain
+    # VARCHAR, no default — the Phase 126 lesson: never a BOOLEAN
+    # DEFAULT 0 in raw migration SQL; SQLite accepts it, Postgres
+    # does not).
+    with engine.begin() as conn:
+        if "wallet_address" not in existing:
+            conn.execute(text(
+                "ALTER TABLE users ADD COLUMN wallet_address VARCHAR(256)"))
+        if "wallet_network" not in existing:
+            conn.execute(text(
+                "ALTER TABLE users ADD COLUMN wallet_network VARCHAR(16)"))
     # Phase 60: a managed account created as "@name" stored the @
     # IN the username, so every "@" + username render showed
     # "@@name". Strip stray leading @s once (idempotent — later
@@ -2519,9 +2531,10 @@ def claim_task(key: str, user: models.User = Depends(current_user),
 # the status/checklist; payouts themselves are a later phase.
 # ---------------------------------------------------------------------------
 
-@app.get("/me/monetization")
-def my_monetization(user: models.User = Depends(current_user),
-                    db: Session = Depends(get_db)):
+def _monetization_checks(db, user):
+    """The six gate checks, shared by /me/monetization and the
+    payout request (Phase 127) — one definition, so the gate can
+    never drift between the two."""
     followers = db.query(models.Follow).filter_by(
         following_id=user.telegram_id).count()
     # Phase 58 (owner): a 6th gate target — QUALIFIED referrals
@@ -2556,7 +2569,141 @@ def my_monetization(user: models.User = Depends(current_user),
     ]
     for c in checks:
         c["done"] = c["current"] >= c["required"]
-    return {"unlocked": all(c["done"] for c in checks), "checks": checks}
+    return all(c["done"] for c in checks), checks
+
+
+@app.get("/me/monetization")
+def my_monetization(user: models.User = Depends(current_user),
+                    db: Session = Depends(get_db)):
+    unlocked, checks = _monetization_checks(db, user)
+    return {"unlocked": unlocked, "checks": checks}
+
+# ---------------------------------------------------------------------------
+# Phase 127: crypto payouts (owner, Nov 14). Monetization-unlocked
+# members save a wallet (TON / Gram / USDT), request a payout in
+# points — one pending request at a time — and the admin reviews it:
+# approve (sets the crypto amount, points leave the balance), reject,
+# then mark paid with the transaction reference once the crypto is
+# sent manually. NO points->money rate is hardcoded anywhere; the
+# admin sets the amount at approval from real income.
+# ---------------------------------------------------------------------------
+
+
+class WalletIn(BaseModel):
+    network: str = ""
+    address: str = ""
+
+
+class PayoutRequestIn(BaseModel):
+    points: int = 0
+
+
+class PayoutDecideIn(BaseModel):
+    action: str = ""
+    amount: Optional[str] = None
+    currency: Optional[str] = None
+
+
+class PayoutPaidIn(BaseModel):
+    tx_ref: str = ""
+
+
+def _payout_dict(req, user=None):
+    return {
+        "id": req.id,
+        "user_id": req.user_id,
+        "first_name": user.first_name if user else None,
+        "username": user.username if user else None,
+        "wallet_address": req.wallet_address,
+        "wallet_network": req.wallet_network,
+        "points": req.points,
+        "status": req.status,
+        "amount": req.amount,
+        "currency": req.currency,
+        "tx_ref": req.tx_ref,
+        "requested_at": req.requested_at.isoformat()
+            if req.requested_at else None,
+        "decided_at": req.decided_at.isoformat()
+            if req.decided_at else None,
+        "decided_by": req.decided_by,
+        "paid_at": req.paid_at.isoformat() if req.paid_at else None,
+    }
+
+
+def _ledger_balance(db, user_id):
+    """Spendable points, summed from the ledger (the same aggregate
+    style the monetization endpoint uses) — the single source of
+    truth for payout checks."""
+    return db.query(func.coalesce(func.sum(
+        models.PointsLedger.amount), 0)).filter(
+        models.PointsLedger.user_id == user_id).scalar() or 0
+
+
+@app.post("/me/wallet")
+def save_wallet(body: WalletIn,
+                user: models.User = Depends(current_user),
+                db: Session = Depends(get_db)):
+    network = (body.network or "").strip()
+    address = (body.address or "").strip()
+    if network not in PAYOUT_NETWORKS:
+        raise HTTPException(400, "Network must be TON, Gram or USDT")
+    if not address or len(address) > 256:
+        raise HTTPException(
+            400, "Enter your wallet address (max 256 characters)")
+    user.wallet_network = network
+    user.wallet_address = address
+    db.commit()
+    return {"ok": True, "wallet_network": network,
+            "wallet_address": address}
+
+
+@app.get("/me/wallet")
+def my_wallet(user: models.User = Depends(current_user)):
+    return {"wallet_network": user.wallet_network,
+            "wallet_address": user.wallet_address}
+
+
+@app.post("/me/payout/request")
+def request_payout(body: PayoutRequestIn,
+                   user: models.User = Depends(current_user),
+                   db: Session = Depends(get_db)):
+    _enforce_rate("payout", str(user.telegram_id))
+    points = body.points or 0
+    if points <= 0:
+        raise HTTPException(400, "Points must be more than 0")
+    if not user.wallet_address or not user.wallet_network:
+        raise HTTPException(400, "Save your crypto wallet first")
+    unlocked, _checks = _monetization_checks(db, user)
+    if not unlocked:
+        raise HTTPException(
+            403, "Monetization is locked — meet every target first")
+    if points > _ledger_balance(db, user.telegram_id):
+        raise HTTPException(400, "Not enough points for that payout")
+    pending = db.query(models.PayoutRequest).filter_by(
+        user_id=user.telegram_id, status="pending").first()
+    if pending is not None:
+        raise HTTPException(
+            400, "You already have a payout request waiting")
+    req = models.PayoutRequest(
+        user_id=user.telegram_id,
+        wallet_address=user.wallet_address,
+        wallet_network=user.wallet_network,
+        points=points, status="pending")
+    db.add(req)
+    db.commit()
+    db.refresh(req)
+    return _payout_dict(req, user)
+
+
+@app.get("/me/payouts")
+def my_payouts(user: models.User = Depends(current_user),
+               db: Session = Depends(get_db)):
+    rows = db.query(models.PayoutRequest).filter_by(
+        user_id=user.telegram_id).order_by(
+        models.PayoutRequest.id.desc()).limit(50).all()
+    return {"requests": [_payout_dict(r, user) for r in rows]}
+
+
 
 
 # ---------------------------------------------------------------------------
@@ -3010,6 +3157,9 @@ def admin_stats(admin: models.User = Depends(admin_user),
         "designs": db.query(models.Design).count(),
         "pending_verifications": db.query(models.VerificationRequest)
             .filter_by(status="pending").count(),
+        # Phase 127: pending payout requests, for the nav badge.
+        "pending_payouts": db.query(models.PayoutRequest)
+            .filter_by(status="pending").count(),
     }
 
 
@@ -3274,6 +3424,119 @@ class VerifyDecideIn(BaseModel):
     approve: bool
 
 
+@app.get("/admin/payouts")
+def admin_payouts(status: str = "",
+                  admin: models.User = Depends(admin_user),
+                  db: Session = Depends(get_db)):
+    q = db.query(models.PayoutRequest).order_by(
+        models.PayoutRequest.id.desc())
+    if status:
+        if status not in ("pending", "approved", "rejected", "paid"):
+            raise HTTPException(400, "Unknown payout status")
+        q = q.filter_by(status=status)
+    rows = q.limit(100).all()
+    out = []
+    for r in rows:
+        out.append(_payout_dict(r, db.get(models.User, r.user_id)))
+    return {"requests": out,
+            "pending_count": sum(1 for r in out
+                                 if r["status"] == "pending")}
+
+
+@app.post("/admin/payouts/{request_id}/decide")
+async def admin_payout_decide(
+        request_id: int, body: PayoutDecideIn,
+        admin: models.User = Depends(admin_user),
+        db: Session = Depends(get_db)):
+    _enforce_rate("payout_admin", str(admin.telegram_id))
+    req = db.get(models.PayoutRequest, request_id)
+    if req is None:
+        raise HTTPException(404, "Payout request not found")
+    if req.status != "pending":
+        raise HTTPException(400, "This payout request was already decided")
+    action = (body.action or "").strip().lower()
+    if action not in ("approve", "reject"):
+        raise HTTPException(400, "Action must be approve or reject")
+    member = db.get(models.User, req.user_id)
+    if action == "approve":
+        amount = (body.amount or "").strip()
+        currency = (body.currency or "").strip()
+        if not amount or currency not in PAYOUT_NETWORKS:
+            raise HTTPException(
+                400, "Approving needs an amount and a network "
+                     "(TON, Gram or USDT)")
+        try:
+            dec = Decimal(amount)
+        except InvalidOperation:
+            raise HTTPException(400, "Amount must be a number")
+        if dec <= 0:
+            raise HTTPException(400, "Amount must be more than 0")
+        if req.points > _ledger_balance(db, req.user_id):
+            raise HTTPException(
+                400, "The member no longer has enough points")
+        req.status = "approved"
+        req.amount = str(dec)
+        req.currency = currency
+        # The points leave the balance now — a rejected request
+        # costs nothing, and approved points cannot be requested
+        # a second time.
+        award_points(db, req.user_id, -req.points, "payout",
+                     ref_id=req.id)
+        text = (f"Your payout request for {req.points} points was "
+                f"approved — {req.amount} {req.currency} is on its way. "
+                "You will get the transaction reference once it is paid.")
+        audit_action = "payout_approve"
+    else:
+        req.status = "rejected"
+        text = (f"Your payout request for {req.points} points was not "
+                "approved this time. Your points were not spent — you "
+                "can request again from your Me page.")
+        audit_action = "payout_reject"
+    req.decided_at = datetime.utcnow()
+    req.decided_by = admin.telegram_id
+    _audit(db, admin, audit_action, target_id=req.user_id,
+           detail=f"request {req.id}: {req.status} {req.points} points")
+    db.commit()
+    if member is not None:
+        notify.record(db, member.telegram_id, "payout",
+                      actor_id=None, text=text)
+        await notify.notify_user(db, member.telegram_id,
+                                 "payout", "💸 Nexora Social\n" + text)
+    return {"ok": True, **_payout_dict(req, member)}
+
+
+@app.post("/admin/payouts/{request_id}/paid")
+async def admin_payout_paid(
+        request_id: int, body: PayoutPaidIn,
+        admin: models.User = Depends(admin_user),
+        db: Session = Depends(get_db)):
+    _enforce_rate("payout_admin", str(admin.telegram_id))
+    req = db.get(models.PayoutRequest, request_id)
+    if req is None:
+        raise HTTPException(404, "Payout request not found")
+    if req.status != "approved":
+        raise HTTPException(
+            400, "Only an approved payout can be marked paid")
+    tx_ref = (body.tx_ref or "").strip()
+    if not tx_ref or len(tx_ref) > 256:
+        raise HTTPException(
+            400, "Enter the transaction reference (max 256 characters)")
+    req.status = "paid"
+    req.tx_ref = tx_ref
+    req.paid_at = datetime.utcnow()
+    member = db.get(models.User, req.user_id)
+    _audit(db, admin, "payout_paid", target_id=req.user_id,
+           detail=f"request {req.id}: paid {req.amount} "
+                  f"{req.currency} tx {tx_ref}")
+    db.commit()
+    if member is not None:
+        text = (f"Your payout of {req.amount} {req.currency} was paid. "
+                f"Transaction reference: {tx_ref}")
+        notify.record(db, member.telegram_id, "payout",
+                      actor_id=None, text=text)
+        await notify.notify_user(db, member.telegram_id,
+                                 "payout", "💸 Nexora Social\n" + text)
+    return {"ok": True, **_payout_dict(req, member)}
 @app.get("/admin/verifications")
 def admin_verifications(admin: models.User = Depends(admin_user),
                         db: Session = Depends(get_db)):
@@ -4303,6 +4566,8 @@ _BACKUP_TABLES = [
     ("polls", models.Poll),
     ("poll_options", models.PollOption),
     ("poll_votes", models.PollVote),
+    # Phase 127: crypto payout requests.
+    ("payout_requests", models.PayoutRequest),
 ]
 _BACKUP_MODELS = {name: m for name, m in _BACKUP_TABLES}
 _BACKUP_MAX_BYTES = 50 * 1024 * 1024
@@ -4897,8 +5162,15 @@ _NEXA_SYSTEM = (
     "MONETIZATION: the profile card shows 6 targets — 500 "
     "followers, 12 qualified referrals, 25 posts, an account "
     "14 days old, 5000 lifetime points, and a 30-day check-in "
-    "streak (one missed day resets it). Payouts are a later "
-    "step; never promise money or dates. "
+    "streak (one missed day resets it). Once unlocked, the member "
+    "can request a crypto payout from the same card. "
+    "PAYOUT: once monetization is unlocked, save your crypto "
+    "wallet (TON, Gram or USDT) in the Monetization card on your "
+    "profile, then request a payout in points — one request at a "
+    "time. The admin reviews it, sets the crypto amount, pays it "
+    "manually in crypto and records the transaction; the points "
+    "leave your balance when the request is approved. Never quote "
+    "a points-to-money rate — the admin sets the amount. "
     "VERIFICATION: the blue badge. Members with at least 1000 "
     "followers can apply from their profile; the admin "
     "approves applications. "

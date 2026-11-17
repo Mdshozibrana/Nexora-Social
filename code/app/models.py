@@ -44,6 +44,11 @@ class User(Base):
     # ACCOUNT as JSON ({"bg": ..., "card": ..., "accent": ...}) so a
     # theme change touches only that member — never anyone else.
     theme = Column(String(256), nullable=True)
+    # Phase 127: crypto payout wallet — the network (TON / Gram /
+    # USDT) and address the member is paid at. Set from the
+    # Monetization card; the admin never edits it for them.
+    wallet_address = Column(String(256), nullable=True)
+    wallet_network = Column(String(16), nullable=True)
     lat = Column(Float, nullable=True)
     lon = Column(Float, nullable=True)
     loc_at = Column(DateTime, nullable=True)
@@ -440,3 +445,27 @@ class StoryView(Base):
     viewer_id = Column(BigInteger, ForeignKey("users.telegram_id"))
     created_at = Column(DateTime, default=datetime.utcnow)
     __table_args__ = (UniqueConstraint("story_id", "viewer_id"),)
+
+
+class PayoutRequest(Base):
+    """Phase 127: a crypto payout request — the member's wallet
+    (snapshotted at request time), the points asked for, and the
+    admin's decision. Approving sets amount + currency and spends
+    the points; marking paid records the transaction reference."""
+    __tablename__ = "payout_requests"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("users.telegram_id"),
+                     index=True, nullable=False)
+    wallet_address = Column(String(256), nullable=False)
+    wallet_network = Column(String(16), nullable=False)
+    points = Column(Integer, nullable=False)
+    status = Column(String(16), default="pending", nullable=False)
+    # pending | approved | rejected | paid
+    amount = Column(String(64), nullable=True)
+    currency = Column(String(16), nullable=True)
+    tx_ref = Column(String(256), nullable=True)
+    requested_at = Column(DateTime, default=datetime.utcnow, index=True)
+    decided_at = Column(DateTime, nullable=True)
+    decided_by = Column(BigInteger, nullable=True)
+    paid_at = Column(DateTime, nullable=True)
+
