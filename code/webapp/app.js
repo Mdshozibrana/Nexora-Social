@@ -5500,6 +5500,7 @@ function wireBackupCard() {
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 4000);
       say("Backup downloaded ✓ — keep the file safe.");
+      loadBackupStatus();
     } catch (e) {
       say("Download did not work here — try “Send to my Telegram” instead.");
     }
@@ -5511,7 +5512,10 @@ function wireBackupCard() {
     say("Sending the backup to your bot chat…");
     try {
       const r = await api("/admin/backup/send", { method: "POST" });
-      if (r.sent) say("Sent ✓ — check your chat with the bot for the backup file.");
+      if (r.sent) {
+        say("Sent ✓ — check your chat with the bot for the backup file.");
+        loadBackupStatus();
+      }
       else say("The bot could not message you — use Download instead.");
     } catch (e) { say("Could not send the backup."); }
     send.disabled = false;
@@ -5567,6 +5571,44 @@ function wireBackupCard() {
     }
     btn.disabled = false;
   };
+}
+
+// Phase 132: backup reminder — when was the last backup / restore?
+// Reads GET /admin/backup-status (derived from the audit log) and
+// shows it under the Backup card; warns in amber when no backup
+// exists yet or the last one is more than 7 days old.
+async function loadBackupStatus() {
+  const el = $("backup-reminder");
+  if (!el) return;
+  try {
+    const s = await api("/admin/backup-status");
+    const fmt = iso => iso ? new Date(iso).toLocaleString() : null;
+    const lb = fmt(s.last_backup_at);
+    const lr = fmt(s.last_restore_at);
+    el.textContent = "Last backup: " +
+      (lb ? lb + " (" + (s.last_backup_kind || "backup") + ")"
+          : "never") +
+      " · Last restore: " + (lr || "—");
+    const warn = $("backup-warn");
+    if (warn) {
+      if (!s.last_backup_at) {
+        warn.hidden = false;
+        warn.textContent = "⚠️ No backup taken yet — take one now.";
+      } else {
+        const days = Math.floor(
+          (Date.now() - new Date(s.last_backup_at).getTime()) / 86400000);
+        if (days > 7) {
+          warn.hidden = false;
+          warn.textContent = "⚠️ No backup in " + days +
+            " days — take one now.";
+        } else {
+          warn.hidden = true;
+        }
+      }
+    }
+  } catch (e) {
+    el.textContent = "Last backup: unknown";
+  }
 }
 
 // ------------------------------------------- Phase 119: Control Panel --
@@ -6134,6 +6176,7 @@ async function markPayoutPaid(id) {
   loadAdminDesigns();
   wireVbu();
   wireBackupCard();
+  loadBackupStatus();
   loadBroadcasts();
   wireObsQuickActions();
 }

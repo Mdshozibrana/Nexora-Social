@@ -5017,6 +5017,12 @@ async def admin_backup_send(admin: models.User = Depends(admin_user),
                 "comment, like, follow, design and message. Keep "
                 "this file safe: anyone holding it holds the whole "
                 "database.")
+    if sent:
+        # Phase 132: a backup sent to Telegram counts as a backup
+        # taken — the backup-status endpoint reads the audit log.
+        _audit(db, admin, "backup_send",
+               detail=f"{len(data)} bytes")
+        db.commit()
     return {"sent": bool(sent)}
 
 
@@ -5055,6 +5061,31 @@ def admin_restore(body: RestoreIn,
            detail=f"{total} rows across {len(counts)} tables")
     db.commit()
     return {"restored": counts}
+
+
+@app.get("/admin/backup-status")
+def admin_backup_status(admin: models.User = Depends(admin_user),
+                        db: Session = Depends(get_db)):
+    """Phase 132: when was the last backup / restore? Derived from
+    the audit log — the newest backup_download / backup_send entry
+    (kind download or send) and the newest backup_restore entry.
+    Each is null when no such entry exists yet. No new table."""
+    last_backup = db.query(models.AdminAuditLog) \
+        .filter(models.AdminAuditLog.action.in_(
+            ("backup_download", "backup_send"))) \
+        .order_by(models.AdminAuditLog.id.desc()).first()
+    last_restore = db.query(models.AdminAuditLog) \
+        .filter(models.AdminAuditLog.action == "backup_restore") \
+        .order_by(models.AdminAuditLog.id.desc()).first()
+    return {
+        "last_backup_at": last_backup.created_at.isoformat()
+            if last_backup and last_backup.created_at else None,
+        "last_backup_kind": (
+            "download" if last_backup.action == "backup_download"
+            else "send") if last_backup else None,
+        "last_restore_at": last_restore.created_at.isoformat()
+            if last_restore and last_restore.created_at else None,
+    }
 
 
 class DeleteAccountIn(BaseModel):
