@@ -104,6 +104,8 @@ RATE_LIMITS = {
     "scheduled": (120, 3600),
     # Phase 136: private-account toggle.
     "privacy": (120, 3600),
+    # Phase 138: DM message reactions.
+    "dm_react": (120, 3600),
     "payout_admin": (120, 3600),
 }
 

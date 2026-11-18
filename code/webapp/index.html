@@ -20,8 +20,8 @@
 <meta name="twitter:description" content="Share photos, watch reels, discover designs and play classic games — all inside Telegram.">
 <meta name="twitter:image" content="https://nexora-9pip.onrender.com/webapp/og-image.png">
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
-<link rel="stylesheet" href="style.css?v=137">
-<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=137">
+<link rel="stylesheet" href="style.css?v=138">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=138">
 </head>
 <body>
 <div id="entry-screen">
@@ -289,6 +289,8 @@
   <main id="chat-thread"></main>
   <p id="chat-empty" class="empty" hidden>No messages yet — say hello! 👋</p>
   <div class="chat-bar">
+    <button id="chat-photo" class="icon-btn" title="Send a photo">📷</button>
+    <input id="chat-file" type="file" accept="image/*" hidden>
     <input id="chat-input" type="text" maxlength="2000"
       placeholder="Write a message…" autocomplete="off">
     <button id="chat-send" type="button">Send ➤</button>
@@ -778,8 +780,8 @@
   <button id="pv-close" type="button" aria-label="Close">✕</button>
 </div>
 
-<script src="vendor/leaflet/leaflet.js?v=137"></script>
-<script src="app.js?v=137"></script>
-<script src="games.js?v=137"></script>
+<script src="vendor/leaflet/leaflet.js?v=138"></script>
+<script src="app.js?v=138"></script>
+<script src="games.js?v=138"></script>
 </body>
 </html>

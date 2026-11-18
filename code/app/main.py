@@ -126,6 +126,16 @@ def _migrate():
         if "is_private" not in existing:
             conn.execute(text(
                 "ALTER TABLE users ADD COLUMN is_private BOOLEAN DEFAULT FALSE"))
+    # Phase 138: DM photos — media columns on messages (plain
+    # VARCHAR, nullable; create_all never alters existing tables).
+    msg_cols = {c["name"] for c in inspect(engine).get_columns("messages")}
+    with engine.begin() as conn:
+        if "media_file_id" not in msg_cols:
+            conn.execute(text(
+                "ALTER TABLE messages ADD COLUMN media_file_id VARCHAR(256)"))
+        if "media_type" not in msg_cols:
+            conn.execute(text(
+                "ALTER TABLE messages ADD COLUMN media_type VARCHAR(16)"))
     # Phase 60: a managed account created as "@name" stored the @
     # IN the username, so every "@" + username render showed
     # "@@name". Strip stray leading @s once (idempotent — later
@@ -5698,6 +5708,8 @@ _BACKUP_TABLES = [
     ("scheduled_posts", models.ScheduledPost),
     # Phase 136: private-account follow requests.
     ("follow_requests", models.FollowRequest),
+    # Phase 138: DM message reactions.
+    ("message_reactions", models.MessageReaction),
 ]
 _BACKUP_MODELS = {name: m for name, m in _BACKUP_TABLES}
 _BACKUP_MAX_BYTES = 50 * 1024 * 1024
@@ -6027,11 +6039,39 @@ def _brief_user(u):
             "photo_file_id": u.photo_file_id}
 
 
-def _message_dict(m, me_id):
-    return {"id": m.id, "mine": m.sender_id == me_id, "text": m.text,
-            "created_at": m.created_at.isoformat() if m.created_at
-            else None,
-            "read": m.read_at is not None}
+# Phase 138: the six DM reaction emojis — one reaction per
+# member per message; tapping your own emoji again removes it.
+DM_REACTIONS = ("❤️", "👍", "😂", "😮", "😢", "🔥")
+
+
+def _thread_reactions(db, message_ids, me_id):
+    """{message_id: {"reactions": {emoji: count}, "my_reaction": ...}}
+    for one thread — a single query, not one per bubble."""
+    out = {mid: {"reactions": {}, "my_reaction": None}
+           for mid in message_ids}
+    if not message_ids:
+        return out
+    rows = db.query(models.MessageReaction).filter(
+        models.MessageReaction.message_id.in_(message_ids)).all()
+    for r in rows:
+        d = out[r.message_id]
+        d["reactions"][r.emoji] = d["reactions"].get(r.emoji, 0) + 1
+        if r.user_id == me_id:
+            d["my_reaction"] = r.emoji
+    return out
+
+
+def _message_dict(m, me_id, reactions=None):
+    d = {"id": m.id, "mine": m.sender_id == me_id, "text": m.text,
+         "media_file_id": m.media_file_id,
+         "media_type": m.media_type,
+         "created_at": m.created_at.isoformat() if m.created_at
+         else None,
+         "read": m.read_at is not None}
+    if reactions is not None:
+        d["reactions"] = reactions["reactions"]
+        d["my_reaction"] = reactions["my_reaction"]
+    return d
 
 
 @app.get("/messages/unread")
@@ -6107,12 +6147,16 @@ def message_thread(uid: int,
         models.Message.read_at.is_(None)).update(
         {"read_at": datetime.utcnow()})
     db.commit()
+    react = _thread_reactions(db, [m.id for m in rows], me)
     return {"user": _brief_user(other),
-            "messages": [_message_dict(m, me) for m in rows]}
+            "messages": [_message_dict(m, me, react.get(m.id))
+                         for m in rows]}
 
 
 class MessageIn(BaseModel):
-    text: str = Field(min_length=1, max_length=2000)
+    text: str = Field(default="", max_length=2000)
+    media_file_id: Optional[str] = None
+    media_type: Optional[str] = None
 
 
 @app.post("/messages/{uid}")
@@ -6127,17 +6171,125 @@ def send_message(uid: int, body: MessageIn,
         raise HTTPException(404, "User not found")
     if uid in _block_related_ids(db, me):
         raise HTTPException(403, "You can't message this user")
-    text = body.text.strip()
-    if not text:
+    text = (body.text or "").strip()
+    media_file_id = (body.media_file_id or "").strip() or None
+    media_type = (body.media_type or "").strip() or None
+    if not text and not media_file_id:
         raise HTTPException(400, "Message is empty")
+    if media_file_id:
+        # DMs carry photos only — a video file_id is refused
+        # before anything is fetched or screened.
+        if media_type is not None and media_type != "photo":
+            raise HTTPException(400, "DMs support photos only")
+        if moderation.active():
+            verdict = _screen_file_id("photo", media_file_id)
+            if verdict != "clean":
+                log_security_event(db, "screen_reject",
+                                   actor_id=me, detail=
+                                   f"DM photo screened out ({verdict})")
+                raise HTTPException(
+                    400, moderation.block_message("photo", verdict))
     _enforce_rate("message", f"u{me}")
-    m = models.Message(sender_id=me, recipient_id=uid, text=text)
+    m = models.Message(sender_id=me, recipient_id=uid, text=text,
+                       media_file_id=media_file_id,
+                       media_type="photo" if media_file_id else None)
     db.add(m)
     db.commit()
     db.refresh(m)
     notify.record(db, uid, "message", actor_id=me,
-                  text=f"{user.first_name} sent you a message")
-    return _message_dict(m, me)
+                  text=(f"{user.first_name} sent you a photo"
+                        if media_file_id else
+                        f"{user.first_name} sent you a message"))
+    return _message_dict(m, me, {"reactions": {}, "my_reaction": None})
+
+
+@app.post("/messages/{uid}/upload")
+async def upload_dm_photo(uid: int, request: Request,
+                          file: UploadFile = File(...),
+                          text: str = Form(""),
+                          x_upload_id: Optional[str] = Header(None),
+                          user: models.User = Depends(current_user),
+                          db: Session = Depends(get_db)):
+    """Phase 138: a photo in a DM, through the same in-app upload
+    path as stories and posts (_telegram_upload_or_400 — the
+    photo is screened inline by Phase 81 before it is sent on).
+    Videos are refused up front: the helper would otherwise
+    schedule its background video job, which posts to the feed."""
+    hit = _dedupe_get(user.telegram_id, x_upload_id)
+    if hit:
+        return JSONResponse(status_code=hit[0], content=hit[1])
+    me = user.telegram_id
+    if uid == me:
+        raise HTTPException(400, "You can't message yourself")
+    other = db.get(models.User, uid)
+    if other is None:
+        raise HTTPException(404, "User not found")
+    if uid in _block_related_ids(db, me):
+        raise HTTPException(403, "You can't message this user")
+    kind = tgupload.classify(file.content_type or "",
+                             file.filename or "")
+    if kind != "photo":
+        raise HTTPException(400, "DMs support photos only")
+    _enforce_rate("upload", f"u{me}")
+    kind, file_id = await _telegram_upload_or_400(user, file)
+    if kind != "photo":
+        raise HTTPException(400, "DMs support photos only")
+    m = models.Message(sender_id=me, recipient_id=uid,
+                       text=(text or "").strip()[:2000],
+                       media_file_id=file_id, media_type="photo")
+    db.add(m)
+    db.commit()
+    db.refresh(m)
+    notify.record(db, uid, "message", actor_id=me,
+                  text=f"{user.first_name} sent you a photo")
+    body = _message_dict(m, me, {"reactions": {}, "my_reaction": None})
+    _dedupe_put(user.telegram_id, x_upload_id, 200, body)
+    return body
+
+
+class ReactIn(BaseModel):
+    emoji: str = ""
+
+
+@app.post("/dm/messages/{message_id}/react")
+def react_message(message_id: int, body: ReactIn,
+                  user: models.User = Depends(current_user),
+                  db: Session = Depends(get_db)):
+    """Phase 138: one emoji reaction per member per DM message.
+    The same emoji again removes it; a different emoji replaces
+    it. Only the two people in the thread may react."""
+    _enforce_rate("dm_react", f"u{user.telegram_id}")
+    m = db.get(models.Message, message_id)
+    if m is None:
+        raise HTTPException(404, "Message not found")
+    me = user.telegram_id
+    if me not in (m.sender_id, m.recipient_id):
+        raise HTTPException(403, "Not your message")
+    other = m.recipient_id if m.sender_id == me else m.sender_id
+    if other in _block_related_ids(db, me):
+        raise HTTPException(403, "You can't message this user")
+    emoji = (body.emoji or "").strip()
+    if emoji not in DM_REACTIONS:
+        raise HTTPException(400, "Unknown reaction")
+    existing = db.query(models.MessageReaction).filter_by(
+        message_id=m.id, user_id=me).first()
+    if existing and existing.emoji == emoji:
+        db.delete(existing)
+        reacted, mine = False, None
+    elif existing:
+        existing.emoji = emoji
+        reacted, mine = True, emoji
+    else:
+        db.add(models.MessageReaction(message_id=m.id, user_id=me,
+                                      emoji=emoji))
+        reacted, mine = True, emoji
+    db.commit()
+    counts = {}
+    for r in db.query(models.MessageReaction).filter_by(
+            message_id=m.id).all():
+        counts[r.emoji] = counts.get(r.emoji, 0) + 1
+    return {"message_id": m.id, "reacted": reacted, "emoji": mine,
+            "reactions": counts, "my_reaction": mine}
 
 
 def _story_dict(db, s, viewer_id):

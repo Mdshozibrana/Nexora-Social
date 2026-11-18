@@ -7608,7 +7608,9 @@ async function loadConversations() {
     $("conv-empty").hidden = r.conversations.length > 0;
     r.conversations.forEach(cv => {
       const row = personRow(cv.user,
-        (cv.last.mine ? "You: " : "") + cv.last.text,
+        (cv.last.mine ? "You: " : "") +
+          (cv.last.text ||
+            (cv.last.media_file_id ? "📷 Photo" : "")),
         () => openChat(cv.user.telegram_id));
       const right = document.createElement("div");
       right.className = "conv-right";
@@ -7674,7 +7676,47 @@ async function loadThread(scroll) {
     r.messages.forEach(m => {
       const b = document.createElement("div");
       b.className = "bubble " + (m.mine ? "mine" : "theirs");
-      b.appendChild(document.createTextNode(m.text));
+      if (m.media_file_id) {
+        const img = document.createElement("img");
+        img.className = "bubble-photo";
+        img.src = mediaUrl(m.media_file_id);
+        img.alt = "Photo";
+        img.onclick = e => { e.stopPropagation();
+          openPhotoViewer(m.media_file_id, "Photo"); };
+        b.appendChild(img);
+      }
+      if (m.text) b.appendChild(document.createTextNode(m.text));
+      // Phase 138: reactions under the bubble (tappable chips) +
+      // a tap-to-open emoji picker. The 8 s poll rebuilds the
+      // thread, so an open picker closes on the next refresh.
+      const counts = m.reactions || {};
+      if (Object.keys(counts).length) {
+        const rx = document.createElement("div");
+        rx.className = "bubble-reactions";
+        Object.keys(counts).forEach(em => {
+          if (!counts[em]) return;
+          const chip = document.createElement("button");
+          chip.className = "react-chip" +
+            (m.my_reaction === em ? " mine" : "");
+          chip.textContent = em + " " + counts[em];
+          chip.onclick = e => { e.stopPropagation();
+            reactToMessage(m.id, em); };
+          rx.appendChild(chip);
+        });
+        b.appendChild(rx);
+      }
+      const pk = document.createElement("div");
+      pk.className = "react-picker";
+      pk.hidden = true;
+      DM_REACTIONS.forEach(em => {
+        const eb = document.createElement("button");
+        eb.textContent = em;
+        eb.onclick = e => { e.stopPropagation();
+          reactToMessage(m.id, em); };
+        pk.appendChild(eb);
+      });
+      b.appendChild(pk);
+      b.onclick = () => { pk.hidden = !pk.hidden; };
       const t = document.createElement("div");
       t.className = "bubble-time";
       t.textContent = relTime(m.created_at) +
@@ -7706,6 +7748,37 @@ async function sendChat() {
 $("chat-send").onclick = sendChat;
 $("chat-input").addEventListener("keydown", e => {
   if (e.key === "Enter") sendChat();
+});
+// Phase 138: DM photos + message reactions.
+const DM_REACTIONS = ["❤️", "👍", "😂", "😮", "😢", "🔥"];
+async function reactToMessage(mid, emoji) {
+  try {
+    await api("/dm/messages/" + mid + "/react",
+      { method: "POST", body: JSON.stringify({ emoji }) });
+    loadThread(false);
+  } catch (e) { setStatus("Reaction failed."); }
+}
+$("chat-photo").onclick = () => $("chat-file").click();
+$("chat-file").addEventListener("change", async () => {
+  const f = $("chat-file").files[0];
+  $("chat-file").value = "";
+  if (!f || !chatWith) return;
+  const caption = $("chat-input").value.trim();
+  setStatus("Sending photo…");
+  try {
+    const form = new FormData();
+    form.append("file", await shrinkForUpload(f));
+    if (caption) form.append("text", caption);
+    await apiFormProgress("/messages/" + chatWith + "/upload", form,
+      pct => { setStatus(pct === null ? "Sending photo… finishing"
+        : "Sending photo… " + pct + "%"); }, newUploadId());
+    $("chat-input").value = "";
+    setStatus("");
+    loadThread(true);
+  } catch (e) {
+    setStatus(e && e.message ? e.message
+      : "Photo could not be sent — check your connection and try again.");
+  }
 });
 $("chat-back").onclick = () => showView("messages");
 

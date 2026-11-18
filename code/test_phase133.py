@@ -10,7 +10,7 @@ tip (same charge id twice -> still one row), wrong payer ignored,
 creator notified + in-app row; /me/tips sent/received; /users
 public totals (names only, no per-tip amounts); /admin/tips totals
 + top + recent and non-admin 403; backup carries 39 tables incl.
-tips; ?v=137 x5, no ?v=132; tip client markers + Phase 123-132
+tips; ?v=138 x5, no ?v=132; tip client markers + Phase 123-132
 markers intact.
 """
 import asyncio
@@ -236,14 +236,14 @@ with TestClient(app) as c:
     r = c.get("/admin/backup", headers=ADMIN)
     assert r.status_code == 200, r.status_code
     bk = r.json()
-    assert len(bk["tables"]) == 39, len(bk["tables"])
+    assert len(bk["tables"]) == 40, len(bk["tables"])
     assert "tips" in bk["tables"], list(bk["tables"])
     assert len(bk["tables"]["tips"]) == 2, len(bk["tables"]["tips"])
     print("backup: 39 tables incl. tips OK")
 
     # 10. Client markers + asset version.
     html = open("webapp/index.html").read()
-    assert html.count("?v=137") == 5, html.count("?v=137")
+    assert html.count("?v=138") == 5, html.count("?v=138")
     assert "?v=132" not in html
     assert 'id="earn-tips-total"' in html
     assert 'id="earn-tips-top"' in html
@@ -259,7 +259,7 @@ with TestClient(app) as c:
         assert m in js, m
     css = open("webapp/style.css").read()
     assert ".tip-chip.active" in css and ".tip-total" in css
-    print("client markers + ?v=137 OK")
+    print("client markers + ?v=138 OK")
 
     # Restore the real (absent in tests) bot app so the TestClient
     # shutdown does not touch the fake's missing updater.

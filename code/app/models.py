@@ -441,6 +441,9 @@ class Message(Base):
     recipient_id = Column(BigInteger, ForeignKey("users.telegram_id"),
                           index=True)
     text = Column(Text, default="")
+    # Phase 138: DM photos — a Telegram file_id, like posts/stories.
+    media_file_id = Column(String(256), nullable=True)
+    media_type = Column(String(16), nullable=True)  # photo only
     created_at = Column(DateTime, default=datetime.utcnow)
     read_at = Column(DateTime, nullable=True)
 
@@ -564,3 +567,18 @@ class ScheduledPost(Base):
     posted_post_id = Column(Integer, ForeignKey("posts.id"),
                             nullable=True)
     error = Column(String(256), nullable=True)
+
+
+class MessageReaction(Base):
+    """Phase 138: one emoji reaction per member per DM message.
+    Unique per (message_id, user_id) — tapping your own emoji
+    again removes it, tapping another replaces it."""
+    __tablename__ = "message_reactions"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    message_id = Column(Integer, ForeignKey("messages.id"),
+                        index=True, nullable=False)
+    user_id = Column(BigInteger, ForeignKey("users.telegram_id"),
+                     index=True, nullable=False)
+    emoji = Column(String(16), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    __table_args__ = (UniqueConstraint("message_id", "user_id"),)
