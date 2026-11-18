@@ -10,8 +10,8 @@ the tag absent; a repost of a tagged post does NOT duplicate
 it — repost rows carry no hashtags, exactly like the #tag
 search); private accounts (a private author's hashtagged posts
 stay hidden from non-followers, visible to followers, and
-going private hides even older posts); backup 41 tables incl.
-hashtag_follows rows; ?v=141 x5; hashtag-follow client markers
+going private hides even older posts); backup 42 tables incl.
+hashtag_follows rows; ?v=142 x5; hashtag-follow client markers
 + Phase 123-139 markers intact.
 
 Survey note: hashtags live as a space-joined lowercase string
@@ -159,19 +159,19 @@ with TestClient(app) as c:
     assert all(h["created_at"] for h in r.json()["hashtags"]), r.json()
     print("my-hashtags counts OK")
 
-    # 5. Backup carries 41 tables incl. hashtag_follows rows.
+    # 5. Backup carries 42 tables incl. hashtag_follows rows.
     r = c.get("/admin/backup", headers=ALICE)
     assert r.status_code == 200, r.text
     bk = r.json()
-    assert len(bk["tables"]) == 41, len(bk["tables"])
+    assert len(bk["tables"]) == 42, len(bk["tables"])
     assert "hashtag_follows" in bk["tables"], list(bk["tables"])
     assert len(bk["tables"]["hashtag_follows"]) >= 2, \
         len(bk["tables"]["hashtag_follows"])
-    print("backup: 41 tables incl. hashtag_follows OK")
+    print("backup: 42 tables incl. hashtag_follows OK")
 
     # 6. Client markers + asset version.
     html = open("webapp/index.html").read()
-    assert html.count("?v=141") == 5, html.count("?v=141")
+    assert html.count("?v=142") == 5, html.count("?v=142")
     assert "?v=13" + "9" not in html
     js = open("webapp/app.js").read()
     for m in ("tab-hashtags", "search-tag-follow", "hashtag-card",
@@ -200,6 +200,6 @@ with TestClient(app) as c:
         assert m in js, m
     css = open("webapp/style.css").read()
     assert ".hashtag-row" in css
-    print("client markers + ?v=141 OK")
+    print("client markers + ?v=142 OK")
 
 print("PHASE-140 TESTS PASSED")

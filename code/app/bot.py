@@ -22,7 +22,8 @@ from . import notify
 from . import models
 from .config import settings
 from .db import SessionLocal
-from .services import register_post
+from .services import (BANNED_WORD_MESSAGE, banned_word_in,
+                      register_post)
 from .users import get_or_create_user
 
 
@@ -166,6 +167,12 @@ async def _save_media_post(update: Update, ptype: str, file_id: str,
             if verdict != "clean":
                 await _finish(moderation.block_message(ptype, verdict))
                 return
+        # Phase 142: banned-word list — a captioned post
+        # carrying one is refused with the same plain message
+        # as the app (never echo the word itself).
+        if banned_word_in(db, update.message.caption or ""):
+            await _finish(BANNED_WORD_MESSAGE)
+            return
         post, is_first, _ = register_post(
             db, user, ptype, file_id, update.message.caption or "",
             thumb_file_id=thumb_file_id)

@@ -264,7 +264,7 @@ with TestClient(app) as c:
     assert b["format"] == "nexora-backup" and b["version"] == 1
     from app.main import _BACKUP_TABLES  # noqa: E402
     assert set(b["tables"]) == {n for n, _ in _BACKUP_TABLES}
-    assert len(b["tables"]) == 41, len(b["tables"])
+    assert len(b["tables"]) == 42, len(b["tables"])
     assert "security_events" in b["tables"]
     assert len(b["tables"]["security_events"]) == 1000, \
         len(b["tables"]["security_events"])
@@ -286,22 +286,22 @@ with TestClient(app) as c:
     print("backup restore round-trip: security rows back identical OK")
 
     # ------------------------------------------------------------- client --
-    assert HTML.count("?v=141") == 5, HTML.count("?v=141")
+    assert HTML.count("?v=142") == 5, HTML.count("?v=142")
     assert "?v=127" not in HTML
-    assert "app.js?v=141" in HTML and "style.css?v=141" in HTML
+    assert "app.js?v=142" in HTML and "style.css?v=142" in HTML
     for marker in ("loadSecurityLog", "renderSecLog", "secKind",
                    "secEntries", "/admin/security-log"):
         assert marker in JS, marker
     for marker in ("cp-sec-security", "admin-security-log",
                    "sec-chips", "sec-refresh", "Security Log"):
         assert marker in HTML, marker
-    assert HTML.count('data-target="cp-sec-') == 14, \
+    assert HTML.count('data-target="cp-sec-') == 15, \
         HTML.count('data-target="cp-sec-')
     for marker in ("topScroller", "pollBlock", "loadDrafts",
                    "renderPh", "goFeedTo", "loadTrending",
                    "loadPayoutBox", "loadPayoutList", "loadPayouts",
                    "decidePayout", "markPayoutPaid"):
         assert marker in JS, marker
-    print("client: ?v=141 + security markers + 123-127 markers OK")
+    print("client: ?v=142 + security markers + 123-127 markers OK")
 
 print("ALL PHASE-128 CHECKS PASSED")

@@ -2819,6 +2819,10 @@ html[data-theme] .suggest-follow.on { background: var(--t-chip, #F3DCE7);
   align-items: center; gap: 8px; }
 .hashtag-row button { padding: 4px 10px; font-size: 13px; }
 
+/* Phase 142: audit-log filter controls. */
+.audit-filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.audit-filters select, .audit-filters input { flex: 1 1 120px; min-width: 0; width: auto; }
+
 /* Phase 141: auto-backup — toggle row in the Backup card. */
 .auto-backup-row { display: flex; align-items: center; gap: 6px; }
 

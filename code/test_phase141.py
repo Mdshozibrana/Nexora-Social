@@ -5,7 +5,7 @@ last_auto_backup_at, next_due_at; non-admin 403, unauth 401);
 POST /admin/auto-backup toggle on/off (admin only, audit-logged);
 due logic (never run -> due; 8 days ago -> due; 6 days ago ->
 not due; disabled -> never due); a due run builds the full
-backup (41 tables, same _backup_payload as Phase 107) and sends
+backup (42 tables, same _backup_payload as Phase 107) and sends
 it to the owner (ADMIN_IDS[0]) as a document, writes the audit
 event auto_backup_send and stamps auto_backup_last_run; a second
 immediate run is not due; a failed send (False, or raising)
@@ -13,12 +13,12 @@ logs a server_error security event + audit auto_backup_failed,
 leaves last_run unchanged, and retries fine on the next check;
 the auto run does NOT consume the manual backup 10/h budget
 (10 manual downloads still succeed, the 11th hits 429);
-backup-status reports last_auto_backup_at; ?v=141 x5;
+backup-status reports last_auto_backup_at; ?v=142 x5;
 auto-backup client markers + Phase 123-140 markers intact.
 
 Survey note: settings live in the AppSetting key-value table
 (keys auto_backup_enabled / auto_backup_last_run) — no new
-table, backup stays at 41 tables. The owner is ADMIN_IDS[0].
+table, backup stays at 42 tables. The owner is ADMIN_IDS[0].
 """
 import asyncio, hashlib, hmac, json, os, sqlite3, time, urllib.parse
 from datetime import datetime, timedelta
@@ -161,7 +161,7 @@ with TestClient(app) as c:
     assert fname.endswith(".json"), fname
     payload = json.loads(data.decode("utf-8"))
     assert payload["format"] == "nexora-backup", payload["format"]
-    assert len(payload["tables"]) == 41, len(payload["tables"])
+    assert len(payload["tables"]) == 42, len(payload["tables"])
     assert "app_settings" in payload["tables"], list(payload["tables"])
     assert "auto_backup_enabled" in [
         r["key"] for r in payload["tables"]["app_settings"]], \
@@ -224,7 +224,7 @@ with TestClient(app) as c:
 
     # 8. Client markers + asset version.
     html = open("webapp/index.html").read()
-    assert html.count("?v=141") == 5, html.count("?v=141")
+    assert html.count("?v=142") == 5, html.count("?v=142")
     assert "?v=14" + "0" not in html
     js = open("webapp/app.js").read()
     for m in ("loadAutoBackup", "auto-backup-toggle", "auto-backup-line",
@@ -256,6 +256,6 @@ with TestClient(app) as c:
               "search-tag-follow", "hashtag-card", "hashtag-row",
               "followedTags", "/me/hashtags", "/feed/hashtags"):
         assert m in js, m
-    print("client markers + ?v=141 OK")
+    print("client markers + ?v=142 OK")
 
 print("ALL PHASE 141 CHECKS PASSED")

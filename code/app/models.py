@@ -598,3 +598,15 @@ class HashtagFollow(Base):
     tag = Column(String(50), nullable=False, index=True)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     __table_args__ = (UniqueConstraint("user_id", "tag"),)
+
+
+class BannedWord(Base):
+    """Phase 142: admin-managed banned-word list. Posts and
+    comments carrying a banned word are refused (case-insensitive
+    substring match on the lowercased text). One row per word,
+    stored lowercase; DMs are private and are never checked."""
+    __tablename__ = "banned_words"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    word = Column(String(64), nullable=False, unique=True, index=True)
+    added_by = Column(BigInteger, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)

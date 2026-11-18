@@ -19,6 +19,24 @@ def extract_hashtags(caption: str) -> str:
     return " ".join(seen)
 
 
+BANNED_WORD_MESSAGE = "This text contains a word that isn't allowed here."
+
+
+def banned_word_in(db, text):
+    """Phase 142: return the banned word found in text (a
+    case-insensitive substring match on the lowercased text),
+    else None. The list is admin-managed and small, so a full
+    read per check is fine."""
+    low = (text or "").lower()
+    if not low:
+        return None
+    for row in db.query(models.BannedWord).all():
+        w = (row.word or "").strip().lower()
+        if w and w in low:
+            return w
+    return None
+
+
 def award_points(db, user_id, amount, reason, ref_id=None):
     """Every points change writes a ledger row AND updates the balance —
     the ledger is the auditable record (PRD section 5)."""

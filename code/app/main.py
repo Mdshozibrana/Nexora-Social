@@ -16,7 +16,7 @@ from typing import Optional
 
 import httpx
 from fastapi import (Depends, FastAPI, File, Form, Header, HTTPException,
-                     Request, UploadFile)
+                     Query, Request, UploadFile)
 from fastapi.responses import JSONResponse, RedirectResponse, Response, \
     StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -36,7 +36,8 @@ from .config import (DAILY_TASKS, MONETIZATION, OFFICIAL_FOLLOWER_BASE,
                      VERIFICATION_MIN_REFERRALS, settings)
 from .db import Base, SessionLocal, engine, get_db
 from .security import init_data_auth_date, validate_init_data
-from .services import award_points, extract_hashtags, register_post
+from .services import (BANNED_WORD_MESSAGE, award_points,
+                      banned_word_in, extract_hashtags, register_post)
 from .users import get_or_create_user
 
 # Phase 28 (security §13): security events go to the service log —
@@ -1330,6 +1331,10 @@ def create_post(body: PostIn, user: models.User = Depends(current_user),
     poll = _validate_poll(body.poll)
     if body.type not in ("photo", "video", "text"):
         raise HTTPException(400, "type must be photo, video or text")
+    # Phase 142: banned-word list — a post carrying a banned word
+    # is refused before it exists (never echo the word itself).
+    if banned_word_in(db, body.caption):
+        raise HTTPException(400, BANNED_WORD_MESSAGE)
     # Phase 81: a media post carries a Telegram file_id the server
     # never saw uploaded — fetch and screen it, so this endpoint
     # cannot bypass the screening every upload goes through.
@@ -2023,6 +2028,13 @@ def _publish_scheduled_row(db, row):
     ptype = row.media_type or "text"
     if ptype not in ("photo", "video", "text"):
         ptype = "text"
+    # Phase 142: banned-word list — a scheduled post carrying
+    # one fails with the same plain message (never auto-retried).
+    if banned_word_in(db, row.text or ""):
+        row.status = "failed"
+        row.error = BANNED_WORD_MESSAGE
+        db.commit()
+        return
     try:
         if moderation.active() and ptype in ("photo", "video") \
                 and row.media_file_id:
@@ -2464,6 +2476,10 @@ async def add_comment(post_id: int, body: CommentIn,
     text = body.text.strip()
     if not text:
         raise HTTPException(400, "Comment text is empty")
+    # Phase 142: banned-word list (posts + comments only — DMs are
+    # private conversations and are not checked).
+    if banned_word_in(db, text):
+        raise HTTPException(400, BANNED_WORD_MESSAGE)
     # Phase 118: a reply targets a comment on this post; a
     # reply to a reply answers its top comment instead.
     parent = None
@@ -4547,6 +4563,48 @@ def admin_remove_post(post_id: int, admin: models.User = Depends(moderator_user)
     return {"ok": True, "id": p.id}
 
 
+@app.get("/admin/content/search")
+def admin_content_search(q: str = "", limit: int = 20, offset: int = 0,
+                         admin: models.User = Depends(admin_user),
+                         db: Session = Depends(get_db)):
+    """Phase 142: search posts by text/caption or author
+    name/username (case-insensitive), newest first, with
+    limit/offset paging. Admin only. Search does NOT add a
+    delete action — results reuse the Content section's
+    existing Remove button."""
+    q = (q or "").strip()
+    if not q:
+        raise HTTPException(400, "Search text is empty")
+    limit = max(1, min(limit, 100))
+    offset = max(0, offset)
+    like = _like_pattern(q)
+    query = db.query(models.Post, models.User).join(
+        models.User, models.User.telegram_id == models.Post.user_id
+    ).filter(or_(
+        models.Post.caption.ilike(like, escape="\\"),
+        models.User.first_name.ilike(like, escape="\\"),
+        models.User.username.ilike(like, escape="\\")))
+    total = query.count()
+    rows = query.order_by(models.Post.id.desc()) \
+        .offset(offset).limit(limit).all()
+    out = []
+    for p, author in rows:
+        out.append({
+            "id": p.id, "type": p.type,
+            "caption": (p.caption or "")[:120],
+            "is_deleted": bool(p.is_deleted),
+            "author_id": p.user_id,
+            "author_name": author.first_name if author else "",
+            "author_username": author.username if author else "",
+            "author_photo": author.photo_file_id if author else None,
+            "has_media": bool(p.media_file_id),
+            "created_at": p.created_at.isoformat()
+            if p.created_at else None,
+        })
+    nxt = offset + len(out) if offset + len(out) < total else None
+    return {"posts": out, "total": total, "next_offset": nxt}
+
+
 @app.get("/admin/reports")
 def admin_reports(status: str = "open",
                   admin: models.User = Depends(moderator_user),
@@ -5539,18 +5597,122 @@ def admin_revoke_sessions(telegram_id: int,
     return {"ok": True, "telegram_id": telegram_id}
 
 
+def _parse_audit_date(value, name):
+    """Parse an audit-log ?from=/?to= value (YYYY-MM-DD or full
+    ISO). A bare date means the start of that day; the ?to= side
+    adds a day and compares with <, so the whole day is included.
+    A timezone-aware value is treated as UTC and made naive (the
+    log stores naive UTC datetimes)."""
+    raw = (value or "").strip()
+    try:
+        dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        raise HTTPException(400, f"Invalid {name} date")
+    if dt.tzinfo is not None:
+        dt = dt.replace(tzinfo=None)
+    return dt
+
+
 @app.get("/admin/audit-log")
-def admin_audit_log(limit: int = 100,
+def admin_audit_log(action: str = "", actor: str = "",
+                    from_: str = Query(default="", alias="from"),
+                    to: str = "",
+                    limit: int = 100, offset: int = 0,
                     admin: models.User = Depends(admin_user),
                     db: Session = Depends(get_db)):
-    rows = db.query(models.AdminAuditLog) \
-        .order_by(models.AdminAuditLog.id.desc()) \
-        .limit(max(1, min(limit, 200))).all()
+    """Phase 142: the audit log filters by action (exact), actor
+    (a Telegram id, or a username/first-name substring) and date
+    range (inclusive), with limit/offset paging. All filters
+    combine (AND). Invalid dates are a 400."""
+    q = db.query(models.AdminAuditLog) \
+        .order_by(models.AdminAuditLog.id.desc())
+    if action:
+        q = q.filter(models.AdminAuditLog.action == action)
+    if actor:
+        actor = actor.strip()
+        if actor.isdigit():
+            q = q.filter(models.AdminAuditLog.admin_id == int(actor))
+        else:
+            like = _like_pattern(actor)
+            sub = db.query(models.User.telegram_id).filter(or_(
+                models.User.username.ilike(like, escape="\\"),
+                models.User.first_name.ilike(like, escape="\\")))
+            q = q.filter(models.AdminAuditLog.admin_id.in_(sub))
+    if from_:
+        start = _parse_audit_date(from_, "from")
+        q = q.filter(models.AdminAuditLog.created_at >= start)
+    if to:
+        end = _parse_audit_date(to, "to")
+        if "T" not in to:
+            end = end + timedelta(days=1)
+            q = q.filter(models.AdminAuditLog.created_at < end)
+        else:
+            q = q.filter(models.AdminAuditLog.created_at <= end)
+    total = q.count()
+    limit = max(1, min(limit, 200))
+    offset = max(0, offset)
+    rows = q.offset(offset).limit(limit).all()
+    nxt = offset + len(rows) if offset + len(rows) < total else None
     return {"entries": [{
         "id": r.id, "admin_id": r.admin_id, "action": r.action,
         "target_id": r.target_id, "detail": r.detail,
         "created_at": r.created_at.isoformat() if r.created_at else None,
+    } for r in rows], "total": total, "next_offset": nxt}
+
+
+class BannedWordIn(BaseModel):
+    """Phase 142: one word for the banned-word list."""
+    word: str = Field(default="", max_length=64)
+
+
+@app.get("/admin/banned-words")
+def admin_banned_words(admin: models.User = Depends(admin_user),
+                       db: Session = Depends(get_db)):
+    """Phase 142: the admin-managed banned-word list, newest
+    first. Admin only."""
+    rows = db.query(models.BannedWord) \
+        .order_by(models.BannedWord.id.desc()).all()
+    return {"words": [{
+        "id": r.id, "word": r.word, "added_by": r.added_by,
+        "created_at": r.created_at.isoformat() if r.created_at else None,
     } for r in rows]}
+
+
+@app.post("/admin/banned-words")
+def admin_banned_word_add(body: BannedWordIn,
+                          admin: models.User = Depends(admin_user),
+                          db: Session = Depends(get_db)):
+    """Phase 142: ban one word (lowercased, stripped). The add
+    is audit-logged; a duplicate is a 400."""
+    word = (body.word or "").strip().lower()
+    if not word:
+        raise HTTPException(400, "A word is required")
+    if len(word) > 64:
+        raise HTTPException(400, "Word is too long")
+    if db.query(models.BannedWord).filter_by(word=word).first():
+        raise HTTPException(400, "That word is already banned")
+    row = models.BannedWord(word=word, added_by=admin.telegram_id)
+    db.add(row)
+    _audit(db, admin, "banned_word_add", detail=f"word {word}")
+    db.commit()
+    db.refresh(row)
+    return {"id": row.id, "word": row.word, "added_by": row.added_by,
+            "created_at": row.created_at.isoformat()
+            if row.created_at else None}
+
+
+@app.delete("/admin/banned-words/{word_id}")
+def admin_banned_word_remove(word_id: int,
+                             admin: models.User = Depends(admin_user),
+                             db: Session = Depends(get_db)):
+    """Phase 142: unban one word (audit-logged)."""
+    row = db.get(models.BannedWord, word_id)
+    if row is None:
+        raise HTTPException(404, "Word not found")
+    _audit(db, admin, "banned_word_remove", detail=f"word {row.word}")
+    db.delete(row)
+    db.commit()
+    return {"ok": True, "removed": word_id}
 
 
 # ---------------------------------------------------------------------------
@@ -5983,6 +6145,8 @@ _BACKUP_TABLES = [
     ("message_reactions", models.MessageReaction),
     # Phase 140: hashtag follows.
     ("hashtag_follows", models.HashtagFollow),
+    # Phase 142: banned-word list.
+    ("banned_words", models.BannedWord),
 ]
 _BACKUP_MODELS = {name: m for name, m in _BACKUP_TABLES}
 _BACKUP_MAX_BYTES = 50 * 1024 * 1024

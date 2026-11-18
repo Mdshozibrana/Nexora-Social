@@ -6461,6 +6461,35 @@ function wireCpButtons() {
   if (ar && !ar.dataset.wired) {
     ar.dataset.wired = "1"; ar.onclick = loadAuditLog;
   }
+  const aa = $("audit-apply");
+  if (aa && !aa.dataset.wired) {
+    aa.dataset.wired = "1"; aa.onclick = applyAuditFilters;
+  }
+  const acl = $("audit-clear");
+  if (acl && !acl.dataset.wired) {
+    acl.dataset.wired = "1"; acl.onclick = clearAuditFilters;
+  }
+  const am = $("audit-more");
+  if (am && !am.dataset.wired) {
+    am.dataset.wired = "1"; am.onclick = loadAuditMore;
+  }
+  const cg = $("admin-content-go");
+  if (cg && !cg.dataset.wired) {
+    cg.dataset.wired = "1"; cg.onclick = searchAdminContent;
+  }
+  const cc = $("admin-content-clear");
+  if (cc && !cc.dataset.wired) {
+    cc.dataset.wired = "1"; cc.onclick = () => {
+      const q = $("admin-content-q"); if (q) q.value = "";
+      const st = $("admin-content-status");
+      if (st) st.textContent = "";
+      loadAdminPosts();
+    };
+  }
+  const ba = $("bw-add");
+  if (ba && !ba.dataset.wired) {
+    ba.dataset.wired = "1"; ba.onclick = addBannedWord;
+  }
   const sr = $("sec-refresh");
   if (sr && !sr.dataset.wired) {
     sr.dataset.wired = "1"; sr.onclick = loadSecurityLog;
@@ -6534,30 +6563,94 @@ async function clearAnnouncement() {
   saveAnnouncement();
 }
 
+// --------------------------------------- Phase 142: Audit Log filter -------
+// The Audit Log was a bare newest-50 list. It now filters by action,
+// actor (id or username) and date range, with paging (Show more).
+let auditFilter = { action: "", actor: "", from: "", to: "" };
+let auditOffset = 0;
+let auditTotal = 0;
+let auditActions = [];
+function auditQuery() {
+  const p = new URLSearchParams({ limit: "50", offset: String(auditOffset) });
+  if (auditFilter.action) p.set("action", auditFilter.action);
+  if (auditFilter.actor) p.set("actor", auditFilter.actor);
+  if (auditFilter.from) p.set("from", auditFilter.from);
+  if (auditFilter.to) p.set("to", auditFilter.to);
+  return "/admin/audit-log?" + p.toString();
+}
+function renderAuditRow(box, e) {
+  const row = document.createElement("div");
+  row.className = "audit-row";
+  const t = document.createElement("div");
+  t.className = "admin-title";
+  t.textContent = e.action + (e.target_id ? " → " + e.target_id : "");
+  const s = document.createElement("div");
+  s.className = "admin-sub";
+  s.textContent = "admin " + e.admin_id + " · " +
+    (e.detail || "") + " · " + relTime(e.created_at);
+  row.append(t, s);
+  box.appendChild(row);
+}
+function fillAuditActions() {
+  const sel = $("audit-action");
+  if (!sel) return;
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">All actions</option>';
+  auditActions.forEach(a => {
+    const o = document.createElement("option");
+    o.value = a; o.textContent = a;
+    sel.appendChild(o);
+  });
+  if (auditActions.includes(cur)) sel.value = cur;
+}
+function updateAuditMore() {
+  const btn = $("audit-more");
+  if (btn) btn.hidden = !(auditTotal > auditOffset + 50);
+}
 async function loadAuditLog() {
   const box = $("admin-audit-log");
   if (!box) return;
   box.innerHTML = "";
+  auditOffset = 0;
   try {
-    const r = await api("/admin/audit-log?limit=50");
+    const r = await api(auditQuery());
+    auditTotal = r.total || 0;
+    auditActions = [...new Set((r.entries || []).map(e => e.action))];
+    fillAuditActions();
     if (!r.entries.length) {
-      box.innerHTML = '<p class="hint">No admin actions yet.</p>';
-      return;
+      box.innerHTML = '<p class="hint">No admin actions match.</p>';
+    } else {
+      r.entries.forEach(e => renderAuditRow(box, e));
     }
-    r.entries.forEach(e => {
-      const row = document.createElement("div");
-      row.className = "audit-row";
-      const t = document.createElement("div");
-      t.className = "admin-title";
-      t.textContent = e.action + (e.target_id ? " → " + e.target_id : "");
-      const s = document.createElement("div");
-      s.className = "admin-sub";
-      s.textContent = "admin " + e.admin_id + " · " +
-        (e.detail || "") + " · " + relTime(e.created_at);
-      row.append(t, s);
-      box.appendChild(row);
-    });
+    updateAuditMore();
   } catch (e) { box.textContent = "Could not load the audit log."; }
+}
+async function loadAuditMore() {
+  const box = $("admin-audit-log");
+  if (!box) return;
+  auditOffset += 50;
+  try {
+    const r = await api(auditQuery());
+    auditTotal = r.total || 0;
+    (r.entries || []).forEach(e => renderAuditRow(box, e));
+    updateAuditMore();
+  } catch (e) { /* keep what is shown */ }
+}
+function applyAuditFilters() {
+  auditFilter = {
+    action: ($("audit-action") || {}).value || "",
+    actor: (($("audit-actor") || {}).value || "").trim(),
+    from: ($("audit-from") || {}).value || "",
+    to: ($("audit-to") || {}).value || "",
+  };
+  loadAuditLog();
+}
+function clearAuditFilters() {
+  auditFilter = { action: "", actor: "", from: "", to: "" };
+  const set = (id, v) => { const el = $(id); if (el) el.value = v; };
+  set("audit-action", ""); set("audit-actor", "");
+  set("audit-from", ""); set("audit-to", "");
+  loadAuditLog();
 }
 
 // ------------------------------------- Phase 131: broadcast history ------
@@ -6987,6 +7080,7 @@ async function markPayoutPaid(id) {
   wireCpButtons();
   loadSiteControls();
   loadAuditLog();
+  loadBannedWords();
   loadSecurityLog();
   loadHealth();
   loadAdminDesigns();
@@ -7526,44 +7620,120 @@ async function applyVbu(action) {
   } catch (e) { if (st) st.textContent = "Could not change verification."; }
 }
 
+function renderAdminPostRows(box, posts) {
+  box.innerHTML = "";
+  if (!posts.length) {
+    box.innerHTML = '<p class="hint">No posts yet.</p>';
+    return;
+  }
+  posts.forEach(p => {
+    const row = document.createElement("div");
+    row.className = "card admin-row";
+    const info = document.createElement("div");
+    info.className = "admin-info";
+    const t = document.createElement("div");
+    t.className = "admin-title";
+    t.textContent = (p.type === "video" ? "🎬 " :
+                     p.type === "photo" ? "🖼️ " : "📝 ") +
+      "#" + p.id + " · " + p.author_name;
+    const s = document.createElement("div");
+    s.className = "admin-sub";
+    s.textContent = (p.caption || "(no caption)") +
+      (p.is_deleted ? " · REMOVED" : "");
+    info.append(t, s);
+    row.appendChild(info);
+    if (!p.is_deleted) {
+      const btn = document.createElement("button");
+      btn.className = "danger-btn"; btn.textContent = "Remove";
+      btn.onclick = async () => {
+        if (!confirm("Remove post #" + p.id + "?")) return;
+        await api("/admin/posts/" + p.id + "/remove", { method: "POST" });
+        refreshAdminPosts(); loadAdminStats();
+      };
+      row.appendChild(btn);
+    }
+    box.appendChild(row);
+  });
+}
 async function loadAdminPosts() {
   const box = $("admin-posts");
-  box.innerHTML = "";
+  if (!box) return;
   try {
     const r = await api("/admin/posts?limit=30");
-    if (!r.posts.length) {
-      box.innerHTML = '<p class="hint">No posts yet.</p>';
+    renderAdminPostRows(box, r.posts || []);
+  } catch (e) { box.textContent = "Could not load posts."; }
+}
+function refreshAdminPosts() {
+  const q = $("admin-content-q");
+  if (q && q.value.trim()) searchAdminContent();
+  else loadAdminPosts();
+}
+async function searchAdminContent() {
+  const box = $("admin-posts");
+  const qEl = $("admin-content-q"), st = $("admin-content-status");
+  if (!box || !qEl) return;
+  const q = qEl.value.trim();
+  if (!q) { if (st) st.textContent = "Type something to search."; return; }
+  box.innerHTML = "";
+  try {
+    const r = await api("/admin/content/search?q=" +
+      encodeURIComponent(q) + "&limit=30");
+    renderAdminPostRows(box, r.posts || []);
+    if (st) st.textContent = (r.total || 0) + " match" +
+      ((r.total || 0) === 1 ? "" : "es") + " for \u201c" + q + "\u201d.";
+  } catch (e) { box.textContent = "Could not search content."; }
+}
+
+// --------------------------------------- Phase 142: banned words -----------
+// Admin-managed word list. Posts and comments carrying a banned
+// word are refused server-side (case-insensitive substring);
+// DMs are private and are not checked.
+async function loadBannedWords() {
+  const box = $("admin-banned-words");
+  if (!box) return;
+  box.innerHTML = "";
+  try {
+    const r = await api("/admin/banned-words");
+    if (!r.words.length) {
+      box.innerHTML = '<p class="hint">No banned words yet.</p>';
       return;
     }
-    r.posts.forEach(p => {
+    r.words.forEach(w => {
       const row = document.createElement("div");
-      row.className = "card admin-row";
-      const info = document.createElement("div");
-      info.className = "admin-info";
+      row.className = "audit-row";
       const t = document.createElement("div");
       t.className = "admin-title";
-      t.textContent = (p.type === "video" ? "🎬 " :
-                       p.type === "photo" ? "🖼️ " : "📝 ") +
-        "#" + p.id + " · " + p.author_name;
+      t.textContent = w.word;
       const s = document.createElement("div");
       s.className = "admin-sub";
-      s.textContent = (p.caption || "(no caption)") +
-        (p.is_deleted ? " · REMOVED" : "");
-      info.append(t, s);
-      row.appendChild(info);
-      if (!p.is_deleted) {
-        const btn = document.createElement("button");
-        btn.className = "danger-btn"; btn.textContent = "Remove";
-        btn.onclick = async () => {
-          if (!confirm("Remove post #" + p.id + "?")) return;
-          await api("/admin/posts/" + p.id + "/remove", { method: "POST" });
-          loadAdminPosts(); loadAdminStats();
-        };
-        row.appendChild(btn);
-      }
+      s.textContent = "banned " + relTime(w.created_at);
+      row.append(t, s);
+      const btn = document.createElement("button");
+      btn.className = "danger-btn"; btn.textContent = "Remove";
+      btn.onclick = async () => {
+        if (!confirm("Unban the word \u201c" + w.word + "\u201d?")) return;
+        await api("/admin/banned-words/" + w.id, { method: "DELETE" });
+        loadBannedWords();
+      };
+      row.appendChild(btn);
       box.appendChild(row);
     });
-  } catch (e) { box.textContent = "Could not load posts."; }
+  } catch (e) { box.textContent = "Could not load banned words."; }
+}
+async function addBannedWord() {
+  const el = $("bw-word"), st = $("bw-status");
+  if (!el) return;
+  const word = el.value.trim();
+  if (!word) { if (st) st.textContent = "Type a word first."; return; }
+  try {
+    await api("/admin/banned-words", { method: "POST",
+      body: JSON.stringify({ word }) });
+    el.value = "";
+    if (st) st.textContent = "\u201c" + word.toLowerCase() + "\u201d is now banned.";
+    loadBannedWords();
+  } catch (e) {
+    if (st) st.textContent = "Could not ban that word (already banned?).";
+  }
 }
 
 $("admin-user-go").onclick = () => refreshAdminMembers();
