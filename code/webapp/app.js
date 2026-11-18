@@ -6399,6 +6399,34 @@ async function loadBackupStatus() {
   }
 }
 
+// Phase 141: weekly auto-backup — toggle + last auto-backup line
+// on the admin Backup card. Reads GET /admin/auto-backup.
+async function loadAutoBackup() {
+  const line = $("auto-backup-line");
+  const tog = $("auto-backup-toggle");
+  if (!line || !tog) return;
+  try {
+    const s = await api("/admin/auto-backup");
+    const fmt = iso => iso ? new Date(iso).toLocaleString() : null;
+    const last = fmt(s.last_auto_backup_at);
+    const next = fmt(s.next_due_at);
+    line.textContent = "Auto-backup: " + (s.enabled ? "on (weekly)" : "off") +
+      " · Last auto-backup: " + (last || "never") +
+      (s.enabled && next ? " · Next: " + next : "");
+    tog.checked = !!s.enabled;
+    tog.onchange = async () => {
+      tog.disabled = true;
+      try {
+        const r = await api("/admin/auto-backup", { method: "POST",
+          body: JSON.stringify({ enabled: tog.checked }) });
+        tog.checked = !!r.enabled;
+        loadAutoBackup();
+      } catch (e) { tog.checked = !tog.checked; }
+      tog.disabled = false;
+    };
+  } catch (e) { line.textContent = "Auto-backup: unknown"; }
+}
+
 // ------------------------------------------- Phase 119: Control Panel --
 // One home for everything admin: the section nav jumps to each part
 // of the panel (counts on the nav come from loadAdminStats), Site
@@ -6965,6 +6993,7 @@ async function markPayoutPaid(id) {
   wireVbu();
   wireBackupCard();
   loadBackupStatus();
+  loadAutoBackup();
   loadBroadcasts();
   wireObsQuickActions();
 }

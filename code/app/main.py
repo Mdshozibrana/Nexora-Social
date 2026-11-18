@@ -538,18 +538,19 @@ _bot_app = None
 
 @app.on_event("startup")
 async def _startup():
-    global _bot_app, _sweeper_task
+    global _bot_app, _sweeper_task, _auto_backup_task
     if settings.BOT_TOKEN:
         from .bot import build_bot_app, start_bot
         _bot_app = build_bot_app()
         await start_bot(_bot_app)
 
     _sweeper_task = asyncio.create_task(_scheduled_posts_loop())
+    _auto_backup_task = asyncio.create_task(_auto_backup_loop())
 
 
 @app.on_event("shutdown")
 async def _shutdown():
-    global _sweeper_task
+    global _sweeper_task, _auto_backup_task
     if _sweeper_task is not None:
         _sweeper_task.cancel()
         try:
@@ -557,6 +558,13 @@ async def _shutdown():
         except asyncio.CancelledError:
             pass
         _sweeper_task = None
+    if _auto_backup_task is not None:
+        _auto_backup_task.cancel()
+        try:
+            await _auto_backup_task
+        except asyncio.CancelledError:
+            pass
+        _auto_backup_task = None
     if _bot_app:
         try:
             await _bot_app.updater.stop()
@@ -1906,6 +1914,7 @@ def publish_draft(draft_id: int, user: models.User = Depends(current_user),
 # media only.
 _SCHEDULER_INTERVAL_S = 60
 _sweeper_task = None
+_auto_backup_task = None
 
 
 class ScheduledPostIn(BaseModel):
@@ -2065,6 +2074,141 @@ async def _scheduled_posts_loop():
             raise
         except Exception:
             logging.exception("scheduled-posts sweep failed")
+
+
+# ---------------------------------------------------------------------------
+# Phase 141: weekly auto-backup — the full-site backup (Phase 107)
+# sends itself to the owner's Telegram chat once a week, so the
+# site is never more than 7 days from a restorable copy even if
+# nobody remembers to take one by hand. An asyncio task wakes
+# every hour and sends only when >= 7 days passed since the last
+# successful auto send. The toggle + last-run timestamp live in
+# app_settings (keys auto_backup_enabled / auto_backup_last_run),
+# so they ride the normal backup and survive restarts — no new
+# table, backup stays at 41 tables. The auto send never touches
+# the manual backup rate limit ("backup" 10/h): it is a separate
+# path. A failed send is logged (server_error + audit
+# auto_backup_failed) and retried on the next hourly check —
+# never a tight loop, never a crash. On the free Render plan the
+# service sleeps when idle, so a due backup can land up to
+# ~10 minutes late (the keepalive ping keeps it warm).
+# ---------------------------------------------------------------------------
+_AUTO_BACKUP_INTERVAL_S = 3600
+_AUTO_BACKUP_PERIOD = timedelta(days=7)
+
+
+def _set_app_setting(db, key, value):
+    row = db.get(models.AppSetting, key)
+    if row is None:
+        row = models.AppSetting(key=key, value=value)
+        db.add(row)
+    else:
+        row.value = value
+
+
+def _auto_backup_enabled(db):
+    """Default ON — the owner ordered the feature; the backup
+    goes only to his own Telegram chat."""
+    row = db.get(models.AppSetting, "auto_backup_enabled")
+    return row is None or row.value != "0"
+
+
+def _auto_backup_last_run(db):
+    """Datetime of the last successful auto send, or None."""
+    row = db.get(models.AppSetting, "auto_backup_last_run")
+    if row is None or not row.value:
+        return None
+    try:
+        return datetime.fromisoformat(row.value)
+    except ValueError:
+        return None
+
+
+def _auto_backup_due(db):
+    if not _auto_backup_enabled(db):
+        return False
+    last = _auto_backup_last_run(db)
+    return last is None or datetime.utcnow() - last >= _AUTO_BACKUP_PERIOD
+
+
+def _auto_backup_next_due(db):
+    last = _auto_backup_last_run(db)
+    if last is None:
+        return datetime.utcnow()
+    return last + _AUTO_BACKUP_PERIOD
+
+
+def _build_auto_backup():
+    """Sync (runs in a thread): build the full backup bytes."""
+    with SessionLocal() as db:
+        payload = _backup_payload(db)
+    data = json.dumps(payload, ensure_ascii=False, indent=1).encode("utf-8")
+    fname = ("nexora-auto-backup-"
+             + datetime.utcnow().strftime("%Y-%m-%d") + ".json")
+    total = sum(len(v) for v in payload["tables"].values())
+    return fname, data, total
+
+
+def _record_auto_backup(sent, size, total):
+    """Sync (runs in a thread): record an auto-backup attempt."""
+    owner_tid = settings.ADMIN_IDS[0] if settings.ADMIN_IDS else None
+    with SessionLocal() as db:
+        if sent:
+            _set_app_setting(db, "auto_backup_last_run",
+                             datetime.utcnow().isoformat())
+            owner = db.get(models.User, owner_tid) if owner_tid else None
+            if owner is not None:
+                _audit(db, owner, "auto_backup_send",
+                       detail=f"{size} bytes, {total} rows")
+            else:
+                db.add(models.AdminAuditLog(
+                    admin_id=owner_tid or 0, action="auto_backup_send",
+                    detail=f"{size} bytes, {total} rows"))
+        else:
+            log_security_event(db, "server_error",
+                               detail="Auto-backup send failed")
+            db.add(models.AdminAuditLog(
+                admin_id=owner_tid or 0, action="auto_backup_failed",
+                detail="Telegram send failed"))
+        db.commit()
+
+
+async def _maybe_auto_backup(send_fn=None):
+    """One auto-backup check: if due, build the full backup and
+    send it to the owner's Telegram chat. True only when a backup
+    was actually sent. Never raises."""
+    with SessionLocal() as db:
+        due = _auto_backup_due(db)
+    if not due:
+        return False
+    owner_tid = settings.ADMIN_IDS[0] if settings.ADMIN_IDS else None
+    if owner_tid is None:
+        return False
+    fname, data, total = await asyncio.to_thread(_build_auto_backup)
+    send = send_fn or notify.send_document
+    try:
+        sent = await send(
+            owner_tid, fname, data,
+            caption="\U0001f4be Nexora weekly auto-backup — every user, "
+                    "post, comment, like, follow, design and message. "
+                    "Keep this file safe: anyone holding it holds the "
+                    "whole database.")
+    except Exception:
+        sent = False
+    await asyncio.to_thread(_record_auto_backup, sent, len(data), total)
+    return bool(sent)
+
+
+async def _auto_backup_loop():
+    """Wake every hour and send the weekly backup when due."""
+    while True:
+        try:
+            await asyncio.sleep(_AUTO_BACKUP_INTERVAL_S)
+            await _maybe_auto_backup()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logging.exception("auto-backup sweep failed")
 
 
 class PollVoteIn(BaseModel):
@@ -6042,7 +6186,45 @@ def admin_backup_status(admin: models.User = Depends(admin_user),
             else "send") if last_backup else None,
         "last_restore_at": last_restore.created_at.isoformat()
             if last_restore and last_restore.created_at else None,
+        "last_auto_backup_at": (
+            _auto_backup_last_run(db).isoformat()
+            if _auto_backup_last_run(db) else None),
     }
+
+
+class AutoBackupIn(BaseModel):
+    enabled: bool
+
+
+@app.get("/admin/auto-backup")
+def admin_auto_backup_status(admin: models.User = Depends(admin_user),
+                             db: Session = Depends(get_db)):
+    """Phase 141: auto-backup status — enabled, last successful
+    auto send, next due time. Admin-only."""
+    last = _auto_backup_last_run(db)
+    enabled = _auto_backup_enabled(db)
+    nxt = _auto_backup_next_due(db) if enabled else None
+    return {
+        "enabled": enabled,
+        "last_auto_backup_at": last.isoformat() if last else None,
+        "next_due_at": nxt.isoformat() if nxt else None,
+    }
+
+
+@app.post("/admin/auto-backup")
+def admin_auto_backup_set(body: AutoBackupIn,
+                          admin: models.User = Depends(admin_user),
+                          db: Session = Depends(get_db)):
+    """Phase 141: flip the weekly auto-backup on/off (admin-only).
+    The setting lives in app_settings, so it rides the normal
+    backup and survives restarts."""
+    _set_app_setting(db, "auto_backup_enabled",
+                     "1" if body.enabled else "0")
+    _audit(db, admin,
+           "auto_backup_enabled" if body.enabled
+           else "auto_backup_disabled")
+    db.commit()
+    return admin_auto_backup_status(admin, db)
 
 
 class DeleteAccountIn(BaseModel):
