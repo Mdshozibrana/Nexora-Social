@@ -499,3 +499,23 @@ class Broadcast(Base):
     sent_at = Column(DateTime, default=datetime.utcnow, index=True)
     delivered_count = Column(Integer, default=0, nullable=False)
     total_count = Column(Integer, default=0, nullable=False)
+
+
+class Tip(Base):
+    """Phase 133: a Telegram Stars tip that actually landed.
+    One row per completed payment — the invoice alone never
+    creates a row. post_id is null for a tip on a profile.
+    telegram_payment_charge_id makes the successful_payment
+    handler idempotent: a duplicate update records nothing. """
+    __tablename__ = "tips"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    from_user_id = Column(BigInteger, ForeignKey("users.telegram_id"),
+                         index=True, nullable=False)
+    to_user_id = Column(BigInteger, ForeignKey("users.telegram_id"),
+                       index=True, nullable=False)
+    post_id = Column(Integer, ForeignKey("posts.id"), nullable=True)
+    amount_stars = Column(Integer, nullable=False)
+    telegram_payment_charge_id = Column(String(128), nullable=True,
+                                        unique=True, index=True)
+    status = Column(String(16), default="completed", nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)

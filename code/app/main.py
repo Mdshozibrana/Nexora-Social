@@ -23,6 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy import func, inspect, or_, text
 from sqlalchemy.orm import Session
+from telegram import LabeledPrice
 
 from datetime import datetime, timedelta
 
@@ -2768,6 +2769,143 @@ def my_payouts(user: models.User = Depends(current_user),
     return {"requests": [_payout_dict(r, user) for r in rows]}
 
 
+# ---------------------------------------------------------------------------
+# Phase 133: Telegram Stars tipping — a member tips a creator with
+# Stars. A Mini App cannot take a Stars payment itself, so the flow
+# is: the app asks the bot to send an XTR invoice into the tipper's
+# Telegram chat; the tipper pays there; the bot's PreCheckoutQuery
+# + successful_payment handlers record the tip. A tip row exists
+# ONLY once the payment has landed — never at invoice time. Stars
+# land in the BOT's Stars balance (the owner withdraws them via
+# BotFather/Fragment); the app tracks per-creator totals so the
+# admin knows who earned what. Paying creators out reuses the
+# Phase 127 crypto payout flow — this phase builds no Stars-to-
+# creator transfer.
+# ---------------------------------------------------------------------------
+
+
+def _tip_payload(from_id, to_id, post_id, amount):
+    """Phase 133: tip:<from>:<to>:<post>:<amount> — post 0 means
+    the tip was on a profile, not a post."""
+    return f"tip:{from_id}:{to_id}:{post_id or 0}:{amount}"
+
+
+class TipCreateIn(BaseModel):
+    post_id: Optional[int] = None
+    user_id: Optional[int] = None
+    amount_stars: int = 0
+
+
+@app.post("/tips/create")
+async def create_tip(body: TipCreateIn,
+                     user: models.User = Depends(current_user),
+                     db: Session = Depends(get_db)):
+    _enforce_rate("tip", f"u{user.telegram_id}")
+    amount = body.amount_stars or 0
+    if not 1 <= amount <= 10000:
+        raise HTTPException(400, "Tip must be 1–10000 Stars")
+    if bool(body.post_id) == bool(body.user_id):
+        raise HTTPException(400, "Tip a post or a member, not both")
+    post_id = None
+    if body.post_id:
+        post = db.get(models.Post, body.post_id)
+        if post is None or post.is_deleted:
+            raise HTTPException(404, "Unknown post")
+        # A repost card tips the ORIGINAL author, not the reposter.
+        orig = db.get(models.Post, _eff_id(post))
+        if orig is None or orig.is_deleted:
+            raise HTTPException(404, "Unknown post")
+        to_id = orig.user_id
+        post_id = orig.id
+    else:
+        target = db.get(models.User, body.user_id)
+        if target is None:
+            raise HTTPException(404, "Unknown member")
+        if target.is_banned:
+            raise HTTPException(400, "That member is unavailable")
+        to_id = target.telegram_id
+    to_user = db.get(models.User, to_id)
+    to_name = to_user.first_name if to_user else "Nexora member"
+    if to_id == user.telegram_id:
+        raise HTTPException(400, "You cannot tip yourself")
+    if _blocked_by(db, user.telegram_id, to_id) or _blocked_by(
+            db, to_id, user.telegram_id):
+        raise HTTPException(403, "You cannot tip this member")
+    if _bot_app is None:
+        raise HTTPException(
+            503, "Tip invoices are unavailable right now")
+    payload = _tip_payload(user.telegram_id, to_id, post_id, amount)
+    title = f"Tip for {to_name}"
+    desc = (f"Send {amount} Telegram Stars to {to_name} on "
+            "Nexora Social"
+            + (f" for post #{post_id}." if post_id else "."))
+    try:
+        await _bot_app.bot.send_invoice(
+            chat_id=user.telegram_id, title=title, description=desc,
+            payload=payload, currency="XTR",
+            prices=[LabeledPrice("Tip", amount)])
+    except Exception:
+        raise HTTPException(
+            503, "Could not send the invoice — try again")
+    return {"invoice": True, "amount_stars": amount,
+            "to_name": to_name,
+            "bot_username": settings.BOT_USERNAME}
+
+
+def _tip_dict(t, db):
+    frm = db.get(models.User, t.from_user_id)
+    to = db.get(models.User, t.to_user_id)
+    return {
+        "id": t.id,
+        "from_user_id": t.from_user_id,
+        "from_name": frm.first_name if frm else None,
+        "to_user_id": t.to_user_id,
+        "to_name": to.first_name if to else None,
+        "post_id": t.post_id,
+        "amount_stars": t.amount_stars,
+        "created_at": t.created_at.isoformat()
+            if t.created_at else None,
+    }
+
+
+@app.get("/me/tips")
+def my_tips(user: models.User = Depends(current_user),
+            db: Session = Depends(get_db)):
+    sent = db.query(models.Tip).filter_by(
+        from_user_id=user.telegram_id).order_by(
+        models.Tip.id.desc()).limit(50).all()
+    received = db.query(models.Tip).filter_by(
+        to_user_id=user.telegram_id).order_by(
+        models.Tip.id.desc()).limit(50).all()
+    return {"sent": [_tip_dict(t, db) for t in sent],
+            "received": [_tip_dict(t, db) for t in received]}
+
+
+@app.get("/users/{telegram_id}/tips")
+def user_tips(telegram_id: int, db: Session = Depends(get_db)):
+    """Public tip totals for a profile — the total and the
+    count, plus recent tippers' names (no per-tip amounts)."""
+    total = db.query(func.coalesce(
+        func.sum(models.Tip.amount_stars), 0)).filter(
+        models.Tip.to_user_id == telegram_id).scalar() or 0
+    count = db.query(models.Tip).filter_by(
+        to_user_id=telegram_id).count()
+    rows = db.query(models.Tip).filter_by(
+        to_user_id=telegram_id).order_by(
+        models.Tip.id.desc()).limit(10).all()
+    recent = []
+    for t in rows:
+        frm = db.get(models.User, t.from_user_id)
+        recent.append({
+            "from_name": frm.first_name if frm else None,
+            "created_at": t.created_at.isoformat()
+                if t.created_at else None,
+        })
+    return {"telegram_id": telegram_id,
+            "total_stars_received": int(total),
+            "tip_count": count, "recent": recent}
+
+
 
 
 # ---------------------------------------------------------------------------
@@ -2934,6 +3072,7 @@ _NOTIF_PHRASES = {
     "share": "shared a post with you",
     "repost": "reposted your post",
     "reply": "replied to your comment",
+    "tip": "tipped you ⭐",
     "post_live": "Your video is now live",
     "announcement": "Announcement",
     "verification": "Verification update",
@@ -3616,6 +3755,30 @@ def admin_broadcasts(limit: int = 20,
         "delivered_count": r.delivered_count,
         "total_count": r.total_count,
     } for r in rows]}
+
+
+@app.get("/admin/tips")
+def admin_tips(admin: models.User = Depends(admin_user),
+               db: Session = Depends(get_db)):
+    total = db.query(func.coalesce(
+        func.sum(models.Tip.amount_stars), 0)).scalar() or 0
+    count = db.query(models.Tip).count()
+    tops = db.query(models.Tip.to_user_id,
+                    func.sum(models.Tip.amount_stars).label("total")) \
+        .group_by(models.Tip.to_user_id) \
+        .order_by(func.sum(models.Tip.amount_stars).desc()) \
+        .limit(10).all()
+    top = []
+    for uid, tot in tops:
+        u = db.get(models.User, uid)
+        top.append({"user_id": uid,
+                    "name": u.first_name if u else None,
+                    "total_stars": int(tot)})
+    rows = db.query(models.Tip).order_by(
+        models.Tip.id.desc()).limit(50).all()
+    return {"total_stars": int(total), "tip_count": count,
+            "top": top,
+            "recent": [_tip_dict(t, db) for t in rows]}
 
 
 # ---------------------------------------------------------------------------
@@ -4882,6 +5045,8 @@ _BACKUP_TABLES = [
     ("security_events", models.SecurityEvent),
     # Phase 131: broadcast history.
     ("broadcasts", models.Broadcast),
+    # Phase 133: Stars tips.
+    ("tips", models.Tip),
 ]
 _BACKUP_MODELS = {name: m for name, m in _BACKUP_TABLES}
 _BACKUP_MAX_BYTES = 50 * 1024 * 1024
@@ -5520,6 +5685,12 @@ _NEXA_SYSTEM = (
     "manually in crypto and records the transaction; the points "
     "leave your balance when the request is approved. Never quote "
     "a points-to-money rate — the admin sets the amount. "
+    "TIPS: tap the ⭐ Tip button on any post or profile to tip "
+    "its creator with Telegram Stars (10, 50, 100, 250 or a "
+    "custom amount up to 10000). The invoice arrives in the "
+    "member's Telegram chat with the bot — the payment happens "
+    "there, not inside the app. Stars land in the bot's balance; "
+    "creators are paid out through the crypto payout flow. "
     "VERIFICATION: the blue badge. Members with at least 1000 "
     "followers can apply from their profile; the admin "
     "approves applications. "

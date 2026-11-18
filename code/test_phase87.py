@@ -39,5 +39,5 @@ assert "transform-origin: 0 50%" in CSS
 assert ".museum-zoom" in CSS
 # room switches reset the zoom
 assert "museumZ = 1;\n  museumSetX(0);" in JS
-assert "app.js?v=132" in HTML and "style.css?v=132" in HTML
+assert "app.js?v=133" in HTML and "style.css?v=133" in HTML
 print("PHASE 87 OK")

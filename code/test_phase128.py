@@ -264,13 +264,13 @@ with TestClient(app) as c:
     assert b["format"] == "nexora-backup" and b["version"] == 1
     from app.main import _BACKUP_TABLES  # noqa: E402
     assert set(b["tables"]) == {n for n, _ in _BACKUP_TABLES}
-    assert len(b["tables"]) == 36, len(b["tables"])
+    assert len(b["tables"]) == 37, len(b["tables"])
     assert "security_events" in b["tables"]
     assert len(b["tables"]["security_events"]) == 1000, \
         len(b["tables"]["security_events"])
     r = c.get("/admin/backup", headers=H(UID["A"], "A"))
     assert r.status_code == 403, r.status_code
-    print("backup: 36 tables incl. security_events, rows present OK")
+    print("backup: 37 tables incl. security_events, rows present OK")
     # Round-trip: wipe security_events, restore, they come back.
     db = SessionLocal()
     db.query(models.SecurityEvent).delete()
@@ -286,9 +286,9 @@ with TestClient(app) as c:
     print("backup restore round-trip: security rows back identical OK")
 
     # ------------------------------------------------------------- client --
-    assert HTML.count("?v=132") == 5, HTML.count("?v=132")
+    assert HTML.count("?v=133") == 5, HTML.count("?v=133")
     assert "?v=127" not in HTML
-    assert "app.js?v=132" in HTML and "style.css?v=132" in HTML
+    assert "app.js?v=133" in HTML and "style.css?v=133" in HTML
     for marker in ("loadSecurityLog", "renderSecLog", "secKind",
                    "secEntries", "/admin/security-log"):
         assert marker in JS, marker
@@ -302,6 +302,6 @@ with TestClient(app) as c:
                    "loadPayoutBox", "loadPayoutList", "loadPayouts",
                    "decidePayout", "markPayoutPaid"):
         assert marker in JS, marker
-    print("client: ?v=132 + security markers + 123-127 markers OK")
+    print("client: ?v=133 + security markers + 123-127 markers OK")
 
 print("ALL PHASE-128 CHECKS PASSED")

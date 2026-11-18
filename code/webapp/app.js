@@ -890,6 +890,16 @@ function postCard(p) {
   };
   actions.appendChild(rpBtn);
 
+  // Phase 133: Stars tip — not on your own posts.
+  if (!me || p.author_id !== me.telegram_id) {
+    const tipBtn = document.createElement("button");
+    tipBtn.className = "tip-btn";
+    tipBtn.textContent = "⭐ Tip";
+    tipBtn.onclick = () => openTipSheet({
+      postId: p.id, name: p.author_name });
+    actions.appendChild(tipBtn);
+  }
+
   const spacer = document.createElement("span");
   spacer.className = "spacer";
   actions.appendChild(spacer);
@@ -1328,6 +1338,15 @@ function reelCard(p) {
     } catch (e) { setStatus("Could not repost."); }
   };
   rWrap.append(rBtn, rCount);
+  // Phase 133: Stars tip on the reel rail.
+  const tWrap = document.createElement("div");
+  tWrap.className = "reel-act";
+  const tBtn = document.createElement("button");
+  tBtn.textContent = "⭐";
+  tBtn.title = "Tip";
+  tBtn.onclick = () => openTipSheet({
+    postId: p.id, name: p.author_name });
+  tWrap.appendChild(tBtn);
   // Phase 31: the 👁 unique-view count, under comments.
   const vWrap = document.createElement("div");
   vWrap.className = "reel-act";
@@ -1345,7 +1364,10 @@ function reelCard(p) {
   mBtn.title = "Options";
   mBtn.onclick = () => openReelMenu(p, el);
   mWrap.appendChild(mBtn);
-  side.append(likeWrap, cWrap, rWrap, vWrap, mWrap);
+  const rail = [likeWrap, cWrap, rWrap];
+  if (!me || p.author_id !== me.telegram_id) rail.push(tWrap);
+  rail.push(vWrap, mWrap);
+  side.append(...rail);
   el.appendChild(side);
 
   const cBox = document.createElement("div");
@@ -1420,6 +1442,105 @@ function reelCard(p) {
 
 // ------------------------------------------------------- options sheet ---
 function closeReelMenu() { $("reel-sheet-wrap").hidden = true; updateBackButton(); }
+
+// Phase 133: Stars tipping — a Mini App cannot take a Stars
+// payment itself, so the sheet asks the bot to send an XTR
+// invoice into the member's Telegram chat; the member pays
+// there. The tip is recorded only once that payment lands.
+const TIP_AMOUNTS = [10, 50, 100, 250];
+async function openTipSheet(target) {
+  const sheet = $("reel-sheet");
+  sheet.innerHTML = "";
+  const title = document.createElement("div");
+  title.className = "sheet-title";
+  title.textContent = "⭐ Tip " + (target.name || "this creator");
+  sheet.appendChild(title);
+  const chips = document.createElement("div");
+  chips.className = "tip-chips";
+  let amount = 50;
+  const chipBtns = [];
+  TIP_AMOUNTS.forEach(n => {
+    const b = document.createElement("button");
+    b.className = "tip-chip" + (n === amount ? " active" : "");
+    b.textContent = n + " ⭐";
+    b.onclick = () => {
+      amount = n; custom.value = "";
+      chipBtns.forEach(c => c.classList.remove("active"));
+      b.classList.add("active");
+    };
+    chips.appendChild(b); chipBtns.push(b);
+  });
+  sheet.appendChild(chips);
+  const custom = document.createElement("input");
+  custom.type = "number"; custom.min = "1"; custom.max = "10000";
+  custom.placeholder = "Custom amount (1–10000 Stars)";
+  custom.className = "tip-custom";
+  custom.oninput = () => {
+    const v = parseInt(custom.value, 10);
+    if (v > 0) {
+      amount = v;
+      chipBtns.forEach(c => c.classList.remove("active"));
+    }
+  };
+  sheet.appendChild(custom);
+  const note = document.createElement("p");
+  note.className = "tip-note";
+  note.textContent = "Payment happens in your Telegram chat with "
+    + "the bot — the invoice arrives there right after you send "
+    + "this. Stars go to the creator's total.";
+  sheet.appendChild(note);
+  const send = document.createElement("button");
+  send.className = "wide btn";
+  send.textContent = "Send tip invoice";
+  send.onclick = async () => {
+    if (!amount || amount < 1 || amount > 10000) {
+      setStatus("Pick an amount between 1 and 10000 Stars.");
+      return;
+    }
+    send.disabled = true; send.textContent = "Sending…";
+    const body = { amount_stars: amount };
+    if (target.postId) body.post_id = target.postId;
+    else body.user_id = target.userId;
+    try {
+      const r = await api("/tips/create", {
+        method: "POST", body: JSON.stringify(body) });
+      sheet.innerHTML = "";
+      const done = document.createElement("div");
+      done.className = "sheet-title";
+      done.textContent = "⭐ Invoice sent — pay in the bot chat";
+      sheet.appendChild(done);
+      const dNote = document.createElement("p");
+      dNote.className = "tip-note";
+      dNote.textContent = "বট চ্যাটে পেমেন্ট করুন — টেলিগ্রাম "
+        + "থেকে ইনভয়েস এসেছে। " + r.amount_stars + " Stars for "
+        + r.to_name + ".";
+      sheet.appendChild(dNote);
+      const open = document.createElement("a");
+      open.className = "wide btn";
+      open.href = "https://t.me/" + (me && me.bot_username
+        ? me.bot_username : "NexoraSocial_bot");
+      open.target = "_blank";
+      open.textContent = "Open chat with bot";
+      sheet.appendChild(open);
+      const close = document.createElement("button");
+      close.className = "wide";
+      close.textContent = "Close";
+      close.onclick = () => closeReelMenu();
+      sheet.appendChild(close);
+    } catch (e) {
+      send.disabled = false; send.textContent = "Send tip invoice";
+      setStatus("Could not send the tip invoice.");
+    }
+  };
+  sheet.appendChild(send);
+  const cancel = document.createElement("button");
+  cancel.className = "wide";
+  cancel.textContent = "Cancel";
+  cancel.onclick = () => closeReelMenu();
+  sheet.appendChild(cancel);
+  $("reel-sheet-wrap").hidden = false;
+  updateBackButton();
+}
 
 async function openReelMenu(p, reelEl) {
   const sheet = $("reel-sheet");
@@ -2644,6 +2765,14 @@ async function openProfile(userId) {
     stats.textContent = u.followers + " followers · " +
       u.following_count + " following";
     hero.append(headWrap, bio, stats);
+    // Phase 133: Stars received on this profile.
+    const tipLine = document.createElement("div");
+    tipLine.className = "tip-total";
+    api("/users/" + userId + "/tips").then(t => {
+      tipLine.textContent = "⭐ " + t.total_stars_received
+        + " Stars received · " + t.tip_count + " tips";
+    }).catch(() => { tipLine.textContent = ""; });
+    hero.appendChild(tipLine);
     box.appendChild(hero);
     const wave = document.createElement("div");
     wave.className = "wave-div";
@@ -2680,6 +2809,13 @@ async function openProfile(userId) {
         } catch (e) { setStatus("Could not update follow."); }
       };
       box.appendChild(fBtn);
+      // Phase 133: tip this member, beside Follow.
+      const tBtn = document.createElement("button");
+      tBtn.className = "wide btn";
+      tBtn.textContent = "⭐ Tip " + u.first_name;
+      tBtn.onclick = () => openTipSheet({
+        userId, name: u.first_name });
+      box.appendChild(tBtn);
       const mBtn = document.createElement("button");
       mBtn.className = "wide";
       mBtn.textContent = "💬 Message";
@@ -2695,6 +2831,7 @@ async function openProfile(userId) {
           ? "🚫 Blocked — tap to unblock" : "🚫 Block this member";
         fBtn.hidden = !!u.blocked_by_me;
         mBtn.hidden = !!u.blocked_by_me;
+        tBtn.hidden = !!u.blocked_by_me;
       };
       paintBlock();
       bBtn.onclick = async () => {
@@ -2941,6 +3078,45 @@ async function myExtras() {
     };
     renderPh();
     wrap.appendChild(card);
+    // Phase 133: My tips — Stars sent and received.
+    const tipsBtn = document.createElement("button");
+    tipsBtn.className = "wide";
+    tipsBtn.textContent = "⭐ My tips";
+    const tipsBox = document.createElement("div");
+    tipsBox.className = "card tips-card";
+    tipsBox.hidden = true;
+    let tipsLoaded = false;
+    tipsBtn.onclick = async () => {
+      tipsBox.hidden = !tipsBox.hidden;
+      if (tipsBox.hidden || tipsLoaded) return;
+      tipsLoaded = true;
+      try {
+        const t = await api("/me/tips");
+        const mkList = (title, rows, other) => {
+          const h = document.createElement("div");
+          h.className = "tips-head";
+          h.textContent = title;
+          tipsBox.appendChild(h);
+          if (!rows.length) {
+            const e = document.createElement("div");
+            e.className = "hint";
+            e.textContent = "Nothing yet.";
+            tipsBox.appendChild(e);
+            return;
+          }
+          rows.forEach(r => {
+            const row = document.createElement("div");
+            row.className = "tips-row";
+            row.textContent = (other === "to" ? r.to_name
+              : r.from_name) + " · " + r.amount_stars + " ⭐";
+            tipsBox.appendChild(row);
+          });
+        };
+        mkList("Received", t.received, "from");
+        mkList("Sent", t.sent, "to");
+      } catch (e) { tipsBox.textContent = "Could not load tips."; }
+    };
+    wrap.append(tipsBtn, tipsBox);
     if (me.bot_username) {
       const link = "https://t.me/" + me.bot_username + "?start=ref_" + me.telegram_id;
       const rh = document.createElement("h3");
@@ -4030,7 +4206,8 @@ async function refreshBell() {
 let notifCursor = null;
 const NOTIF_ICONS = { like: "❤️", comment: "💬", follow: "👥",
                       share: "📤", post_live: "🎬", announcement: "📣",
-                      verification: "🛡️", repost: "🔁", reply: "↩️" };
+                      verification: "🛡️", repost: "🔁", reply: "↩️",
+                      tip: "⭐" };
 async function loadNotifications(reset) {
   const box = $("notif-list");
   if (reset) { box.innerHTML = ""; notifCursor = null; }
@@ -5287,6 +5464,14 @@ async function loadEarnings() {
     earnRows("earn-top-points", e.top_points, u => u.points + " pts");
     earnRows("earn-top-today", e.top_earners_today,
              u => "+" + u.earned + " pts");
+    // Phase 133: Stars tips in the Earning Panel.
+    try {
+      const t = await api("/admin/tips");
+      $("earn-tips-total").textContent = t.total_stars + " ⭐";
+      $("earn-tips-top").textContent = t.top.length
+        ? ("Top: " + t.top[0].name + " — "
+          + t.top[0].total_stars + " ⭐") : "No tips yet";
+    } catch (err) { /* the tips line keeps its dashes */ }
   } catch (err) { /* the panel keeps its dashes */ }
 }
 

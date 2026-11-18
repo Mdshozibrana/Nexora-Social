@@ -2723,3 +2723,15 @@ html[data-theme] .suggest-follow.on { background: var(--t-chip, #F3DCE7);
    ================================================================ */
 .task-card.task-go { cursor: pointer; }
 .task-go-chev { font-size: 22px; font-weight: 800; color: #2F7FBF; flex: none; }
+
+/* ================================================================
+   Phase 133 — Stars tipping
+   ================================================================ */
+.tip-chips { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
+.tip-chip { padding: 10px 14px; border-radius: 999px; border: 1px solid #E5D9C8; background: #FFFBFC; font-weight: 700; }
+.tip-chip.active { background: #3A2E33; color: #fff; }
+.tip-custom { width: 100%; box-sizing: border-box; padding: 10px 12px; border-radius: 12px; border: 1px solid #E5D9C8; margin-bottom: 12px; }
+.tip-note { font-size: 14px; color: #8A6D7B; line-height: 1.5; }
+.tip-total { margin-top: 6px; font-weight: 700; }
+.tips-head { font-weight: 700; margin-top: 10px; }
+.tips-row { padding: 6px 0; border-bottom: 1px solid #E5D9C8; }

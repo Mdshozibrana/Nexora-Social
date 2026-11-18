@@ -96,6 +96,8 @@ RATE_LIMITS = {
     # most 10 times an hour (validation rejects nearly all of them);
     # the admin's decide/paid calls get a separate, larger budget.
     "payout": (10, 3600),
+    # Phase 133: Stars tip-invoice requests.
+    "tip": (120, 3600),
     "payout_admin": (120, 3600),
 }
 

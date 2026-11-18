@@ -9,7 +9,8 @@ the user a button that opens the Mini App."""
 MINI_APP_SHORT_NAME = "nexorasocial"
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, MenuButtonWebApp, Update, WebAppInfo
 from telegram.ext import (
-    Application, CommandHandler, ContextTypes, MessageHandler, filters,
+    Application, CommandHandler, ContextTypes, MessageHandler,
+    PreCheckoutQueryHandler, filters,
 )
 
 import asyncio
@@ -17,6 +18,7 @@ import os
 import tempfile
 
 from . import moderation
+from . import notify
 from . import models
 from .config import settings
 from .db import SessionLocal
@@ -227,9 +229,80 @@ async def video_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                            thumb_file_id=thumb, context=context)
 
 
+def _parse_tip_payload(payload):
+    """Phase 133: tip:<from>:<to>:<post>:<amount> — post 0 means
+    the tip was on a profile, not a post. None when the payload
+    is not one of ours (or the amount is out of range)."""
+    try:
+        kind, frm, to, post, amount = payload.split(":")
+        if kind != "tip":
+            return None
+        frm, to, post, amount = (int(frm), int(to), int(post),
+                                int(amount))
+    except (ValueError, AttributeError):
+        return None
+    if frm <= 0 or to <= 0 or post < 0 or not 1 <= amount <= 10000:
+        return None
+    return {"from": frm, "to": to, "post": post or None,
+            "amount": amount}
+
+
+async def precheckout_handler(update: Update,
+                              context: ContextTypes.DEFAULT_TYPE):
+    """Phase 133: accept only our own tip invoices — every other
+    pre-checkout is refused, so a forged payload pays nothing."""
+    q = update.pre_checkout_query
+    ok = _parse_tip_payload(q.invoice_payload or "") is not None
+    await q.answer(ok=ok, error_message=None if ok else
+                   "This invoice is not a Nexora tip.")
+
+
+async def successful_payment_handler(update: Update,
+                                     context: ContextTypes.DEFAULT_TYPE):
+    """Phase 133: a Stars payment landed — record the tip.
+    Idempotent on telegram_payment_charge_id: a duplicate
+    update (Telegram retries) records nothing twice. The
+    payer must match the invoice payload, or it is ignored."""
+    sp = update.message.successful_payment
+    if sp is None:
+        return
+    parsed = _parse_tip_payload(sp.invoice_payload or "")
+    if parsed is None:
+        return
+    payer = update.effective_user
+    if payer is None or payer.id != parsed["from"]:
+        return
+    db = SessionLocal()
+    try:
+        charge = sp.telegram_payment_charge_id
+        if charge:
+            existing = db.query(models.Tip).filter_by(
+                telegram_payment_charge_id=charge).first()
+            if existing is not None:
+                return
+        tip = models.Tip(
+            from_user_id=parsed["from"], to_user_id=parsed["to"],
+            post_id=parsed["post"], amount_stars=parsed["amount"],
+            telegram_payment_charge_id=charge, status="completed")
+        db.add(tip)
+        db.commit()
+        name = payer.first_name or "Someone"
+        text = (f"⭐ {name} tipped you {parsed['amount']} Stars!")
+        await notify.notify_user(db, parsed["to"], "tip", text)
+        notify.record(db, parsed["to"], "tip",
+                      actor_id=parsed["from"],
+                      post_id=parsed["post"], text=text)
+    finally:
+        db.close()
+
+
 def build_bot_app() -> Application:
     app = Application.builder().token(settings.BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start_handler))
+    # Phase 133: Stars tip payments.
+    app.add_handler(PreCheckoutQueryHandler(precheckout_handler))
+    app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT,
+                                   successful_payment_handler))
     app.add_handler(MessageHandler(filters.PHOTO, photo_handler))
     app.add_handler(MessageHandler(filters.VIDEO, video_handler))
     return app
