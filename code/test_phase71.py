@@ -134,5 +134,5 @@ print("reply gemini OK")
 assert '"/assistant/chat"' in JS
 print("client markers OK")
 
-assert "app.js?v=139" in HTML and "style.css?v=139" in HTML
+assert "app.js?v=140" in HTML and "style.css?v=140" in HTML
 print("PHASE 71 OK")

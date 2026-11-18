@@ -106,6 +106,8 @@ RATE_LIMITS = {
     "privacy": (120, 3600),
     # Phase 138: DM message reactions.
     "dm_react": (120, 3600),
+    # Phase 140: hashtag follows.
+    "hashtag_follow": (120, 3600),
     "payout_admin": (120, 3600),
 }
 

@@ -1044,7 +1044,11 @@ let feedPostCount = 0;
 
 async function loadFeed(reset) {
   try {
-    const url = "/feed?tab=" + tab + (reset || !feedCursor ? "" : "&cursor=" + feedCursor);
+    // Phase 140: the Hashtags tab reads the followed-hashtag
+    // feed instead of the Explore/Following tabs.
+    const url = tab === "hashtags"
+      ? "/feed/hashtags" + (reset || !feedCursor ? "" : "?cursor=" + feedCursor)
+      : "/feed?tab=" + tab + (reset || !feedCursor ? "" : "&cursor=" + feedCursor);
     const data = await api(url);
     if (reset) {
       $("feed-list").innerHTML = "";
@@ -1076,6 +1080,12 @@ async function loadFeed(reset) {
     feedCursor = data.next_cursor;
     $("feed-more").hidden = !feedCursor;
     $("feed-empty").hidden = data.posts.length > 0 || !reset;
+    if (tab === "hashtags") {
+      $("feed-empty").textContent = "Follow a hashtag to see its " +
+        "posts here — tap any #tag to follow it.";
+    } else {
+      $("feed-empty").textContent = "No posts yet. Be the first to post!";
+    }
   } catch (e) { setStatus("Could not load the feed."); }
 }
 
@@ -1227,6 +1237,7 @@ function setTab(next) {
   feedCursor = null;
   $("tab-explore").classList.toggle("active", tab === "explore");
   $("tab-following").classList.toggle("active", tab === "following");
+  $("tab-hashtags").classList.toggle("active", tab === "hashtags");
   loadFeed(true);
 }
 
@@ -2110,8 +2121,51 @@ async function loadRanks() {
 }
 
 // --------------------------------------------------------------- search ---
+// Phase 140: the set of hashtags the caller follows, cached
+// for the search page's Follow button and the Me card.
+let followedTags = new Set();
+let followedTagsLoaded = false;
+
+
 async function runSearch(q) {
   try {
+    // Phase 140: a #tag search shows a Follow button for the
+    // tag; its label comes from the cached followed set.
+    const tagBtn = $("search-tag-follow");
+    const tagMatch = q.trim().match(/^#([^\s#]{1,50})$/);
+    if (tagMatch) {
+      const tag = tagMatch[1].toLowerCase();
+      tagBtn.hidden = false;
+      const paintTagBtn = () => {
+        tagBtn.textContent = followedTags.has(tag)
+          ? "✓ Following #" + tag : "Follow #" + tag;
+      };
+      paintTagBtn();
+      tagBtn.onclick = async () => {
+        try {
+          if (followedTags.has(tag)) {
+            await api("/hashtags/" + tag + "/follow", { method: "DELETE" });
+            followedTags.delete(tag);
+          } else {
+            await api("/hashtags/" + tag + "/follow", { method: "POST" });
+            followedTags.add(tag);
+          }
+          paintTagBtn();
+          setStatus(followedTags.has(tag) ? "Following #" + tag + "."
+                    : "Unfollowed #" + tag + ".");
+        } catch (e) { setStatus("Could not update hashtag follow."); }
+      };
+      if (!followedTagsLoaded) {
+        followedTagsLoaded = true;
+        try {
+          const mine = await api("/me/hashtags");
+          mine.hashtags.forEach(h => followedTags.add(h.tag));
+          paintTagBtn();
+        } catch (e) { /* label stays "Follow" until it loads */ }
+      }
+    } else {
+      tagBtn.hidden = true;
+    }
     const data = await api("/search?q=" + encodeURIComponent(q));
     const usersBox = $("search-users");
     const postsBox = $("search-posts");
@@ -3646,6 +3700,52 @@ async function myExtras() {
       frBtn.textContent = "👥 Follow requests (" + d.follow_requests.length + ")";
     }
   }).catch(() => {});
+  // Phase 140: Hashtags I follow — each followed tag with its
+  // live post count, and an Unfollow button per row.
+  const htagBtn = document.createElement("button");
+  htagBtn.className = "wide";
+  htagBtn.textContent = "🏷️ Hashtags I follow";
+  const htagBox = document.createElement("div");
+  htagBox.className = "card hashtag-card";
+  htagBox.hidden = true;
+  const renderHtagList = async () => {
+    htagBox.innerHTML = "";
+    try {
+      const mine = await api("/me/hashtags");
+      if (!mine.hashtags.length) {
+        const e = document.createElement("div");
+        e.className = "hint";
+        e.textContent = "No hashtags followed yet — tap any #tag " +
+          "in a post or search to follow it.";
+        htagBox.appendChild(e);
+        return;
+      }
+      mine.hashtags.forEach(h => {
+        const row = document.createElement("div");
+        row.className = "tips-row hashtag-row";
+        const label = document.createElement("span");
+        label.textContent = "#" + h.tag + " · " + h.count + " posts";
+        const un = document.createElement("button");
+        un.textContent = "Unfollow";
+        un.onclick = async () => {
+          try {
+            await api("/hashtags/" + h.tag + "/follow",
+                      { method: "DELETE" });
+            followedTags.delete(h.tag);
+            renderHtagList();
+          } catch (e) { setStatus("Could not unfollow #" + h.tag + "."); }
+        };
+        row.append(label, un);
+        htagBox.appendChild(row);
+      });
+    } catch (e) { htagBox.textContent = "Could not load hashtags."; }
+  };
+  htagBtn.onclick = async () => {
+    htagBox.hidden = !htagBox.hidden;
+    if (htagBox.hidden) return;
+    renderHtagList();
+  };
+  wrap.append(htagBtn, htagBox);
   try {
     const mon = await api("/me/monetization");
     const card = document.createElement("div");
@@ -4351,6 +4451,7 @@ $("cover-file").onchange = async () => {
 };
 $("tab-explore").onclick = () => setTab("explore");
 $("tab-following").onclick = () => setTab("following");
+$("tab-hashtags").onclick = () => setTab("hashtags");
 $("feed-more").onclick = () => loadFeed(false);
 $("profile-more").onclick = () => loadProfilePosts(false);
 $("search-go").onclick = () => runSearch($("search-input").value.trim());

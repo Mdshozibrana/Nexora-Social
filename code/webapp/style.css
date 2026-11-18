@@ -2814,6 +2814,11 @@ html[data-theme] .suggest-follow.on { background: var(--t-chip, #F3DCE7);
 .tips-head { font-weight: 700; margin-top: 10px; }
 .tips-row { padding: 6px 0; border-bottom: 1px solid #E5D9C8; }
 
+/* Phase 140: hashtag follow — rows in the "Hashtags I follow" card. */
+.hashtag-row { display: flex; justify-content: space-between;
+  align-items: center; gap: 8px; }
+.hashtag-row button { padding: 4px 10px; font-size: 13px; }
+
 /* Phase 136: private account — lock notice on a locked profile
    and the privacy toggle row in the profile edit form. */
 .private-lock { text-align: center; padding: 18px 12px; }

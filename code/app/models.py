@@ -584,3 +584,17 @@ class MessageReaction(Base):
     emoji = Column(String(16), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     __table_args__ = (UniqueConstraint("message_id", "user_id"),)
+
+
+class HashtagFollow(Base):
+    """Phase 140: a member follows a hashtag — its posts show
+    up in the Hashtags feed. One row per (member, tag); the tag
+    is stored lowercase without the '#'. No notifications:
+    a hashtag is not a person."""
+    __tablename__ = "hashtag_follows"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("users.telegram_id"),
+                     index=True, nullable=False)
+    tag = Column(String(50), nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    __table_args__ = (UniqueConstraint("user_id", "tag"),)

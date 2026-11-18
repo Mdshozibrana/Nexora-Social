@@ -786,6 +786,55 @@ def feed(tab: str = "explore", type: str = "", cursor: int = 0,
     return {"posts": out, "next_cursor": next_cursor}
 
 
+@app.get("/feed/hashtags")
+def hashtag_feed(cursor: int = 0,
+                 user: models.User = Depends(current_user),
+                 db: Session = Depends(get_db)):
+    """Phase 140: posts carrying ANY hashtag the caller follows —
+    newest first, cursor-paged like /feed. Only originals match:
+    repost rows carry no hashtags of their own (Phase 118), so a
+    repost of a #tech post does not appear here — exactly like
+    the #tag search. Private authors' posts reach only their
+    followers (Phase 136); blocked authors stay hidden; videos
+    are excluded, as on the main feed (Phase 35)."""
+    tags = {f.tag for f in db.query(models.HashtagFollow).filter_by(
+        user_id=user.telegram_id)}
+    if not tags:
+        return {"posts": [], "next_cursor": None}
+    hidden = _block_related_ids(db, user.telegram_id)
+    private_ids = _private_author_ids(db)
+    followed = {f.following_id for f in
+                db.query(models.Follow).filter_by(
+                    follower_id=user.telegram_id)} if private_ids else set()
+    blocked_private = private_ids - followed - {user.telegram_id}
+
+    def _tag_filter(col, tag):
+        # A tag sits at the start, in the middle, at the end, or
+        # alone in the space-joined hashtags column.
+        return or_(col == tag,
+                   col.like(tag + " %"),
+                   col.like("% " + tag + " %"),
+                   col.like("% " + tag))
+
+    q = db.query(models.Post).filter_by(is_deleted=False).filter(
+        models.Post.type != "repost",
+        models.Post.type != "video",
+        or_(*[_tag_filter(models.Post.hashtags, t)
+              for t in sorted(tags)]))
+    if hidden:
+        q = q.filter(~models.Post.user_id.in_(hidden))
+    if blocked_private:
+        q = q.filter(~models.Post.user_id.in_(blocked_private))
+    if cursor:
+        q = q.filter(models.Post.id < cursor)
+    rows = q.order_by(models.Post.id.desc()).limit(20).all()
+    next_cursor = rows[-1].id if len(rows) == 20 else None
+    counts = _post_view_counts(db, rows)
+    _warm_authors(db, rows)
+    out = _post_list(db, rows, user.telegram_id, counts=counts)
+    return {"posts": out, "next_cursor": next_cursor}
+
+
 # ---------------------------------------------------------------------------
 # Phase 122 — Trending: what is hot right now.
 #
@@ -2571,6 +2620,77 @@ def cancel_follow_request(telegram_id: int,
     db.delete(req)
     db.commit()
     return {"cancelled": True}
+
+
+# ---------------------------------------------------------------------------
+# Phase 140: hashtag follows — follow a #tag and its posts show
+# up in the Hashtags feed (GET /feed/hashtags, above). No
+# notifications: a hashtag is not a person, and nobody needs a
+# ping for every new #tech post.
+# ---------------------------------------------------------------------------
+
+
+def _clean_tag(raw: str):
+    """'#Tech' -> 'tech'; None when the tag is not usable
+    (1-50 word characters, after stripping the leading '#')."""
+    tag = (raw or "").strip().lstrip("#").lower()
+    if not tag or not re.fullmatch(r"\w{1,50}", tag):
+        return None
+    return tag
+
+
+@app.post("/hashtags/{tag}/follow")
+def follow_hashtag(tag: str, user: models.User = Depends(current_user),
+                   db: Session = Depends(get_db)):
+    _enforce_rate("hashtag_follow", f"u{user.telegram_id}")
+    clean = _clean_tag(tag)
+    if clean is None:
+        raise HTTPException(400, "Not a valid hashtag")
+    existing = db.query(models.HashtagFollow).filter_by(
+        user_id=user.telegram_id, tag=clean).first()
+    if existing:
+        raise HTTPException(400, "Already following this hashtag")
+    db.add(models.HashtagFollow(user_id=user.telegram_id, tag=clean))
+    db.commit()
+    return {"following": True, "tag": clean}
+
+
+@app.delete("/hashtags/{tag}/follow")
+def unfollow_hashtag(tag: str, user: models.User = Depends(current_user),
+                     db: Session = Depends(get_db)):
+    _enforce_rate("hashtag_follow", f"u{user.telegram_id}")
+    clean = _clean_tag(tag)
+    if clean is None:
+        raise HTTPException(400, "Not a valid hashtag")
+    existing = db.query(models.HashtagFollow).filter_by(
+        user_id=user.telegram_id, tag=clean).first()
+    if existing is None:
+        raise HTTPException(404, "Not following this hashtag")
+    db.delete(existing)
+    db.commit()
+    return {"following": False, "tag": clean}
+
+
+@app.get("/me/hashtags")
+def my_hashtags(user: models.User = Depends(current_user),
+                db: Session = Depends(get_db)):
+    """Tags the caller follows, newest first, each with the
+    number of live original posts carrying it."""
+    rows = db.query(models.HashtagFollow).filter_by(
+        user_id=user.telegram_id).order_by(
+            models.HashtagFollow.id.desc()).all()
+    out = []
+    for f in rows:
+        n = db.query(models.Post).filter_by(is_deleted=False).filter(
+            models.Post.type != "repost",
+            or_(models.Post.hashtags == f.tag,
+                models.Post.hashtags.like(f.tag + " %"),
+                models.Post.hashtags.like("% " + f.tag + " %"),
+                models.Post.hashtags.like("% " + f.tag))).count()
+        out.append({"tag": f.tag, "count": n,
+                    "created_at": (f.created_at.isoformat()
+                                   if f.created_at else None)})
+    return {"hashtags": out}
 
 
 # ---------------------------------------------------------------------------
@@ -5717,6 +5837,8 @@ _BACKUP_TABLES = [
     ("follow_requests", models.FollowRequest),
     # Phase 138: DM message reactions.
     ("message_reactions", models.MessageReaction),
+    # Phase 140: hashtag follows.
+    ("hashtag_follows", models.HashtagFollow),
 ]
 _BACKUP_MODELS = {name: m for name, m in _BACKUP_TABLES}
 _BACKUP_MAX_BYTES = 50 * 1024 * 1024
