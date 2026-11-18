@@ -155,6 +155,18 @@ input, textarea { font: inherit; width: 100%; padding: 10px; border-radius: 10px
 .composer { display: flex; flex-direction: column; gap: 8px; padding: 10px; }
 .composer-row { display: flex; align-items: center; gap: 8px; }
 .composer-row #composer-post { margin-left: auto; }
+
+/* Phase 143: COMPOSER ACTION ROW FITS PHONE WIDTH (owner
+   screenshot 2026-11-18: the five composer actions spilled
+   past the card and the Post button was cut off at ~360px).
+   Root cause: .composer-row was a no-wrap flex row whose five
+   buttons total ~440px against ~316px of card width at 360px
+   viewport, so Post was pushed off-card. The row now wraps;
+   buttons keep their labels (no squashing); Post lands
+   right-aligned on the last line. Same Organic Clay look. */
+.composer-row { flex-wrap: wrap; min-width: 0; }
+.composer-row .tool-btn { flex: none; white-space: nowrap; }
+.composer-row #composer-post { flex: none; }
 .composer .tool-btn { background: #334155; color: #F1F5F9;
                       border-radius: 999px; padding: 8px 13px; font-size: 17px; }
 .attach-chip { background: rgba(51,65,85,.55); border: 1px solid rgba(100,116,139,.5);

@@ -93,7 +93,7 @@ with TestClient(app) as c:
     html = open("webapp/index.html").read()
     js = open("webapp/app.js").read()
     css = open("webapp/style.css").read()
-    assert html.count("?v=142") == 5, html.count("?v=142")
+    assert html.count("?v=143") == 5, html.count("?v=143")
     assert "?v=123" not in html
     # Points history: grouping / chips / compact rows / paging.
     for bit in ("phState", "renderPh", "phDayLabel", "ph-chip",
