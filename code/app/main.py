@@ -136,6 +136,13 @@ def _migrate():
         if "media_type" not in msg_cols:
             conn.execute(text(
                 "ALTER TABLE messages ADD COLUMN media_type VARCHAR(16)"))
+    # Phase 139: story replies — story_id on messages (plain
+    # INTEGER, nullable, no FK: a reply outlives its story, and
+    # deleting the story must never fail on the reference).
+    with engine.begin() as conn:
+        if "story_id" not in msg_cols:
+            conn.execute(text(
+                "ALTER TABLE messages ADD COLUMN story_id INTEGER"))
     # Phase 60: a managed account created as "@name" stored the @
     # IN the username, so every "@" + username render showed
     # "@@name". Strip stray leading @s once (idempotent — later
@@ -6061,13 +6068,19 @@ def _thread_reactions(db, message_ids, me_id):
     return out
 
 
-def _message_dict(m, me_id, reactions=None):
+def _message_dict(m, me_id, reactions=None, stories=None):
     d = {"id": m.id, "mine": m.sender_id == me_id, "text": m.text,
          "media_file_id": m.media_file_id,
          "media_type": m.media_type,
+         "story_id": m.story_id,
          "created_at": m.created_at.isoformat() if m.created_at
          else None,
          "read": m.read_at is not None}
+    if m.story_id is not None and stories is not None:
+        # A deleted/expired story still gets a preview with
+        # live False, so the reply never dangles.
+        d["story"] = stories.get(m.story_id) or {"id": m.story_id,
+                                                 "live": False}
     if reactions is not None:
         d["reactions"] = reactions["reactions"]
         d["my_reaction"] = reactions["my_reaction"]
@@ -6148,8 +6161,10 @@ def message_thread(uid: int,
         {"read_at": datetime.utcnow()})
     db.commit()
     react = _thread_reactions(db, [m.id for m in rows], me)
+    previews = _story_previews(
+        db, [m.story_id for m in rows if m.story_id is not None])
     return {"user": _brief_user(other),
-            "messages": [_message_dict(m, me, react.get(m.id))
+            "messages": [_message_dict(m, me, react.get(m.id), previews)
                          for m in rows]}
 
 
@@ -6292,6 +6307,26 @@ def react_message(message_id: int, body: ReactIn,
             "reactions": counts, "my_reaction": mine}
 
 
+def _story_previews(db, story_ids):
+    """{story_id: preview} for DM story replies — one query for
+    the whole thread. A deleted/expired story is simply absent
+    here, and _message_dict falls back to a live-False stub."""
+    out = {}
+    ids = [i for i in dict.fromkeys(story_ids) if i is not None]
+    if not ids:
+        return out
+    cutoff = datetime.utcnow() - STORY_TTL
+    for s in db.query(models.Story).filter(
+            models.Story.id.in_(ids)).all():
+        u = db.get(models.User, s.user_id)
+        out[s.id] = {"id": s.id, "media_file_id": s.media_file_id,
+                     "author": u.first_name if u else "",
+                     "created_at": s.created_at.isoformat()
+                     if s.created_at else None,
+                     "live": s.created_at > cutoff}
+    return out
+
+
 def _story_dict(db, s, viewer_id):
     views = db.query(models.StoryView).filter_by(story_id=s.id).count()
     viewed = db.query(models.StoryView).filter_by(
@@ -6300,6 +6335,8 @@ def _story_dict(db, s, viewer_id):
             "created_at": s.created_at.isoformat() if s.created_at
             else None,
             "views": views, "viewed": viewed,
+            # Phase 139: the viewer count is the owner's alone.
+            "viewer_count": views if s.user_id == viewer_id else None,
             "mine": s.user_id == viewer_id}
 
 
@@ -6393,6 +6430,67 @@ def delete_story(sid: int, user: models.User = Depends(current_user),
     db.delete(s)
     db.commit()
     return {"ok": True}
+
+
+@app.get("/stories/{sid}/viewers")
+def story_viewers(sid: int, user: models.User = Depends(current_user),
+                  db: Session = Depends(get_db)):
+    """Phase 139: who viewed a story — the owner only, newest
+    first. A view row exists only for a live story, so an expired
+    or deleted story is a 404 here."""
+    s = db.get(models.Story, sid)
+    if s is None or s.created_at <= datetime.utcnow() - STORY_TTL:
+        raise HTTPException(404, "Story not found")
+    if s.user_id != user.telegram_id:
+        raise HTTPException(403, "Only the story owner sees viewers")
+    rows = db.query(models.StoryView).filter_by(
+        story_id=sid).order_by(models.StoryView.id.desc()).all()
+    out = []
+    for v in rows:
+        u = db.get(models.User, v.viewer_id)
+        if u is None:
+            continue
+        out.append({"user": _brief_user(u),
+                    "viewed_at": v.created_at.isoformat()
+                    if v.created_at else None})
+    return {"story_id": sid, "viewers": out}
+
+
+class StoryReplyIn(BaseModel):
+    text: str = Field(default="", max_length=2000)
+
+
+@app.post("/stories/{sid}/reply")
+def reply_story(sid: int, body: StoryReplyIn,
+                user: models.User = Depends(current_user),
+                db: Session = Depends(get_db)):
+    """Phase 139: a text reply to a story lands as a DM to the
+    story owner, carrying story_id so the thread can show the
+    story preview. Text only — no photo replies in this phase."""
+    s = db.get(models.Story, sid)
+    if s is None or s.created_at <= datetime.utcnow() - STORY_TTL:
+        raise HTTPException(404, "Story not found")
+    me = user.telegram_id
+    if s.user_id == me:
+        raise HTTPException(400, "You can't reply to your own story")
+    if s.user_id in _block_related_ids(db, me):
+        raise HTTPException(403, "You can't message this user")
+    if not _can_see_posts(db, me, s.user_id):
+        raise HTTPException(403, "This account is private")
+    text = (body.text or "").strip()
+    if not text:
+        raise HTTPException(400, "Reply is empty")
+    _enforce_rate("message", f"u{me}")
+    m = models.Message(sender_id=me, recipient_id=s.user_id,
+                       text=text, story_id=sid)
+    db.add(m)
+    db.commit()
+    db.refresh(m)
+    notify.record(db, s.user_id, "message", actor_id=me,
+                  text=f"{user.first_name} replied to your story")
+    previews = _story_previews(db, [sid])
+    return _message_dict(m, me, {"reactions": {}, "my_reaction": None},
+                         previews)
 
 
 # ---------------------------------------------------------------------------

@@ -444,6 +444,8 @@ class Message(Base):
     # Phase 138: DM photos — a Telegram file_id, like posts/stories.
     media_file_id = Column(String(256), nullable=True)
     media_type = Column(String(16), nullable=True)  # photo only
+    # Phase 139: story replies — a DM that answers a story.
+    story_id = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     read_at = Column(DateTime, nullable=True)
 

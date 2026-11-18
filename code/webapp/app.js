@@ -7685,6 +7685,31 @@ async function loadThread(scroll) {
           openPhotoViewer(m.media_file_id, "Photo"); };
         b.appendChild(img);
       }
+      // Phase 139: a story reply carries its story preview —
+      // tap it to open the story while it is still live.
+      if (m.story) {
+        const chip = document.createElement("div");
+        chip.className = "story-reply-chip";
+        if (m.story.live && m.story.media_file_id) {
+          const th = document.createElement("img");
+          th.className = "story-reply-thumb";
+          th.src = mediaUrl(m.story.media_file_id);
+          th.alt = "Story";
+          chip.appendChild(th);
+        }
+        const lb = document.createElement("span");
+        lb.textContent = m.story.live
+          ? "Replied to " + (m.mine ? (m.story.author || "their") +
+                             "’s story" : "your story")
+          : "Replied to a story (expired)";
+        chip.appendChild(lb);
+        chip.onclick = e => {
+          e.stopPropagation();
+          if (m.story.live) openStoryById(m.story.id);
+          else setStatus("That story has expired.");
+        };
+        b.appendChild(chip);
+      }
       if (m.text) b.appendChild(document.createTextNode(m.text));
       // Phase 138: reactions under the bubble (tappable chips) +
       // a tap-to-open emoji picker. The 8 s poll rebuilds the
@@ -7880,7 +7905,20 @@ function paintStory() {
   $("story-author").textContent = g.author.first_name +
     (g.author.verified ? " ✓" : "");
   $("story-time").textContent = relTime(s.created_at);
-  $("story-views").textContent = s.mine ? "👁 " + s.views + " views" : "";
+  // Phase 139: the owner sees the viewer count (tap to list
+  // viewers); everyone else gets a reply box instead.
+  const viewsEl = $("story-views");
+  const vc = (s.viewer_count === null || s.viewer_count === undefined)
+    ? s.views : s.viewer_count;
+  viewsEl.textContent = s.mine ? "👁 " + vc + " viewers" : "";
+  viewsEl.style.cursor = s.mine ? "pointer" : "";
+  viewsEl.onclick = s.mine ? () => openStoryViewers(s.id) : null;
+  const replyRow = $("story-reply");
+  replyRow.hidden = !!s.mine;
+  if (!s.mine) {
+    const inp = $("story-reply-input");
+    if (document.activeElement !== inp) inp.value = "";
+  }
   $("story-del").hidden = !s.mine && !(me && me.is_admin);
   const fill = $("story-progress-fill");
   fill.style.transition = "none";
@@ -7925,6 +7963,18 @@ function closeStory() {
   $("story-wrap").hidden = true;
   loadStories();
 }
+// Phase 139: open a story from a DM reply's preview chip.
+async function openStoryById(sid) {
+  try {
+    const r = await api("/stories");
+    storyGroups = r.groups;
+    for (let gi = 0; gi < storyGroups.length; gi++) {
+      const si = storyGroups[gi].stories.findIndex(s => s.id === sid);
+      if (si >= 0) { openStory(gi, si); return; }
+    }
+    setStatus("That story has expired.");
+  } catch (e) { setStatus("Could not open the story."); }
+}
 $("story-close").onclick = closeStory;
 $("story-backdrop").onclick = closeStory;
 $("story-next").onclick = nextStory;
@@ -7939,6 +7989,88 @@ $("story-del").onclick = async () => {
   } catch (e) { setStatus("Could not delete the story."); }
   closeStory();
 };
+
+// Phase 139: who viewed a story — the owner only. The list
+// opens as a panel inside the story viewer (the reel sheet
+// sits below it, z-index 70 vs 90, so it cannot be reused).
+async function openStoryViewers(sid) {
+  const panel = $("story-viewers");
+  const list = $("story-viewers-list");
+  list.innerHTML = "";
+  const load = document.createElement("div");
+  load.className = "hint";
+  load.textContent = "Loading viewers…";
+  list.appendChild(load);
+  panel.hidden = false;
+  stopStoryTimer();
+  try {
+    const r = await api("/stories/" + sid + "/viewers");
+    load.remove();
+    if (!r.viewers.length) {
+      const none = document.createElement("div");
+      none.className = "hint";
+      none.textContent = "No one has viewed this story yet.";
+      list.appendChild(none);
+    }
+    r.viewers.forEach(v => {
+      const row = document.createElement("div");
+      row.className = "story-viewer-row";
+      row.appendChild(avatarEl(v.user.first_name, v.user.telegram_id,
+                               false, v.user.photo_file_id));
+      const tx = document.createElement("div");
+      const nm = document.createElement("div");
+      nm.className = "story-viewer-name";
+      nm.textContent = v.user.first_name +
+        (v.user.username ? " @" + v.user.username : "") +
+        (v.user.verified ? " ✓" : "");
+      const tm = document.createElement("div");
+      tm.className = "story-viewer-time";
+      tm.textContent = relTime(v.viewed_at);
+      tx.append(nm, tm);
+      row.appendChild(tx);
+      list.appendChild(row);
+    });
+  } catch (e) { load.textContent = "Could not load viewers."; }
+}
+function closeStoryViewers() {
+  $("story-viewers").hidden = true;
+  if (storyPos) {
+    stopStoryTimer();
+    storyTimer = setTimeout(nextStory, 6000);
+  }
+}
+// Phase 139: a text reply to a story lands as a DM to the
+// story owner. The 6 s auto-advance pauses while typing.
+async function sendStoryReply() {
+  if (!storyPos) return;
+  const g = storyGroups[storyPos.g];
+  const s = g && g.stories[storyPos.s];
+  const inp = $("story-reply-input");
+  const text = inp.value.trim();
+  if (!s || !text) return;
+  inp.value = "";
+  try {
+    await api("/stories/" + s.id + "/reply",
+      { method: "POST", body: JSON.stringify({ text }) });
+    setStatus("Reply sent ✉️");
+  } catch (e) { setStatus("Reply could not be sent."); }
+  if (storyPos) {
+    stopStoryTimer();
+    storyTimer = setTimeout(nextStory, 6000);
+  }
+}
+$("story-reply-send").onclick = sendStoryReply;
+$("story-reply-input").addEventListener("keydown", e => {
+  if (e.key === "Enter") sendStoryReply();
+});
+$("story-reply-input").addEventListener("focus", stopStoryTimer);
+$("story-reply-input").addEventListener("blur", () => {
+  if (storyPos) {
+    stopStoryTimer();
+    storyTimer = setTimeout(nextStory, 6000);
+  }
+});
+$("story-viewers-close").onclick = closeStoryViewers;
 
 // ---------- Phase 69: Nexa, the AI assistant ----------
 // She lives behind the sidebar: her chat opens only from her

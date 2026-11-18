@@ -1381,6 +1381,36 @@ button.liked { animation: heartPop .32s cubic-bezier(.22,.9,.3,1); }
   color: #fff; border: 1px solid rgba(255, 255, 255, .5);
   border-radius: 999px; padding: 6px 12px; cursor: pointer; }
 
+/* Phase 139: story replies + viewer list. The reply row sits
+   above the story foot; the viewer panel slides up inside the
+   story viewer (the reel sheet is z-index 70, below the story
+   wrap at 90, so it cannot host this list). */
+.story-reply { position: absolute; left: 12px; right: 12px;
+  bottom: 16px; display: flex; gap: 8px; z-index: 3; }
+.story-reply input { flex: 1; min-width: 0;
+  border: 1px solid rgba(255, 255, 255, .5);
+  background: rgba(0, 0, 0, .45); color: #fff;
+  border-radius: 999px; padding: 10px 14px; font-size: 14px;
+  outline: none; }
+.story-reply input::placeholder { color: rgba(255, 255, 255, .7); }
+.story-reply button { background: #3E8FD0; color: #fff; border: none;
+  border-radius: 999px; padding: 10px 16px; font-weight: 700;
+  cursor: pointer; }
+#story-viewers { position: absolute; left: 0; right: 0; bottom: 0;
+  max-height: 70%; overflow-y: auto; z-index: 4;
+  background: #FFFBFC; color: #3A2E33;
+  border-radius: 18px 18px 0 0; padding: 14px 16px 20px; }
+.story-viewer-row { display: flex; align-items: center; gap: 10px;
+  padding: 8px 2px; }
+.story-viewer-name { font-weight: 700; }
+.story-viewer-time { font-size: 12px; color: #8A6D7B; }
+.story-reply-chip { display: flex; align-items: center; gap: 8px;
+  background: rgba(0, 0, 0, .08); border-radius: 10px;
+  padding: 6px 8px; margin-bottom: 6px; font-size: 12px;
+  cursor: pointer; }
+.story-reply-thumb { width: 32px; height: 32px; object-fit: cover;
+  border-radius: 8px; }
+
 /* ================================================================
    Phase 37 — the Games lamp: the section opens in darkness,
    only the lamp and its pull rope visible; pull the rope and
