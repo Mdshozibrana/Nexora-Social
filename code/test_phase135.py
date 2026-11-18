@@ -9,7 +9,7 @@ member's 404, cancel unknown 404; sweeper publishes a due post
 hashtags extracted) and skips future rows; sweeper marks a
 screening-rejected post failed with a short human error, logs a
 screen_reject event, and does NOT retry it on the next sweep;
-backup carries 38 tables incl. scheduled_posts rows; ?v=135 x5,
+backup carries 39 tables incl. scheduled_posts rows; ?v=136 x5,
 no ?v=134; scheduled-post client markers + Phase 123-134
 markers intact.
 """
@@ -211,19 +211,19 @@ with TestClient(app) as c:
     assert post_count(222) == n0, "a failed row is never retried"
     print("sweeper screening failure OK (failed, logged, no retry)")
 
-    # 7. Backup carries 38 tables incl. scheduled_posts rows.
+    # 7. Backup carries 39 tables incl. scheduled_posts rows.
     r = c.get("/admin/backup", headers=ALICE)
     assert r.status_code == 200, r.status_code
     bk = r.json()
-    assert len(bk["tables"]) == 38, len(bk["tables"])
+    assert len(bk["tables"]) == 39, len(bk["tables"])
     assert "scheduled_posts" in bk["tables"], list(bk["tables"])
     assert len(bk["tables"]["scheduled_posts"]) >= 5, \
         len(bk["tables"]["scheduled_posts"])
-    print("backup: 38 tables incl. scheduled_posts OK")
+    print("backup: 39 tables incl. scheduled_posts OK")
 
     # 8. Client markers + asset version.
     html = open("webapp/index.html").read()
-    assert html.count("?v=135") == 5, html.count("?v=135")
+    assert html.count("?v=136") == 5, html.count("?v=136")
     assert "?v=134" not in html
     assert 'id="composer-schedule-toggle"' in html
     assert 'id="composer-schedule"' in html
@@ -240,6 +240,6 @@ with TestClient(app) as c:
               "loadBackupStatus", "openTipSheet", "openInsights",
               "ins-chart", "ins-table"):
         assert m in js, m
-    print("client markers + ?v=135 OK")
+    print("client markers + ?v=136 OK")
 
 print("PHASE-135 TESTS PASSED")

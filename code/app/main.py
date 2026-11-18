@@ -119,6 +119,13 @@ def _migrate():
         if "wallet_network" not in existing:
             conn.execute(text(
                 "ALTER TABLE users ADD COLUMN wallet_network VARCHAR(16)"))
+    # Phase 136: private accounts — posts visible only to
+    # approved followers (Postgres-legal DEFAULT FALSE; the
+    # Phase 126 lesson: never a 0 default on a boolean in raw SQL).
+    with engine.begin() as conn:
+        if "is_private" not in existing:
+            conn.execute(text(
+                "ALTER TABLE users ADD COLUMN is_private BOOLEAN DEFAULT FALSE"))
     # Phase 60: a managed account created as "@name" stored the @
     # IN the username, so every "@" + username render showed
     # "@@name". Strip stray leading @s once (idempotent — later
@@ -703,6 +710,17 @@ def feed(tab: str = "explore", type: str = "", cursor: int = 0,
     hidden = _block_related_ids(db, user.telegram_id)
     if hidden:
         q = q.filter(~models.Post.user_id.in_(hidden))
+    # Phase 136: a private account's posts reach only its
+    # followers (and itself) — everyone else never sees them.
+    blocked_private = set()
+    private_ids = _private_author_ids(db)
+    if private_ids:
+        followed = {f.following_id for f in
+                    db.query(models.Follow).filter_by(
+                        follower_id=user.telegram_id)}
+        blocked_private = private_ids - followed - {user.telegram_id}
+        if blocked_private:
+            q = q.filter(~models.Post.user_id.in_(blocked_private))
     if type in ("photo", "video", "text"):
         # Phase 118: repost rows carry type "repost" — they ride
         # along and are matched against the ORIGINAL's type below.
@@ -731,6 +749,9 @@ def feed(tab: str = "explore", type: str = "", cursor: int = 0,
             continue
         orig = db.get(models.Post, p.repost_of_id)
         if orig is None or orig.is_deleted:
+            continue
+        # Phase 136: a repost must not leak a private author's post.
+        if orig.user_id in blocked_private:
             continue
         if type in ("photo", "video", "text"):
             if orig.type == type:
@@ -787,6 +808,11 @@ def _trending_ranked(db, user, limit=20):
         models.Post.type != "repost")
     if hidden:
         q = q.filter(~models.Post.user_id.in_(hidden))
+    # Phase 136: private accounts' posts never trend — Trending
+    # is a public surface.
+    private_ids = _private_author_ids(db)
+    if private_ids:
+        q = q.filter(~models.Post.user_id.in_(private_ids))
     rows = q.all()
     ids = [p.id for p in rows]
     likes7 = _engagement_counts(db, models.Like, ids, week_ago)
@@ -1161,6 +1187,28 @@ def _block_related_ids(db, user_id):
         out.add(r.blocked_id)
     out.discard(user_id)
     return out
+
+
+# ---------------------------------------------------------------------------
+# Phase 136: private accounts — who may see whose posts.
+# ---------------------------------------------------------------------------
+
+def _private_author_ids(db):
+    """Ids of members whose posts only followers may see."""
+    return {r[0] for r in db.query(models.User.telegram_id).filter(
+        models.User.is_private == True).all()}
+
+
+def _can_see_posts(db, viewer_id, author_id):
+    """A private account's posts are visible only to its
+    followers and itself; everyone else's posts are public."""
+    if viewer_id == author_id:
+        return True
+    author = db.get(models.User, author_id)
+    if author is None or not getattr(author, "is_private", False):
+        return True
+    return db.query(models.Follow).filter_by(
+        follower_id=viewer_id, following_id=author_id).first() is not None
 
 
 def _blocked_by(db, blocker_id, user_id):
@@ -2313,6 +2361,12 @@ def public_profile(telegram_id: int, user: models.User = Depends(current_user),
         "following_count": following_count,
         # "following" is the flag: does the current user follow this profile.
         "following": is_following,
+        # Phase 136: private-account state for the profile view
+        # (lock notice + Follow/Requested button).
+        "is_private": bool(getattr(target, "is_private", False)),
+        "has_pending_request": db.query(models.FollowRequest).filter_by(
+            requester_id=user.telegram_id, target_id=telegram_id,
+            status="pending").first() is not None,
         # R5: whether the viewer has blocked this member (the
         # profile offers Block/Unblock from this flag).
         "blocked_by_me": _blocked_by(db, user.telegram_id, telegram_id),
@@ -2326,7 +2380,8 @@ async def toggle_follow(telegram_id: int, user: models.User = Depends(current_us
     _enforce_rate("follow", f"u{user.telegram_id}")
     if telegram_id == user.telegram_id:
         raise HTTPException(400, "You cannot follow yourself")
-    if db.get(models.User, telegram_id) is None:
+    target = db.get(models.User, telegram_id)
+    if target is None:
         raise HTTPException(404, "User not found")
     if _blocked_by(db, telegram_id, user.telegram_id) \
             or _blocked_by(db, user.telegram_id, telegram_id):
@@ -2339,21 +2394,158 @@ async def toggle_follow(telegram_id: int, user: models.User = Depends(current_us
     if existing:
         db.delete(existing)
         now_following = False
+        requested = False
     else:
-        db.add(models.Follow(follower_id=user.telegram_id,
-                             following_id=telegram_id))
-        now_following = True
+        # Phase 136: following a private account asks first — a
+        # pending request instead of an instant follow. Asking
+        # again while one is pending is a 400; cancelling it is
+        # DELETE /users/{id}/follow-request.
+        pending = db.query(models.FollowRequest).filter_by(
+            requester_id=user.telegram_id, target_id=telegram_id,
+            status="pending").first()
+        if pending:
+            raise HTTPException(
+                400, "Follow request already pending")
+        elif getattr(target, "is_private", False):
+            db.add(models.FollowRequest(
+                requester_id=user.telegram_id, target_id=telegram_id))
+            now_following = False
+            requested = True
+        else:
+            db.add(models.Follow(follower_id=user.telegram_id,
+                                 following_id=telegram_id))
+            now_following = True
+            requested = False
     db.commit()
     followers = db.query(models.Follow).filter_by(following_id=telegram_id).count()
     if telegram_id == OFFICIAL_ID:
         followers += OFFICIAL_FOLLOWER_BASE
-    if now_following:
+    if requested:
+        await notify.notify_user(
+            db, telegram_id, "follow_request",
+            f"\U0001F465 {user.first_name} wants to follow you.")
+        notify.record(db, telegram_id, "follow_request",
+                      actor_id=user.telegram_id,
+                      text="wants to follow you")
+    elif now_following:
         await notify.notify_user(
             db, telegram_id, "follow",
             f"\U0001F465 {user.first_name} started following you.")
         notify.record(db, telegram_id, "follow",
                       actor_id=user.telegram_id)
-    return {"following": now_following, "followers": followers}
+    return {"following": now_following, "requested": requested,
+            "followers": followers}
+
+
+# ---------------------------------------------------------------------------
+# Phase 136: private accounts — a follow request the owner
+# approves, instead of an instant follow. Visibility is enforced
+# in feed / profile posts / GET /posts/{id} / Trending (above);
+# the toggle itself lives on /me/privacy and the official
+# account can never be private.
+# ---------------------------------------------------------------------------
+
+class PrivacyIn(BaseModel):
+    is_private: bool = False
+
+
+@app.post("/me/privacy")
+def set_privacy(body: PrivacyIn, user: models.User = Depends(current_user),
+                db: Session = Depends(get_db)):
+    """Flip your own account private or public. The official
+    account stays public — it is the platform's front door."""
+    _enforce_rate("privacy", f"u{user.telegram_id}")
+    if user.telegram_id == OFFICIAL_ID:
+        raise HTTPException(
+            400, "The official Nexora Social account cannot be private")
+    user.is_private = bool(body.is_private)
+    db.commit()
+    return {"is_private": bool(user.is_private)}
+
+
+def follow_request_dict(db, r):
+    ru = db.get(models.User, r.requester_id)
+    return {
+        "id": r.id,
+        "requester_id": r.requester_id,
+        "first_name": ru.first_name if ru else "",
+        "username": ru.username if ru else None,
+        "photo_file_id": ru.photo_file_id if ru else None,
+        "created_at": r.created_at.isoformat() if r.created_at else None,
+    }
+
+
+@app.get("/me/follow-requests")
+def my_follow_requests(user: models.User = Depends(current_user),
+                       db: Session = Depends(get_db)):
+    """Incoming pending follow requests, newest first."""
+    rows = db.query(models.FollowRequest).filter_by(
+        target_id=user.telegram_id, status="pending") \
+        .order_by(models.FollowRequest.id.desc()).all()
+    return {"follow_requests": [follow_request_dict(db, r) for r in rows]}
+
+
+def _pending_request_for(db, request_id, target_id):
+    req = db.get(models.FollowRequest, request_id)
+    if req is None or req.target_id != target_id \
+            or req.status != "pending":
+        raise HTTPException(404, "Follow request not found")
+    return req
+
+
+@app.post("/follow-requests/{request_id}/accept")
+async def accept_follow_request(request_id: int,
+                                user: models.User = Depends(current_user),
+                                db: Session = Depends(get_db)):
+    """Approve a follow request: the requester becomes a
+    follower and hears about it."""
+    _enforce_rate("follow", f"u{user.telegram_id}")
+    req = _pending_request_for(db, request_id, user.telegram_id)
+    if db.query(models.Follow).filter_by(
+            follower_id=req.requester_id,
+            following_id=user.telegram_id).first() is None:
+        db.add(models.Follow(follower_id=req.requester_id,
+                             following_id=user.telegram_id))
+    req.status = "accepted"
+    db.commit()
+    await notify.notify_user(
+        db, req.requester_id, "follow",
+        f"\u2705 {user.first_name} accepted your follow request.")
+    notify.record(db, req.requester_id, "follow",
+                  actor_id=user.telegram_id,
+                  text="accepted your follow request")
+    return {"accepted": True, "request_id": req.id}
+
+
+@app.post("/follow-requests/{request_id}/reject")
+def reject_follow_request(request_id: int,
+                          user: models.User = Depends(current_user),
+                          db: Session = Depends(get_db)):
+    """Turn a follow request away: no follow row, no message."""
+    _enforce_rate("follow", f"u{user.telegram_id}")
+    req = _pending_request_for(db, request_id, user.telegram_id)
+    req.status = "rejected"
+    db.commit()
+    return {"rejected": True, "request_id": req.id}
+
+
+@app.delete("/users/{telegram_id}/follow-request")
+def cancel_follow_request(telegram_id: int,
+                          user: models.User = Depends(current_user),
+                          db: Session = Depends(get_db)):
+    """Cancel your own pending follow request to this member —
+    the profile button's "Requested — tap to cancel" action.
+    A second POST /follow while one is pending is a 400, so the
+    cancel has its own call."""
+    _enforce_rate("follow", f"u{user.telegram_id}")
+    req = db.query(models.FollowRequest).filter_by(
+        requester_id=user.telegram_id, target_id=telegram_id,
+        status="pending").first()
+    if req is None:
+        raise HTTPException(404, "No pending follow request")
+    db.delete(req)
+    db.commit()
+    return {"cancelled": True}
 
 
 # ---------------------------------------------------------------------------
@@ -2581,9 +2773,19 @@ def search(q: str = "", user: models.User = Depends(current_user),
             return {"users": [], "posts": []}
         rows = db.query(models.Post).filter_by(is_deleted=False) \
             .order_by(models.Post.id.desc()).limit(100).all()
+        # Phase 136: hashtag search shows only posts the
+        # viewer may see — a private author's posts stay hidden.
+        private_ids = _private_author_ids(db)
+        followed = {f.following_id for f in
+                    db.query(models.Follow).filter_by(
+                        follower_id=user.telegram_id)} \
+            if private_ids else set()
         matched = [p for p in rows
                    if tag in (p.hashtags or "").split()
-                   and p.user_id not in hidden][:20]
+                   and p.user_id not in hidden
+                   and (p.user_id not in private_ids
+                        or p.user_id in followed
+                        or p.user_id == user.telegram_id)][:20]
         return {"users": [], "posts": _post_list(db, matched, user.telegram_id)}
     if not q:
         return {"users": [], "posts": []}
@@ -2634,6 +2836,11 @@ def user_posts(telegram_id: int, cursor: int = 0,
     if db.get(models.User, telegram_id) is None \
             or _blocked_by(db, telegram_id, user.telegram_id):
         raise HTTPException(404, "User not found")
+    # Phase 136: a private account's posts are locked to
+    # non-followers — the list comes back empty with a flag.
+    if telegram_id != user.telegram_id and not _can_see_posts(
+            db, user.telegram_id, telegram_id):
+        return {"posts": [], "next_cursor": None, "locked": True}
     q = db.query(models.Post).filter_by(user_id=telegram_id, is_deleted=False)
     if cursor:
         # Later pages are plain newest-first, and the pinned
@@ -3217,6 +3424,14 @@ def get_post(post_id: int,
     p = db.get(models.Post, post_id)
     if p is None or p.is_deleted:
         raise HTTPException(404, "Post not found")
+    # Phase 136: a private account's post — even via a repost —
+    # is visible only to its followers and itself.
+    eff_id = p.repost_of_id or p.id
+    eff = db.get(models.Post, eff_id) if eff_id != p.id else p
+    if eff is None or eff.is_deleted:
+        raise HTTPException(404, "Post not found")
+    if not _can_see_posts(db, user.telegram_id, eff.user_id):
+        raise HTTPException(403, "This account is private")
     counts = _post_view_counts(db, [p])
     out = _post_list(db, [p], user.telegram_id, counts=counts)
     if not out:
@@ -3387,6 +3602,7 @@ _NOTIF_PHRASES = {
     "like": "liked your post",
     "comment": "commented on your post",
     "follow": "started following you",
+    "follow_request": "wants to follow you",
     "share": "shared a post with you",
     "repost": "reposted your post",
     "reply": "replied to your comment",
@@ -5367,6 +5583,8 @@ _BACKUP_TABLES = [
     ("tips", models.Tip),
     # Phase 135: scheduled posts.
     ("scheduled_posts", models.ScheduledPost),
+    # Phase 136: private-account follow requests.
+    ("follow_requests", models.FollowRequest),
 ]
 _BACKUP_MODELS = {name: m for name, m in _BACKUP_TABLES}
 _BACKUP_MAX_BYTES = 50 * 1024 * 1024

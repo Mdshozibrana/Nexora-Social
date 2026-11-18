@@ -1182,21 +1182,36 @@ function suggestCard(users) {
     person.appendChild(reason);
     const fBtn = document.createElement("button");
     fBtn.className = "suggest-follow";
-    let following = false;
+    let following = false, requested = false;
+    // Phase 136: a private account shows Requested until the
+    // owner accepts the follow request.
     const paint = () => {
-      fBtn.textContent = following ? "Following ✓" : "Follow";
-      fBtn.classList.toggle("on", following);
+      fBtn.textContent = requested ? "Requested ✓"
+        : following ? "Following ✓" : "Follow";
+      fBtn.classList.toggle("on", following || requested);
     };
     paint();
     fBtn.onclick = async () => {
       fBtn.disabled = true;
       try {
-        const r = await api("/users/" + u.telegram_id + "/follow",
-                            { method: "POST" });
-        following = !!r.following;
-        paint();
-        setStatus(following ? "Following " + u.first_name + "."
-                            : "Unfollowed " + u.first_name + ".");
+        // Phase 136: while a request is pending, tapping
+        // cancels it (a second POST /follow would be a 400).
+        if (requested) {
+          await api("/users/" + u.telegram_id + "/follow-request",
+                    { method: "DELETE" });
+          requested = false;
+          paint();
+          setStatus("Follow request to " + u.first_name + " cancelled.");
+        } else {
+          const r = await api("/users/" + u.telegram_id + "/follow",
+                              { method: "POST" });
+          following = !!r.following;
+          requested = !!r.requested;
+          paint();
+          setStatus(r.requested ? "Follow request sent to " + u.first_name + "."
+                    : following ? "Following " + u.first_name + "."
+                    : "Unfollowed " + u.first_name + ".");
+        }
       } catch (e) { setStatus("Could not update follow."); }
       fBtn.disabled = false;
     };
@@ -1603,15 +1618,25 @@ async function openReelMenu(p, reelEl) {
       if (u.is_official) fRow.remove();
       else {
         fRow.lastChild.textContent =
-          (u.following ? "Unfollow @" : "Follow @") +
+          (u.has_pending_request ? "Requested ✓ @"
+           : u.following ? "Unfollow @" : "Follow @") +
           (p.author_username || p.author_name);
         fRow.onclick = async () => {
           closeReelMenu();
           try {
+            // Phase 136: while a request is pending, tapping
+            // cancels it (a second POST /follow would be a 400).
+            if (u.has_pending_request) {
+              await api("/users/" + p.author_id + "/follow-request",
+                        { method: "DELETE" });
+              setStatus("Follow request to " + p.author_name + " cancelled.");
+              return;
+            }
             const r = await api("/users/" + p.author_id + "/follow",
                                 { method: "POST" });
-            setStatus(r.following ? "Following " + p.author_name + "."
-                                  : "Unfollowed " + p.author_name + ".");
+            setStatus(r.requested ? "Follow request sent to " + p.author_name + "."
+                      : r.following ? "Following " + p.author_name + "."
+                      : "Unfollowed " + p.author_name + ".");
           } catch (e) { setStatus("Could not update follow."); }
         };
       }
@@ -2915,16 +2940,34 @@ async function openProfile(userId) {
     } else if (me && userId !== me.telegram_id) {
       const fBtn = document.createElement("button");
       fBtn.className = "wide btn";
-      const paint = () => { fBtn.textContent = u.following ? "Unfollow" : "Follow"; };
+      // Phase 136: a private account shows Requested until the
+      // owner accepts; tapping again cancels the request.
+      const paint = () => {
+        fBtn.textContent = u.has_pending_request
+          ? "Requested ✓ — tap to cancel"
+          : u.following ? "Unfollow" : "Follow";
+      };
       paint();
       fBtn.onclick = async () => {
         try {
+          // Phase 136: while a request is pending, tapping
+          // cancels it (a second POST /follow would be a 400).
+          if (u.has_pending_request) {
+            await api("/users/" + userId + "/follow-request",
+                      { method: "DELETE" });
+            u.has_pending_request = false;
+            paint();
+            setStatus("Follow request cancelled.");
+            return;
+          }
           const r = await api("/users/" + userId + "/follow", { method: "POST" });
           u.following = r.following;
+          u.has_pending_request = !!r.requested;
           u.followers = r.followers;
           stats.textContent = u.followers + " followers · " +
             u.following_count + " following";
           paint();
+          if (r.requested) setStatus("Follow request sent — you'll see their posts once it's accepted 👥");
         } catch (e) { setStatus("Could not update follow."); }
       };
       box.appendChild(fBtn);
@@ -3005,7 +3048,31 @@ async function openProfile(userId) {
           openProfile(userId);
         } catch (e) { setStatus("Could not save the profile."); }
       };
-      form.append(nameIn, bioIn, saveBtn);
+      // Phase 136: the private-account toggle lives in the
+      // profile edit form — only approved followers will see
+      // your posts while it is on.
+      const privRow = document.createElement("label");
+      privRow.className = "privacy-row";
+      const privChk = document.createElement("input");
+      privChk.type = "checkbox";
+      privChk.checked = !!u.is_private;
+      const privTx = document.createElement("span");
+      privTx.textContent = "🔒 Private account — only approved followers will see your posts.";
+      privRow.append(privChk, privTx);
+      privChk.onchange = async () => {
+        try {
+          const r = await api("/me/privacy", { method: "POST",
+            body: JSON.stringify({ is_private: privChk.checked }) });
+          u.is_private = r.is_private;
+          setStatus(r.is_private
+            ? "Your account is now private 🔒"
+            : "Your account is now public.");
+        } catch (e) {
+          privChk.checked = !!u.is_private;
+          setStatus("Could not change privacy.");
+        }
+      };
+      form.append(nameIn, bioIn, privRow, saveBtn);
       if (u.name_locked_days > 0) {
         const note = document.createElement("div");
         note.className = "gb-foot-sub";
@@ -3020,7 +3087,17 @@ async function openProfile(userId) {
     }
 
     if (me && userId === me.telegram_id) box.appendChild(await myExtras());
-    await loadProfilePosts(true);
+    // Phase 136: a private account's posts stay hidden until a
+    // follow request is accepted — show the lock, not the posts.
+    if (u.is_private && !u.following && !ownProfile) {
+      const lock = document.createElement("div");
+      lock.className = "card private-lock";
+      lock.textContent = "🔒 This account is private — follow to see their posts.";
+      $("profile-posts").appendChild(lock);
+      $("profile-more").hidden = true;
+    } else {
+      await loadProfilePosts(true);
+    }
   } catch (e) { box.textContent = "Could not load the profile."; }
 }
 
@@ -3029,6 +3106,17 @@ async function loadProfilePosts(reset) {
     const url = "/users/" + profileId + "/posts" +
       (reset || !profileCursor ? "" : "?cursor=" + profileCursor);
     const data = await api(url);
+    // Phase 136: the server locks a private account's posts
+    // for non-followers — show the lock, not an error.
+    if (data.locked) {
+      if (reset) $("profile-posts").innerHTML = "";
+      const lock = document.createElement("div");
+      lock.className = "card private-lock";
+      lock.textContent = "🔒 This account is private — follow to see their posts.";
+      $("profile-posts").appendChild(lock);
+      $("profile-more").hidden = true;
+      return;
+    }
     if (reset) $("profile-posts").innerHTML = "";
     data.posts.forEach(p => $("profile-posts").appendChild(postCard(p)));
     profileCursor = data.next_cursor;
@@ -3434,6 +3522,66 @@ async function myExtras() {
   };
   wrap.appendChild(schedBtn);
   wrap.appendChild(schedBox);
+  // Phase 136: Follow requests — people waiting to follow your
+  // private account. Accept lets them in, Reject turns them away.
+  const frBtn = document.createElement("button");
+  frBtn.className = "wide";
+  frBtn.textContent = "👥 Follow requests";
+  const frBox = document.createElement("div");
+  frBox.className = "drafts-box";
+  frBox.hidden = true;
+  const loadFollowRequests = async () => {
+    frBox.innerHTML = "Loading…";
+    try {
+      const data = await api("/me/follow-requests");
+      frBox.innerHTML = "";
+      if (!data.follow_requests.length) {
+        frBox.textContent = "No follow requests — turn on 🔒 Private account and requests will show up here.";
+        return;
+      }
+      data.follow_requests.forEach(fr => {
+        const rowEl = document.createElement("div");
+        rowEl.className = "draft-row";
+        const tx = document.createElement("span");
+        tx.className = "draft-text";
+        tx.textContent = (fr.first_name || "?") +
+          (fr.username ? " (@" + fr.username + ")" : "");
+        rowEl.appendChild(tx);
+        const ok = document.createElement("button");
+        ok.textContent = "Accept";
+        ok.onclick = async () => {
+          try {
+            await api("/follow-requests/" + fr.id + "/accept", { method: "POST" });
+            setStatus("Follow request accepted 👥");
+            loadFollowRequests();
+          } catch (e) { setStatus("Could not accept the request."); }
+        };
+        const no = document.createElement("button");
+        no.textContent = "Reject";
+        no.onclick = async () => {
+          try {
+            await api("/follow-requests/" + fr.id + "/reject", { method: "POST" });
+            loadFollowRequests();
+          } catch (e) { setStatus("Could not reject the request."); }
+        };
+        rowEl.append(ok, no);
+        frBox.appendChild(rowEl);
+      });
+      frBtn.textContent = "👥 Follow requests (" + data.follow_requests.length + ")";
+    } catch (e) { frBox.textContent = "Could not load follow requests."; }
+  };
+  frBtn.onclick = () => {
+    frBox.hidden = !frBox.hidden;
+    if (!frBox.hidden) loadFollowRequests();
+  };
+  wrap.appendChild(frBtn);
+  wrap.appendChild(frBox);
+  // Show the pending count on the button without opening it.
+  api("/me/follow-requests").then(d => {
+    if (d.follow_requests && d.follow_requests.length) {
+      frBtn.textContent = "👥 Follow requests (" + d.follow_requests.length + ")";
+    }
+  }).catch(() => {});
   try {
     const mon = await api("/me/monetization");
     const card = document.createElement("div");
@@ -4494,6 +4642,7 @@ async function refreshBell() {
 
 let notifCursor = null;
 const NOTIF_ICONS = { like: "❤️", comment: "💬", follow: "👥",
+                      follow_request: "👥",
                       share: "📤", post_live: "🎬", announcement: "📣",
                       verification: "🛡️", repost: "🔁", reply: "↩️",
                       tip: "⭐" };

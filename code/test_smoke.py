@@ -156,13 +156,13 @@ with TestClient(app) as c:
 
     # Follow toggle, profile counts and the following flag; self-follow 400.
     r = c.post("/users/222/follow", headers=H3); assert r.status_code == 200, r.text
-    assert r.json() == {"following": True, "followers": 1}, r.json()
+    assert r.json() == {"following": True, "requested": False, "followers": 1}, r.json()
     r = c.get("/users/222", headers=H3); assert r.status_code == 200, r.text
     prof = r.json()
     assert prof["first_name"] == "Bob" and prof["followers"] == 1, prof
     assert prof["posts"] == 2 and prof["following"] is True, prof
     r = c.post("/users/222/follow", headers=H3)
-    assert r.json() == {"following": False, "followers": 0}, r.json()
+    assert r.json() == {"following": False, "requested": False, "followers": 0}, r.json()
     r = c.get("/users/222", headers=H3)
     assert r.json()["following"] is False, r.json()
     r = c.post("/users/333/follow", headers=H3)

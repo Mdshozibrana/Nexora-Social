@@ -102,6 +102,8 @@ RATE_LIMITS = {
     "insights": (120, 3600),
     # Phase 135: scheduled posts — queueing + cancelling.
     "scheduled": (120, 3600),
+    # Phase 136: private-account toggle.
+    "privacy": (120, 3600),
     "payout_admin": (120, 3600),
 }
 

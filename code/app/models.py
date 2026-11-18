@@ -23,6 +23,9 @@ class User(Base):
     referrer_id = Column(BigInteger, ForeignKey("users.telegram_id"), nullable=True)
     is_banned = Column(Boolean, default=False)
     is_verified = Column(Boolean, default=False)
+    # Phase 136: private account — only approved followers see
+    # this member's posts (follow requests, not instant follows).
+    is_private = Column(Boolean, default=False)
     # Phase 19 (admin dashboard): Telegram gives the member's language;
     # the country is approximated once from their IP at sign-in (geoip).
     country = Column(String(64), nullable=True)
@@ -167,6 +170,24 @@ class Follow(Base):
     following_id = Column(BigInteger, ForeignKey("users.telegram_id"), index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     __table_args__ = (UniqueConstraint("follower_id", "following_id"),)
+
+
+class FollowRequest(Base):
+    """Phase 136: a request to follow a private account. One
+    pending row per (requester, target) at a time — the target
+    accepts (a follow row appears) or rejects (nothing does).
+    After a decision a fresh request is a new row."""
+    __tablename__ = "follow_requests"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    requester_id = Column(BigInteger, ForeignKey("users.telegram_id"),
+                          index=True, nullable=False)
+    target_id = Column(BigInteger, ForeignKey("users.telegram_id"),
+                       index=True, nullable=False)
+    status = Column(String(16), default="pending", nullable=False)
+    # pending | accepted | rejected
+    created_at = Column(DateTime, default=datetime.utcnow)
+    __table_args__ = (UniqueConstraint("requester_id", "target_id",
+                                       "status"),)
 
 
 class Referral(Base):

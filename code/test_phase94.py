@@ -32,5 +32,5 @@ assert "startSolo();\n    raf = requestAnimationFrame(step);" in GAMES
 assert 'mkBtn("👤 Solo", startSolo);' in GAMES
 # Nexa can explain the resume
 assert "resumes where you left it" in MAIN
-assert "app.js?v=135" in HTML and "games.js?v=135" in HTML
+assert "app.js?v=136" in HTML and "games.js?v=136" in HTML
 print("PHASE 94 OK")

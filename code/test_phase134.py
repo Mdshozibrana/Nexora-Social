@@ -5,8 +5,8 @@ Covers: per-post totals (views/likes/comments/reposts/tips)
 days, 15-day-old activity outside the window); best_day is the
 highest-view day; author 200 / other member 403 / unknown 404 /
 unauthenticated 401; /me/insights totals + top-5 ordering;
-GET /posts/{id} single-post fetch; backup still 38 tables;
-?v=135 x5, no ?v=133; insights client markers + Phase 123-133
+GET /posts/{id} single-post fetch; backup still 39 tables;
+?v=136 x5, no ?v=133; insights client markers + Phase 123-133
 markers intact.
 """
 import hashlib, hmac, json, os, time, urllib.parse
@@ -196,15 +196,15 @@ with TestClient(app) as c:
     assert r.status_code == 404, r.status_code
     print("GET /posts/{id} OK")
 
-    # 6. Backup still 38 tables (no new table this phase).
+    # 6. Backup still 39 tables (no new table this phase).
     r = c.get("/admin/backup", headers=ALICE)
     assert r.status_code == 200, r.status_code
-    assert len(r.json()["tables"]) == 38, len(r.json()["tables"])
-    print("backup: 38 tables OK")
+    assert len(r.json()["tables"]) == 39, len(r.json()["tables"])
+    print("backup: 39 tables OK")
 
     # 7. Client markers + asset version.
     html = open("webapp/index.html").read()
-    assert html.count("?v=135") == 5, html.count("?v=135")
+    assert html.count("?v=136") == 5, html.count("?v=136")
     assert "?v=133" not in html
     js = open("webapp/app.js").read()
     for m in ("openInsights", "openTopPost", "My insights",
@@ -221,6 +221,6 @@ with TestClient(app) as c:
               "loadBackupStatus", "openTipSheet", "My tips",
               "loadMyQr"):
         assert m in js, m
-    print("client markers + ?v=135 OK")
+    print("client markers + ?v=136 OK")
 
 print("PHASE-134 TESTS PASSED")
