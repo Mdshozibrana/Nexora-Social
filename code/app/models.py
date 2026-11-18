@@ -52,6 +52,13 @@ class User(Base):
     # Monetization card; the admin never edits it for them.
     wallet_address = Column(String(256), nullable=True)
     wallet_network = Column(String(16), nullable=True)
+    # Phase 144: notification preferences — per-type on/off,
+    # stored as JSON ({"likes": false, ...}) on the member's
+    # own row, same pattern as the per-account theme. NULL (or
+    # a missing key) means ON, so every existing member keeps
+    # today's behaviour until they change it. One column, no
+    # new table — backup stays at 42 tables.
+    notif_prefs = Column(Text, nullable=True)
     lat = Column(Float, nullable=True)
     lon = Column(Float, nullable=True)
     loc_at = Column(DateTime, nullable=True)

@@ -20,8 +20,8 @@
 <meta name="twitter:description" content="Share photos, watch reels, discover designs and play classic games — all inside Telegram.">
 <meta name="twitter:image" content="https://nexora-9pip.onrender.com/webapp/og-image.png">
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
-<link rel="stylesheet" href="style.css?v=143">
-<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=143">
+<link rel="stylesheet" href="style.css?v=144">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=144">
 </head>
 <body>
 <div id="entry-screen">
@@ -356,6 +356,12 @@
   <input type="file" id="cover-file" accept="image/*" hidden>
   <div id="profile-posts"></div>
   <button id="profile-more" class="wide" hidden>Load more</button>
+</section>
+
+<!-- Phase 144: one Settings page per member. -->
+<section id="view-settings" hidden>
+  <h2 class="view-title">⚙️ Settings</h2>
+  <div id="settings-box"></div>
 </section>
 
 <section id="view-admin" hidden>
@@ -779,6 +785,7 @@
   <button class="gb-item" data-go="shared"><span class="gb-ic">📥</span><span class="gb-label">Shared with me</span><span class="gb-badge" id="badge-shared" hidden></span></button>
   <div class="gb-sec">ACCOUNT</div>
   <button class="gb-item" data-go="profile"><span class="gb-ic">👤</span><span class="gb-label">My Profile</span></button>
+  <button class="gb-item" data-go="settings"><span class="gb-ic">⚙️</span><span class="gb-label">Settings</span></button>
   <button class="gb-item" data-go="qr"><span class="gb-ic">🔳</span><span class="gb-label">My QR</span></button>
   <button class="gb-item" id="gb-admin" data-go="admin" hidden><span class="gb-ic">🛡️</span><span class="gb-label">Admin Panel</span></button>
   <button class="gb-item" id="gb-official" hidden><span class="gb-ic">📣</span><span class="gb-label">Act as Official</span></button>
@@ -821,8 +828,8 @@
   <button id="pv-close" type="button" aria-label="Close">✕</button>
 </div>
 
-<script src="vendor/leaflet/leaflet.js?v=143"></script>
-<script src="app.js?v=143"></script>
-<script src="games.js?v=143"></script>
+<script src="vendor/leaflet/leaflet.js?v=144"></script>
+<script src="app.js?v=144"></script>
+<script src="games.js?v=144"></script>
 </body>
 </html>

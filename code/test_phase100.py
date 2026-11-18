@@ -58,7 +58,7 @@ CONF = open("app/config.py", encoding="utf-8").read()
 
 # --- static contract ---------------------------------------------------
 assert "function dataCard()" in JS
-assert "wrap.appendChild(dataCard());" in JS
+assert "appendChild(dataCard());" in JS  # Phase 144: card moved Me -> Settings
 assert "🗂️ Data Control" in JS
 assert 'api("/me/export")' in JS
 assert 'api("/me/export/send", { method: "POST" })' in JS
@@ -72,7 +72,7 @@ assert "async def send_document(" in open(
 assert "def _export_payload(" in MAIN
 assert '@app.post("/me/export/send")' in MAIN
 assert "Data Control card" in MAIN  # Nexa manual tells the truth now
-assert "app.js?v=143" in HTML and "style.css?v=143" in HTML
+assert "app.js?v=144" in HTML and "style.css?v=144" in HTML
 print("static contract OK")
 
 def make_init_data(user):

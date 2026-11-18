@@ -24,13 +24,13 @@ CSS = open("webapp/style.css", encoding="utf-8").read()
 HTML = open("webapp/index.html", encoding="utf-8").read()
 MAIN = open("app/main.py", encoding="utf-8").read()
 
-# --- the card exists and is mounted in myExtras, unconditionally -------
+# --- Phase 144 (owner): the card moved from Me into Settings -------
 assert "function rainCard()" in JS
 assert "🌧️ After Rain Effect" in JS
-assert "wrap.appendChild(rainCard())" in JS
-# it sits after Data Control in the extras stack
-assert (JS.index("wrap.appendChild(dataCard())") <
-        JS.index("wrap.appendChild(rainCard())"))
+assert "appendChild(rainCard())" in JS
+# it sits after Data Control in the Settings Data Control section
+assert (JS.index("appendChild(dataCard())") <
+        JS.index("appendChild(rainCard())"))
 print("rain card mounted OK")
 
 # --- per-account persistence, OFF by default ---------------------------
@@ -71,7 +71,7 @@ assert "Rain Effect card" in MAIN
 print("nexa manual OK")
 
 # --- asset version -------------------------------------------------------
-assert "app.js?v=143" in HTML and "style.css?v=143" in HTML
+assert "app.js?v=144" in HTML and "style.css?v=144" in HTML
 print("asset version OK")
 
 print("PHASE 101 OK")

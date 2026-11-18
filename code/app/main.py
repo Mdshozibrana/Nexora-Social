@@ -63,7 +63,10 @@ def _migrate():
               "name_changed_at": "TIMESTAMP",
               "share_location": "BOOLEAN", "lat": "FLOAT",
               "theme": "VARCHAR(256)",
-              "lon": "FLOAT", "loc_at": "TIMESTAMP"}
+              "lon": "FLOAT", "loc_at": "TIMESTAMP",
+              # Phase 144: notification prefs JSON (one TEXT
+              # column, no new table — backup stays 42).
+              "notif_prefs": "TEXT"}
     with engine.begin() as conn:
         for name, ddl in wanted.items():
             if name not in existing:
@@ -2697,6 +2700,55 @@ def set_privacy(body: PrivacyIn, user: models.User = Depends(current_user),
     return {"is_private": bool(user.is_private)}
 
 
+def _notif_prefs_dict(user):
+    """Phase 144: the member's effective notification prefs —
+    every key present, missing keys ON. A member who never opened
+    Settings gets today's behaviour (all on)."""
+    prefs = {k: True for k in notify.NOTIF_PREF_KEYS}
+    raw = getattr(user, "notif_prefs", None)
+    if raw:
+        try:
+            saved = json.loads(raw)
+            if isinstance(saved, dict):
+                for k in prefs:
+                    if isinstance(saved.get(k), bool):
+                        prefs[k] = saved[k]
+        except Exception:
+            pass
+    return prefs
+
+
+@app.get("/me/notification-prefs")
+def my_notification_prefs(user: models.User = Depends(current_user)):
+    """Your own notification toggles. There is deliberately no
+    /users/{id}/notification-prefs route — nobody, not even an
+    admin, can read or change another member's prefs here."""
+    return {"prefs": _notif_prefs_dict(user)}
+
+
+@app.post("/me/notification-prefs")
+def save_notification_prefs(body: dict,
+                            user: models.User = Depends(current_user),
+                            db: Session = Depends(get_db)):
+    """Save your own notification toggles. Unknown keys and
+    non-boolean values are 400; the body merges over the stored
+    prefs, so sending one toggle never resets the others. Only
+    the caller's own row is ever written."""
+    if not isinstance(body, dict):
+        raise HTTPException(400, "Expected an object of toggles")
+    prefs = _notif_prefs_dict(user)
+    for key, val in body.items():
+        if key not in notify.NOTIF_PREF_KEYS:
+            raise HTTPException(400, f"Unknown notification type: {key}")
+        if not isinstance(val, bool):
+            raise HTTPException(
+                400, f'"{key}" must be true or false')
+        prefs[key] = val
+    _enforce_rate("notif_prefs", f"u{user.telegram_id}")
+    user.notif_prefs = json.dumps(prefs)
+    db.commit()
+    return {"prefs": prefs}
+
 def follow_request_dict(db, r):
     ru = db.get(models.User, r.requester_id)
     return {
@@ -4705,6 +4757,13 @@ async def admin_broadcast(body: BroadcastIn,
     db.flush()
     sent = 0
     for u in targets:
+        # Phase 144: a member who turned off System
+        # notifications does not get the admin broadcast (they
+        # still count in total_count — they were a target,
+        # just not sent).
+        if not notify.notif_allowed(db, u.telegram_id,
+                                   "broadcast"):
+            continue
         try:
             ok = await notify.send_message(u.telegram_id, text)
         except Exception:

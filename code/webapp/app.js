@@ -225,7 +225,7 @@ function showView(name, viaBack) {
                    games: "nav-games",
                    game: "nav-games", tasks: "nav-tasks",
                    leaderboard: "nav-ranks", profile: "nav-me" };
-  ["feed", "videos", "designs", "search", "tasks", "leaderboard", "profile", "saved", "shared", "games", "game", "admin", "notifications", "messages", "chat", "assistant", "nearby", "museum", "qr", "trending"].forEach(v => {
+  ["feed", "videos", "designs", "search", "tasks", "leaderboard", "profile", "saved", "shared", "games", "game", "admin", "notifications", "messages", "chat", "assistant", "nearby", "museum", "qr", "trending", "settings"].forEach(v => {
     $("view-" + v).hidden = v !== name;
   });
   // Phase 21: only tab views move the highlight. Views without a tab
@@ -243,6 +243,7 @@ function showView(name, viaBack) {
   if (name === "shared") loadShared();
   if (name === "admin") loadAdmin();
   if (name === "notifications") loadNotifications(true);
+  if (name === "settings") loadSettings();
   if (name === "messages") loadMessages();
   if (name !== "chat") stopChatPoll();
   if (name === "videos") { loadVideos(true); maybeShowAd(); }
@@ -3144,31 +3145,9 @@ async function openProfile(userId) {
           openProfile(userId);
         } catch (e) { setStatus("Could not save the profile."); }
       };
-      // Phase 136: the private-account toggle lives in the
-      // profile edit form — only approved followers will see
-      // your posts while it is on.
-      const privRow = document.createElement("label");
-      privRow.className = "privacy-row";
-      const privChk = document.createElement("input");
-      privChk.type = "checkbox";
-      privChk.checked = !!u.is_private;
-      const privTx = document.createElement("span");
-      privTx.textContent = "🔒 Private account — only approved followers will see your posts.";
-      privRow.append(privChk, privTx);
-      privChk.onchange = async () => {
-        try {
-          const r = await api("/me/privacy", { method: "POST",
-            body: JSON.stringify({ is_private: privChk.checked }) });
-          u.is_private = r.is_private;
-          setStatus(r.is_private
-            ? "Your account is now private 🔒"
-            : "Your account is now public.");
-        } catch (e) {
-          privChk.checked = !!u.is_private;
-          setStatus("Could not change privacy.");
-        }
-      };
-      form.append(nameIn, bioIn, privRow, saveBtn);
+      // Phase 144 (owner): the private-account toggle moved to
+      // Settings (Privacy) — the edit form keeps name and bio.
+      form.append(nameIn, bioIn, saveBtn);
       if (u.name_locked_days > 0) {
         const note = document.createElement("div");
         note.className = "gb-foot-sub";
@@ -3182,7 +3161,16 @@ async function openProfile(userId) {
       box.append(eBtn, form);
     }
 
-    if (me && userId === me.telegram_id) box.appendChild(await myExtras());
+    if (me && userId === me.telegram_id) {
+      // Phase 144 (owner): Me keeps only name, photo, bio, cover
+      // and posts — everything else lives on the Settings page.
+      const sBtn = document.createElement("button");
+      sBtn.className = "wide";
+      sBtn.id = "profile-settings-btn";
+      sBtn.textContent = "⚙️ Settings";
+      sBtn.onclick = () => showView("settings");
+      box.appendChild(sBtn);
+    }
     // Phase 136: a private account's posts stay hidden until a
     // follow request is accepted — show the lock, not the posts.
     if (u.is_private && !u.following && !ownProfile) {
@@ -3223,6 +3211,15 @@ async function loadProfilePosts(reset) {
 async function myExtras() {
   const wrap = document.createElement("div");
   wrap.className = "extras";
+  // Phase 144 (owner): myExtras no longer renders on Me — it
+  // renders inside Settings only. The cards are grouped by
+  // headings (Creator / Library / Posts / Social / Account);
+  // Theme, Data Control and Rain live in their own Settings
+  // sections, not here.
+  const creatorHead = document.createElement("b");
+  creatorHead.className = "settings-head";
+  creatorHead.textContent = "⭐ Points & creator";
+  wrap.appendChild(creatorHead);
   try {
     const pts = await api("/me/points");
     const refs = await api("/me/referrals");
@@ -3514,6 +3511,10 @@ async function myExtras() {
       wrap.append(rh, a, copy);
     }
   } catch (e) { setStatus("Could not load points/referrals."); }
+  const libHead = document.createElement("b");
+  libHead.className = "settings-head";
+  libHead.textContent = "🔖 Library";
+  wrap.appendChild(libHead);
   const savedBtn = document.createElement("button");
   savedBtn.className = "wide";
   savedBtn.textContent = "🔖 Saved posts & videos";
@@ -3527,6 +3528,10 @@ async function myExtras() {
   // Phase 123: My drafts — unfinished posts saved from the
   // composer. Resume loads the text back into the composer,
   // Publish posts it (and earns its points), Delete drops it.
+  const postsHead = document.createElement("b");
+  postsHead.className = "settings-head";
+  postsHead.textContent = "📝 Posts";
+  wrap.appendChild(postsHead);
   const draftsBtn = document.createElement("button");
   draftsBtn.className = "wide";
   draftsBtn.textContent = "📝 My drafts";
@@ -3642,6 +3647,10 @@ async function myExtras() {
   wrap.appendChild(schedBox);
   // Phase 136: Follow requests — people waiting to follow your
   // private account. Accept lets them in, Reject turns them away.
+  const socHead = document.createElement("b");
+  socHead.className = "settings-head";
+  socHead.textContent = "👥 Social";
+  wrap.appendChild(socHead);
   const frBtn = document.createElement("button");
   frBtn.className = "wide";
   frBtn.textContent = "👥 Follow requests";
@@ -3746,6 +3755,10 @@ async function myExtras() {
     renderHtagList();
   };
   wrap.append(htagBtn, htagBox);
+  const acctHead = document.createElement("b");
+  acctHead.className = "settings-head";
+  acctHead.textContent = "💰 Account";
+  wrap.appendChild(acctHead);
   try {
     const mon = await api("/me/monetization");
     const card = document.createElement("div");
@@ -3913,17 +3926,264 @@ async function myExtras() {
     }
     wrap.appendChild(card);
   } catch (e) { /* verification card is optional decoration */ }
-  // Phase 90 (owner): the theme-shade picker lives in the Me
-  // section, under the points and monetization cards. It is
-  // purely local, so it renders even if the cards above fail.
-  wrap.appendChild(themeCard());
-  // Phase 100: Data Control sits under Theme Colours and renders
-  // unconditionally, like the theme card.
-  wrap.appendChild(dataCard());
-  // Phase 101: the After Rain toggle sits under Data
-  // Control and, like the cards above, always renders.
-  wrap.appendChild(rainCard());
+  // Phase 144 (owner): Theme, Data Control and Rain moved to
+  // their own Settings sections — no longer in this stack.
   return wrap;
+}
+
+
+// ---------------------------------------------------------------------------
+// Phase 144: Settings — one page per member gathering what used to
+// be scattered: profile, theme, privacy, notification toggles,
+// Data Control and payout wallet. Every section reuses the existing
+// endpoint or card builder; nothing here is admin-only and nothing
+// touches another member's settings (all calls are /me/...).
+// ---------------------------------------------------------------------------
+const NOTIF_PREF_META = [
+  ["likes", "❤️ Likes", "Someone likes your post"],
+  ["comments", "💬 Comments & replies", "Someone comments or replies on your post"],
+  ["follows", "👥 New followers", "Someone follows you"],
+  ["follow_requests", "👥 Follow requests", "Someone asks to follow your private account"],
+  ["tips", "⭐ Tips", "Someone tips you Stars"],
+  ["messages", "💬 Direct messages", "Someone sends you a DM"],
+  ["system", "🛡️ System", "Payouts, verification decisions, your posts going live, admin announcements"],
+];
+
+async function loadSettings() {
+  const box = $("settings-box");
+  if (!box || !me) return;
+  box.innerHTML = "Loading…";
+  try {
+    const u = await api("/users/" + me.telegram_id);
+    box.innerHTML = "";
+    const sec = (title) => {
+      const s = document.createElement("div");
+      s.className = "card settings-sec";
+      const h = document.createElement("b");
+      h.className = "settings-head";
+      h.textContent = title;
+      s.appendChild(h);
+      box.appendChild(s);
+      return s;
+    };
+    // 1. Profile — the same name/bio save as the profile edit
+    // form, plus the same photo/cover pickers (the pickers live
+    // in the profile view; after a photo change the app shows
+    // your profile, as it does from Me today).
+    const prof = sec("👤 Profile");
+    const nameIn = document.createElement("input");
+    nameIn.type = "text";
+    nameIn.maxLength = 128;
+    nameIn.placeholder = "Your name";
+    nameIn.value = u.first_name || "";
+    if (u.name_locked_days > 0) nameIn.disabled = true;
+    const bioIn = document.createElement("textarea");
+    bioIn.rows = 3;
+    bioIn.maxLength = 500;
+    bioIn.placeholder = "Write something about yourself…";
+    bioIn.value = u.bio || "";
+    const saveBtn = document.createElement("button");
+    saveBtn.className = "wide";
+    saveBtn.textContent = "Save profile";
+    saveBtn.onclick = async () => {
+      try {
+        const r = await api("/me/profile", { method: "POST",
+          body: JSON.stringify({ first_name: nameIn.value,
+                                 bio: bioIn.value }) });
+        if (me) me.first_name = r.first_name;
+        setStatus("Profile updated.");
+      } catch (e) { setStatus("Could not save the profile."); }
+    };
+    prof.append(nameIn, bioIn, saveBtn);
+    if (u.name_locked_days > 0) {
+      const note = document.createElement("div");
+      note.className = "hint";
+      note.textContent = "🔒 Name can be changed once every 60 days — available again in " + u.name_locked_days + " day" + (u.name_locked_days === 1 ? "" : "s") + ". Your bio can still be edited anytime.";
+      prof.appendChild(note);
+    }
+    // Phase 55 (owner): no wide Change-photo/cover buttons anywhere
+    // — the camera badges ON the photo and cover do that job. So
+    // Settings links to the profile instead of duplicating them.
+    const photoHint = document.createElement("p");
+    photoHint.className = "hint";
+    photoHint.textContent = "To change your photo or cover, tap the 📷 badge on your photo or cover on your profile.";
+    const photoBtn = document.createElement("button");
+    photoBtn.className = "btn";
+    photoBtn.id = "settings-open-profile";
+    photoBtn.textContent = "👤 Open my profile";
+    photoBtn.onclick = () => openProfile(me.telegram_id);
+    prof.append(photoHint, photoBtn);
+    // 2. Theme — the same picker as Me (themeCard is reused).
+    box.appendChild(themeCard());
+    // 3. Privacy — the same toggle as the profile edit form,
+    // plus the blocked list with Unblock (GET /me/blocked,
+    // POST /users/{id}/block toggles the block off).
+    const priv = sec("🔒 Privacy");
+    const privRow = document.createElement("label");
+    privRow.className = "privacy-row";
+    const privChk = document.createElement("input");
+    privChk.type = "checkbox";
+    privChk.checked = !!u.is_private;
+    const privTx = document.createElement("span");
+    privTx.textContent = "🔒 Private account — only approved followers will see your posts.";
+    privRow.append(privChk, privTx);
+    privChk.onchange = async () => {
+      try {
+        const r = await api("/me/privacy", { method: "POST",
+          body: JSON.stringify({ is_private: privChk.checked }) });
+        u.is_private = r.is_private;
+        setStatus(r.is_private ? "Your account is now private 🔒" : "Your account is now public.");
+      } catch (e) {
+        privChk.checked = !!u.is_private;
+        setStatus("Could not change privacy.");
+      }
+    };
+    priv.appendChild(privRow);
+    const blkHead = document.createElement("div");
+    blkHead.className = "settings-sub";
+    blkHead.textContent = "🚫 Blocked members";
+    priv.appendChild(blkHead);
+    const blkBox = document.createElement("div");
+    blkBox.className = "settings-blocked";
+    priv.appendChild(blkBox);
+    const loadBlocked = async () => {
+      blkBox.innerHTML = "Loading…";
+      try {
+        const d = await api("/me/blocked");
+        blkBox.innerHTML = "";
+        if (!d.blocked.length) {
+          blkBox.textContent = "Nobody blocked.";
+          return;
+        }
+        d.blocked.forEach(b => {
+          const row = document.createElement("div");
+          row.className = "settings-blocked-row";
+          const nm = document.createElement("span");
+          nm.textContent = (b.first_name || "?") + (b.username ? " (@" + b.username + ")" : "");
+          const un = document.createElement("button");
+          un.textContent = "Unblock";
+          un.onclick = async () => {
+            try {
+              await api("/users/" + b.telegram_id + "/block", { method: "POST" });
+              setStatus("Member unblocked.");
+              loadBlocked();
+            } catch (e) { setStatus("Could not unblock."); }
+          };
+          row.append(nm, un);
+          blkBox.appendChild(row);
+        });
+      } catch (e) { blkBox.textContent = "Could not load blocked members."; }
+    };
+    loadBlocked();
+    // 4. Notifications — per-type toggles, all ON by default.
+    // Every change posts the full prefs object, so toggling one
+    // type never resets the others.
+    const notif = sec("🔔 Notifications");
+    const notifHint = document.createElement("p");
+    notifHint.className = "hint";
+    notifHint.textContent = "Turn off a type to stop getting those notifications — in the app and from the bot. Everything is on until you change it.";
+    notif.appendChild(notifHint);
+    const notifBox = document.createElement("div");
+    notif.appendChild(notifBox);
+    try {
+      const d = await api("/me/notification-prefs");
+      const prefs = d.prefs || {};
+      NOTIF_PREF_META.forEach(([key, label, desc]) => {
+        const row = document.createElement("label");
+        row.className = "privacy-row notif-row";
+        row.id = "notif-row-" + key;
+        const chk = document.createElement("input");
+        chk.type = "checkbox";
+        chk.checked = prefs[key] !== false;
+        const tx = document.createElement("span");
+        tx.textContent = label + " — " + desc;
+        row.append(chk, tx);
+        chk.onchange = async () => {
+          prefs[key] = chk.checked;
+          try {
+            await api("/me/notification-prefs", { method: "POST",
+              body: JSON.stringify(prefs) });
+            setStatus(chk.checked ? label + " notifications on." : label + " notifications off.");
+          } catch (e) {
+            chk.checked = !chk.checked;
+            prefs[key] = chk.checked;
+            setStatus("Could not save notification settings.");
+          }
+        };
+        notifBox.appendChild(row);
+      });
+    } catch (e) {
+      notifBox.textContent = "Could not load notification settings.";
+    }
+    // 5. Data Control — the same card as Me (dataCard is reused).
+    box.appendChild(dataCard());
+    // Phase 144 (owner): the After Rain toggle sat under Data
+    // Control in Me, so it sits under it here too.
+    box.appendChild(rainCard());
+    // 6. Payout wallet — the same /me/wallet save as the
+    // Monetization card. A small standalone form: loadPayoutBox
+    // uses fixed ids (payout-network, payout-address), so calling
+    // it twice would duplicate ids in the DOM. Payout requests
+    // themselves stay in the Monetization card below (💰 Account).
+    const wal = sec("💰 Payout wallet");
+    const walHint = document.createElement("p");
+    walHint.className = "hint";
+    walHint.textContent = "The wallet your crypto payouts go to. Payout requests live in the Monetization card below (💰 Account).";
+    wal.appendChild(walHint);
+    try {
+      const w = await api("/me/wallet");
+      const netSel = document.createElement("select");
+      netSel.id = "settings-wallet-network";
+      ["TON", "Gram", "USDT"].forEach(n => {
+        const o = document.createElement("option");
+        o.value = n;
+        o.textContent = n;
+        netSel.appendChild(o);
+      });
+      if (w.wallet_network) netSel.value = w.wallet_network;
+      const addr = document.createElement("input");
+      addr.id = "settings-wallet-address";
+      addr.type = "text";
+      addr.maxLength = 256;
+      addr.placeholder = "Your wallet address";
+      addr.value = w.wallet_address || "";
+      const walSave = document.createElement("button");
+      walSave.id = "settings-wallet-save";
+      walSave.textContent = "Save wallet";
+      walSave.onclick = async () => {
+        try {
+          await api("/me/wallet", { method: "POST",
+            body: JSON.stringify({ network: netSel.value,
+                                   address: addr.value.trim() }) });
+          setStatus("Wallet saved.");
+        } catch (e) { setStatus("Could not save the wallet."); }
+      };
+      wal.append(netSel, addr, walSave);
+    } catch (e) {
+      const err = document.createElement("p");
+      err.className = "hint";
+      err.textContent = "Could not load the payout wallet.";
+      wal.appendChild(err);
+    }
+    // 7. Everything that used to live on Me — points, tips,
+    //    insights, level, referrals, saved, shared, drafts,
+    //    scheduled, follow requests, hashtags, monetization
+    //    and verification — same cards, same buttons, now here.
+    const more = sec("📦 From your profile");
+    const moreHint = document.createElement("p");
+    moreHint.className = "hint";
+    moreHint.textContent = "Everything that used to live on your profile — same cards, same buttons, now gathered here.";
+    more.appendChild(moreHint);
+    more.appendChild(await myExtras());
+    box.appendChild(more);
+    // 8. My QR — rendered inline (same loader as the QR view).
+    const qrSec = sec("🔳 My QR");
+    const qrBox = document.createElement("div");
+    qrBox.id = "settings-qr-box";
+    qrSec.appendChild(qrBox);
+    box.appendChild(qrSec);
+    await loadMyQrInto("settings-qr-box");
+  } catch (e) { box.textContent = "Could not load Settings."; }
 }
 
 // ---------------------------------------------------------------- tasks ---
@@ -4053,8 +4313,9 @@ async function loadTasks() {
 // /me/qr (server-generated, branded with NEXORA SOCIAL), the link is
 // shown for copying, and Download uses Telegram's native downloadFile
 // (Phase 110 pattern — anchor downloads are ignored in the WebView).
-async function loadMyQr() {
-  const box = $("qr-box");
+async function loadMyQr() { return loadMyQrInto("qr-box"); }
+async function loadMyQrInto(boxId) {
+  const box = $(boxId);
   box.innerHTML = "Loading…";
   try {
     const link = "https://t.me/" + me.bot_username +
@@ -4091,7 +4352,7 @@ async function loadMyQr() {
     };
     const dl = document.createElement("button");
     dl.className = "btn";
-    dl.id = "qr-download";
+    dl.id = boxId === "qr-box" ? "qr-download" : "settings-qr-download";
     dl.textContent = "⬇️ Download";
     dl.onclick = () => downloadQr(dl, qrUrl);
     row.append(copy, dl);
@@ -4270,7 +4531,7 @@ $("composer-draft").onclick = async () => {
   try {
     await api("/drafts", { method: "POST",
       body: JSON.stringify({ text }) });
-    composerStatus("Draft saved ✓ — find it under 📝 My drafts on your profile.");
+    composerStatus("Draft saved ✓ — find it under 📝 My drafts in ⚙️ Settings.");
     setStatus("Draft saved.");
   } catch (e) { composerStatus("Could not save the draft."); }
 };
@@ -4328,7 +4589,7 @@ $("composer-sched-send").onclick = async () => {
       body: JSON.stringify({ text, scheduled_at: at.toISOString() }) });
     composerStatus("Scheduled ✓ — it will post on " +
       new Date(row.scheduled_at).toLocaleString() +
-      ". See 📅 Scheduled on your profile.");
+      ". See 📅 Scheduled in ⚙️ Settings.");
     setStatus("Post scheduled.");
     $("composer-text").value = "";
     composerSchedOn = false;

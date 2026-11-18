@@ -4,12 +4,62 @@ only in server-side requests. Every send is written to notifications_log,
 and a per-user hourly cap keeps the bot from spamming (Telegram can ban
 bots that message too aggressively)."""
 import httpx
+import json
 
 from . import models
 from .config import OFFICIAL_ID, settings
 from datetime import datetime, timedelta
 
 MAX_PER_HOUR = 20
+# Phase 144: per-member notification preferences (Settings page).
+# Keys are the toggles; every key defaults ON — a missing key, or
+# no prefs at all, means the member never changed it, so today's
+# behaviour is preserved for everyone until they opt out.
+NOTIF_PREF_KEYS = ("likes", "comments", "follows", "follow_requests",
+                   "tips", "messages", "system")
+# Which pref key gates each notification type the app actually
+# creates. "mention" is deliberately absent: no code path ever
+# creates a mention notification, so there is nothing to toggle.
+# "broadcast" is the admin announcement (NotificationLog only).
+NOTIF_TYPE_MAP = {
+    "like": "likes", "repost": "likes", "share": "likes",
+    "comment": "comments", "reply": "comments",
+    "follow": "follows", "follow_request": "follow_requests",
+    "tip": "tips", "message": "messages",
+    "payout": "system", "verification": "system",
+    "post_live": "system", "announcement": "system",
+    "broadcast": "system",
+}
+
+
+def _load_prefs(db, user_id):
+    """The member's saved prefs as key -> bool (missing keys read
+    as True). Anything unreadable means all ON."""
+    try:
+        user = db.get(models.User, user_id) if user_id else None
+    except Exception:
+        return {}
+    raw = getattr(user, "notif_prefs", None) if user else None
+    if not raw:
+        return {}
+    try:
+        saved = json.loads(raw)
+    except Exception:
+        return {}
+    return saved if isinstance(saved, dict) else {}
+
+
+def notif_allowed(db, user_id, ntype):
+    """True when the member wants this notification type. Unknown
+    types default to allowed — a new type must never silently
+    disappear because the map forgot it."""
+    key = NOTIF_TYPE_MAP.get(ntype)
+    if key is None:
+        return True
+    prefs = _load_prefs(db, user_id)
+    val = prefs.get(key, True)
+    return bool(val) if isinstance(val, bool) else True
+
 
 
 async def send_message(chat_id: int, text: str) -> bool:
@@ -48,6 +98,9 @@ async def notify_user(db, user_id: int, ntype: str, text: str) -> bool:
     """Send + log a notification, respecting the hourly cap."""
     if user_id is None:
         return False
+    # Phase 144: the recipient opted this type out.
+    if not notif_allowed(db, user_id, ntype):
+        return False
     since = datetime.utcnow() - timedelta(hours=1)
     recent = db.query(models.NotificationLog).filter(
         models.NotificationLog.user_id == user_id,
@@ -67,6 +120,9 @@ def record(db, user_id, ntype, actor_id=None, post_id=None, text=""):
     member who blocked the bot still sees their in-app list. Self
     actions and the official system account never get rows."""
     if not user_id or user_id == actor_id or user_id == OFFICIAL_ID:
+        return
+    # Phase 144: the recipient opted this type out.
+    if not notif_allowed(db, user_id, ntype):
         return
     db.add(models.Notification(
         user_id=user_id, actor_id=actor_id, type=ntype,
