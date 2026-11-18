@@ -3004,16 +3004,11 @@ async function openProfile(userId) {
     stats.textContent = u.followers + " followers · " +
       u.following_count + " following";
     hero.append(headWrap, bio, stats);
-    // Phase 133: Stars received on this profile.
-    const tipLine = document.createElement("div");
-    tipLine.className = "tip-total";
-    api("/users/" + userId + "/tips").then(t => {
-      tipLine.textContent = "⭐ " + t.total_stars_received
-        + " Stars received · " + t.tip_count + " tips";
-    }).catch(() => { tipLine.textContent = ""; });
-    hero.appendChild(tipLine);
-    // Phase 137: level + badges under the hero stats.
-    hero.appendChild(renderLevelBlock(u.level, u.badges));
+    // Phase 145 (owner): Stars-received line removed from the
+    // profile hero — it already lives in Settings ("My tips").
+    // Phase 145 (owner): level + badges removed from the profile
+    // hero — they already live in Settings ("My level"). The
+    // shared level renderer stays: Settings still uses it.
     box.appendChild(hero);
     const wave = document.createElement("div");
     wave.className = "wave-div";
