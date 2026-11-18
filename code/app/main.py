@@ -682,6 +682,7 @@ async def auth(body: AuthIn, request: Request,
     followers = db.query(models.Follow).filter_by(following_id=user.telegram_id).count()
     following = db.query(models.Follow).filter_by(follower_id=user.telegram_id).count()
     posts = db.query(models.Post).filter_by(user_id=user.telegram_id, is_deleted=False).filter(models.Post.type != "repost").count()
+    level_badges = _level_and_badges(db, user)
     return {
         "telegram_id": user.telegram_id,
         "first_name": user.first_name,
@@ -700,6 +701,9 @@ async def auth(body: AuthIn, request: Request,
         "theme": _theme_picks(user),
         "media_token": _media_token(),
         "adsgram_block_id": settings.ADSGRAM_BLOCK_ID,
+        # Phase 137: level (from lifetime points) + badges.
+        "level": level_badges["level"],
+        "badges": level_badges["badges"],
     }
 
 
@@ -2346,6 +2350,7 @@ def public_profile(telegram_id: int, user: models.User = Depends(current_user),
                              - target.name_changed_at).total_seconds()
         if left > 0:
             name_locked_days = int(left // 86400) + 1
+    level_badges = _level_and_badges(db, target)
     return {
         "telegram_id": target.telegram_id,
         "first_name": target.first_name,
@@ -2371,6 +2376,9 @@ def public_profile(telegram_id: int, user: models.User = Depends(current_user),
         # profile offers Block/Unblock from this flag).
         "blocked_by_me": _blocked_by(db, user.telegram_id, telegram_id),
         "name_locked_days": name_locked_days,
+        # Phase 137: level (from lifetime points) + badges.
+        "level": level_badges["level"],
+        "badges": level_badges["badges"],
     }
 
 
@@ -2932,6 +2940,111 @@ def _checkin_streak(db, user_id):
         streak += 1
         cur -= timedelta(days=1)
     return streak
+
+
+# Phase 137: Levels & badges — computed from data the app
+# already has (lifetime points, post/follower counts,
+# verification, join date, tips, check-in streak). Nothing is
+# stored: a member's level and badges always reflect their
+# current numbers.
+LEVELS = (
+    (0, "Newcomer"),
+    (100, "Rising"),
+    (500, "Active"),
+    (1000, "Creator"),
+    (2500, "Influencer"),
+    (5000, "Star"),
+    (10000, "Legend"),
+    (20000, "Nexora Elite"),
+)
+
+
+def _lifetime_points(db, user_id):
+    """Sum of positive ledger rows — the same figure the
+    monetization gate and the Members sort use."""
+    return int(db.query(func.coalesce(func.sum(
+        models.PointsLedger.amount), 0)).filter(
+        models.PointsLedger.user_id == user_id,
+        models.PointsLedger.amount > 0).scalar() or 0)
+
+
+def level_for(points):
+    """Pure: lifetime points -> {level, name, points, next_level,
+    progress}. L6 Star at 5000 deliberately matches the
+    monetization gate's 5000 lifetime-points requirement."""
+    points = max(0, int(points))
+    idx = 0
+    for i, (threshold, _name) in enumerate(LEVELS):
+        if points >= threshold:
+            idx = i
+    threshold, name = LEVELS[idx]
+    if idx + 1 < len(LEVELS):
+        nxt_threshold, nxt_name = LEVELS[idx + 1]
+        progress = (points - threshold) / (nxt_threshold - threshold)
+        nxt = {"level": idx + 2, "name": nxt_name,
+               "points_needed": nxt_threshold - points}
+    else:
+        progress = 1.0
+        nxt = None
+    return {"level": idx + 1, "name": name, "points": points,
+            "next_level": nxt, "progress": round(progress, 4)}
+
+
+# Badge catalogue: (id, icon, name, hint). Earned is computed per
+# member in badges_for(); the list always shows locked badges too,
+# greyed, with the requirement as the hint.
+BADGE_DEFS = (
+    ("first-post", "\U0001f4dd", "First Post", "Publish your first post"),
+    ("25-posts", "\u270d\ufe0f", "25 Posts", "Publish 25 posts"),
+    ("100-posts", "\U0001f525", "100 Posts", "Publish 100 posts"),
+    ("500-followers", "\U0001f465", "500 Followers", "Reach 500 followers"),
+    ("1000-followers", "\U0001f31f", "1000 Followers", "Reach 1000 followers"),
+    ("verified", "\u2705", "Verified", "Earn the blue tick"),
+    ("tips-10", "\u2b50", "10 Tips", "Receive 10 Stars tips"),
+    ("streak-30", "\U0001f4c5", "30-Day Streak", "Check in 30 days in a row"),
+    ("pioneer", "\U0001f680", "Pioneer", "Joined before Dec 2026"),
+)
+
+
+def badges_for(db, user):
+    """Computed badges for one member. Counts use the same rules
+    as the rest of the app: original posts only (no reposts), the
+    displayed follower count (official account starts at 10,000),
+    completed tips only, and the monetization gate's streak
+    (computed from DailyClaim rows by _checkin_streak)."""
+    posts = db.query(models.Post).filter_by(
+        user_id=user.telegram_id, is_deleted=False).filter(
+        models.Post.type != "repost").count()
+    followers = db.query(models.Follow).filter_by(
+        following_id=user.telegram_id).count()
+    if user.telegram_id == OFFICIAL_ID:
+        followers += OFFICIAL_FOLLOWER_BASE
+    tips = db.query(models.Tip).filter_by(
+        to_user_id=user.telegram_id, status="completed").count()
+    streak = _checkin_streak(db, user.telegram_id)
+    pioneer = bool(user.created_at) and \
+        user.created_at < datetime(2026, 12, 1)
+    earned = {
+        "first-post": posts >= 1,
+        "25-posts": posts >= 25,
+        "100-posts": posts >= 100,
+        "500-followers": followers >= 500,
+        "1000-followers": followers >= 1000,
+        "verified": bool(user.is_verified),
+        "tips-10": tips >= 10,
+        "streak-30": streak >= 30,
+        "pioneer": pioneer,
+    }
+    return [{"id": bid, "icon": icon, "name": name, "hint": hint,
+             "earned": earned[bid]}
+            for bid, icon, name, hint in BADGE_DEFS]
+
+
+def _level_and_badges(db, user):
+    """One call for endpoints that show a member: level (from
+    lifetime points) + computed badges."""
+    return {"level": level_for(_lifetime_points(db, user.telegram_id)),
+            "badges": badges_for(db, user)}
 
 
 def _task_state(db, user, task):

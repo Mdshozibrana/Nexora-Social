@@ -2834,6 +2834,46 @@ function themeCard() {
 }
 
 // -------------------------------------------------------------- profile ---
+// Phase 137: Levels & badges — one shared renderer for the
+// profile hero and the Me "My level" card. Earned badges in
+// colour, locked ones greyed with their requirement as a hint.
+function renderLevelBlock(level, badges) {
+  const wrap = document.createElement("div");
+  wrap.className = "level-block";
+  if (!level) { wrap.textContent = ""; return wrap; }
+  const head = document.createElement("div");
+  head.className = "level-head";
+  head.textContent = "Level " + level.level + " · " + level.name;
+  wrap.appendChild(head);
+  const bar = document.createElement("div");
+  bar.className = "level-bar";
+  const fill = document.createElement("div");
+  fill.className = "level-fill";
+  fill.style.width = Math.round(level.progress * 100) + "%";
+  bar.appendChild(fill);
+  wrap.appendChild(bar);
+  const sub = document.createElement("div");
+  sub.className = "level-sub";
+  sub.textContent = level.next_level
+    ? (level.next_level.points_needed + " points to Level "
+       + level.next_level.level + " · " + level.next_level.name)
+    : "Max level — " + level.name;
+  wrap.appendChild(sub);
+  if (badges && badges.length) {
+    const row = document.createElement("div");
+    row.className = "badge-row";
+    badges.forEach(b => {
+      const chip = document.createElement("span");
+      chip.className = "badge-chip" + (b.earned ? "" : " badge-locked");
+      chip.title = b.hint || b.name;
+      chip.textContent = b.icon + " " + b.name;
+      row.appendChild(chip);
+    });
+    wrap.appendChild(row);
+  }
+  return wrap;
+}
+
 async function openProfile(userId) {
   profileId = userId;
   profileCursor = null;
@@ -2917,6 +2957,8 @@ async function openProfile(userId) {
         + " Stars received · " + t.tip_count + " tips";
     }).catch(() => { tipLine.textContent = ""; });
     hero.appendChild(tipLine);
+    // Phase 137: level + badges under the hero stats.
+    hero.appendChild(renderLevelBlock(u.level, u.badges));
     box.appendChild(hero);
     const wave = document.createElement("div");
     wave.className = "wave-div";
@@ -3379,6 +3421,28 @@ async function myExtras() {
       } catch (e) { insBox.textContent = "Could not load insights."; }
     };
     wrap.append(insBtn, insBox);
+    // Phase 137: My level — current level, progress to the
+    // next, and the full badge list (earned + locked). Fetched
+    // fresh from your own profile so points earned this session
+    // already count.
+    const lvlBtn = document.createElement("button");
+    lvlBtn.className = "wide";
+    lvlBtn.textContent = "🏆 My level";
+    const lvlBox = document.createElement("div");
+    lvlBox.className = "card level-card";
+    lvlBox.hidden = true;
+    let lvlLoaded = false;
+    lvlBtn.onclick = async () => {
+      lvlBox.hidden = !lvlBox.hidden;
+      if (lvlBox.hidden || lvlLoaded) return;
+      lvlLoaded = true;
+      try {
+        const prof = await api("/users/" + me.telegram_id);
+        lvlBox.appendChild(renderLevelBlock(prof.level, prof.badges));
+      } catch (e) { lvlBox.textContent = "Could not load your level."; }
+    };
+    wrap.append(lvlBtn, lvlBox);
+
     if (me.bot_username) {
       const link = "https://t.me/" + me.bot_username + "?start=ref_" + me.telegram_id;
       const rh = document.createElement("h3");
