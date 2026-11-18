@@ -2725,6 +2725,23 @@ html[data-theme] .suggest-follow.on { background: var(--t-chip, #F3DCE7);
 .task-go-chev { font-size: 22px; font-weight: 800; color: #2F7FBF; flex: none; }
 
 /* ================================================================
+   Phase 134 — post insights: totals, 14-day bar chart, table
+   ================================================================ */
+.ins-totals { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+.ins-total { flex: 1 1 28%; background: #FFFBFC; border: 1px solid #E5D9C8; border-radius: 14px; padding: 10px 6px; text-align: center; }
+.ins-num { font-weight: 700; font-size: 16px; }
+.ins-label { font-size: 11px; color: #8A6D7B; margin-top: 2px; }
+.ins-chart { display: flex; align-items: flex-end; gap: 3px; height: 110px; margin: 12px 0 4px; padding: 0 2px; }
+.ins-col { flex: 1; display: flex; flex-direction: column; align-items: center; height: 100%; }
+.ins-barwrap { flex: 1; width: 100%; display: flex; align-items: flex-end; min-height: 0; }
+.ins-bar { width: 100%; max-width: 18px; border-radius: 4px 4px 0 0; background: linear-gradient(180deg, #8ED4F7, #3E8FD0); min-height: 2px; }
+.ins-day { font-size: 10px; color: #8A6D7B; margin-top: 3px; flex: none; }
+.ins-table { width: 100%; border-collapse: collapse; font-size: 12px; margin: 10px 0; }
+.ins-table th, .ins-table td { padding: 5px 6px; text-align: right; border-bottom: 1px solid #E5D9C8; }
+.ins-table th:first-child, .ins-table td:first-child { text-align: left; }
+.ins-top-row { display: block; width: 100%; text-align: left; }
+
+/* ================================================================
    Phase 133 — Stars tipping
    ================================================================ */
 .tip-chips { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }

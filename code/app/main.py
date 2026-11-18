@@ -2906,6 +2906,142 @@ def user_tips(telegram_id: int, db: Session = Depends(get_db)):
             "tip_count": count, "recent": recent}
 
 
+# ---------------------------------------------------------------------------
+# Phase 134: post insights (creator analytics). Everything is
+# computed from existing tables — PostView / Like / Comment /
+# Tip all carry created_at, so the 14-day daily series is exact.
+# (Views are UNIQUE views: one PostView row per viewer, so a
+# viewer counts on the day they first saw the post.)
+# ---------------------------------------------------------------------------
+
+def _insights_daily(db, post_id, start):
+    """Per-day {views, likes, comments} for the 14 days from
+    `start` (a UTC date) — days with no activity get zeros."""
+    days = [start + timedelta(days=i) for i in range(14)]
+    out = {d: {"date": d.isoformat(), "views": 0, "likes": 0,
+               "comments": 0} for d in days}
+    start_dt = datetime(start.year, start.month, start.day)
+    for model, key in ((models.PostView, "views"),
+                       (models.Like, "likes"),
+                       (models.Comment, "comments")):
+        for (ts,) in db.query(model.created_at).filter(
+                model.post_id == post_id,
+                model.created_at >= start_dt).all():
+            if ts is None:
+                continue
+            d = ts.date()
+            if d in out:
+                out[d][key] += 1
+    return [out[d] for d in days]
+
+
+def _post_insights_totals(db, post):
+    """All-time totals for one post (by original id)."""
+    pid = post.id
+    return {
+        "views": db.query(models.PostView).filter_by(
+            post_id=pid).count(),
+        "likes": db.query(models.Like).filter_by(
+            post_id=pid).count(),
+        "comments": db.query(models.Comment).filter_by(
+            post_id=pid).count(),
+        "reposts": post.repost_count or 0,
+        "tips_stars": int(db.query(func.coalesce(
+            func.sum(models.Tip.amount_stars), 0)).filter(
+            models.Tip.post_id == pid).scalar() or 0),
+        "tips_count": db.query(models.Tip).filter_by(
+            post_id=pid).count(),
+    }
+
+
+@app.get("/posts/{post_id}/insights")
+def post_insights(post_id: int,
+                  user: models.User = Depends(current_user),
+                  db: Session = Depends(get_db)):
+    """Author-only analytics for one post: all-time totals +
+    the last 14 days of daily views/likes/comments (UTC dates,
+    newest last) + the best (highest-view) day."""
+    _enforce_rate("insights", f"u{user.telegram_id}")
+    p = db.get(models.Post, post_id)
+    if p is None or p.is_deleted:
+        raise HTTPException(404, "Post not found")
+    eff_id = p.repost_of_id or p.id
+    eff = db.get(models.Post, eff_id) if eff_id != p.id else p
+    if eff is None or eff.is_deleted:
+        raise HTTPException(404, "Post not found")
+    if eff.user_id != user.telegram_id:
+        raise HTTPException(403, "Only the author can see insights")
+    totals = _post_insights_totals(db, eff)
+    today = datetime.utcnow().date()
+    daily = _insights_daily(db, eff_id, today - timedelta(days=13))
+    best = None
+    for d in daily:
+        if d["views"] and (best is None or d["views"] > best["views"]):
+            best = {"date": d["date"], "views": d["views"]}
+    return {"post_id": eff_id, "totals": totals,
+            "best_day": best, "daily": daily}
+
+
+@app.get("/me/insights")
+def my_insights(user: models.User = Depends(current_user),
+                db: Session = Depends(get_db)):
+    """The author's own overview: totals across their original
+    posts + the top 5 posts by views."""
+    _enforce_rate("insights", f"u{user.telegram_id}")
+    mine = db.query(models.Post).filter(
+        models.Post.user_id == user.telegram_id,
+        models.Post.is_deleted == False,
+        models.Post.type != "repost").all()
+    ids = [p.id for p in mine]
+
+    def _counts(model):
+        if not ids:
+            return {}
+        rows = db.query(model.post_id, func.count()).filter(
+            model.post_id.in_(ids)).group_by(model.post_id).all()
+        return {pid: n for pid, n in rows}
+
+    views = _counts(models.PostView)
+    likes = _counts(models.Like)
+    comments = _counts(models.Comment)
+    totals = {
+        "views": sum(views.values()),
+        "likes": sum(likes.values()),
+        "comments": sum(comments.values()),
+        "posts": len(mine),
+        "tips_stars": int(db.query(func.coalesce(
+            func.sum(models.Tip.amount_stars), 0)).filter(
+            models.Tip.to_user_id == user.telegram_id).scalar() or 0),
+    }
+    top = sorted(mine, key=lambda p: views.get(p.id, 0),
+                 reverse=True)[:5]
+    return {"totals": totals,
+            "top_posts": [{"id": p.id,
+                           "caption_excerpt": (p.caption or "")[:60],
+                           "views": views.get(p.id, 0),
+                           "likes": likes.get(p.id, 0),
+                           "comments": comments.get(p.id, 0)}
+                          for p in top]}
+
+
+@app.get("/posts/{post_id}")
+def get_post(post_id: int,
+             user: models.User = Depends(current_user),
+             db: Session = Depends(get_db)):
+    """One post as a feed-shaped card (Phase 134: the My-insights
+    top-posts tap target — the app has no single-post view, so
+    the card itself is the view). Any signed-in member may read
+    a post; a deleted post or a gone original is a 404."""
+    p = db.get(models.Post, post_id)
+    if p is None or p.is_deleted:
+        raise HTTPException(404, "Post not found")
+    counts = _post_view_counts(db, [p])
+    out = _post_list(db, [p], user.telegram_id, counts=counts)
+    if not out:
+        raise HTTPException(404, "Post not found")
+    return out[0]
+
+
 
 
 # ---------------------------------------------------------------------------

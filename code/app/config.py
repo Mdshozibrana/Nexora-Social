@@ -98,6 +98,8 @@ RATE_LIMITS = {
     "payout": (10, 3600),
     # Phase 133: Stars tip-invoice requests.
     "tip": (120, 3600),
+    # Phase 134: post insights (creator analytics).
+    "insights": (120, 3600),
     "payout_admin": (120, 3600),
 }
 

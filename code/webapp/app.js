@@ -1640,6 +1640,10 @@ async function openReelMenu(p, reelEl) {
     } catch (e) { setStatus("Could not pin this post."); }
   });
   if (mine) row("✏️", "Edit", () => openPostEditor(p, reelEl));
+  // Phase 134: per-post analytics for the author — originals
+  // and reposts of your own posts (the endpoint resolves a
+  // repost to its original).
+  if (mine) row("📊", "Insights", () => openInsights(p.id, p));
   if (mine) row("🗑", "Delete", async () => {
     try {
       await api("/posts/" + p.id, { method: "DELETE" });
@@ -1653,6 +1657,121 @@ async function openReelMenu(p, reelEl) {
 }
 
 // Phase 59: caption editor for your own post, inside the
+// Phase 134: per-post analytics sheet for the author —
+// totals, a 14-day bar chart of daily views (plain divs,
+// no chart library) and a daily table.
+async function openInsights(postId, p) {
+  const sheet = $("reel-sheet");
+  sheet.innerHTML = "";
+  const title = document.createElement("div");
+  title.className = "sheet-title";
+  title.textContent = "📊 Insights";
+  sheet.appendChild(title);
+  const load = document.createElement("div");
+  load.className = "hint";
+  load.textContent = "Loading insights…";
+  sheet.appendChild(load);
+  $("reel-sheet-wrap").hidden = false;
+  updateBackButton();
+  try {
+    const ins = await api("/posts/" + postId + "/insights");
+    load.remove();
+    const t = ins.totals;
+    const totals = document.createElement("div");
+    totals.className = "ins-totals";
+    [["👁", t.views, "Views"], ["🤍", t.likes, "Likes"],
+     ["💬", t.comments, "Comments"], ["🔁", t.reposts, "Reposts"],
+     ["⭐", t.tips_stars, "Tips"]].forEach(([ic, n, label]) => {
+      const cell = document.createElement("div");
+      cell.className = "ins-total";
+      const v = document.createElement("div");
+      v.className = "ins-num";
+      v.textContent = ic + " " + n;
+      const l = document.createElement("div");
+      l.className = "ins-label";
+      l.textContent = label;
+      cell.append(v, l);
+      totals.appendChild(cell);
+    });
+    sheet.appendChild(totals);
+    if (ins.best_day) {
+      const best = document.createElement("div");
+      best.className = "hint";
+      best.textContent = "Best day: " + ins.best_day.date + " · " +
+        ins.best_day.views + " views";
+      sheet.appendChild(best);
+    }
+    const maxV = Math.max(1, ...ins.daily.map(d => d.views));
+    const chart = document.createElement("div");
+    chart.className = "ins-chart";
+    ins.daily.forEach(d => {
+      const col = document.createElement("div");
+      col.className = "ins-col";
+      const wrap = document.createElement("div");
+      wrap.className = "ins-barwrap";
+      const bar = document.createElement("div");
+      bar.className = "ins-bar";
+      bar.style.height = Math.max(2, Math.round(d.views / maxV * 100)) + "%";
+      bar.title = d.date + ": " + d.views + " views";
+      wrap.appendChild(bar);
+      const lab = document.createElement("div");
+      lab.className = "ins-day";
+      lab.textContent = Number(d.date.slice(8, 10));
+      col.append(wrap, lab);
+      chart.appendChild(col);
+    });
+    sheet.appendChild(chart);
+    const table = document.createElement("table");
+    table.className = "ins-table";
+    const head = document.createElement("tr");
+    ["Date", "Views", "Likes", "Comments"].forEach(h => {
+      const th = document.createElement("th");
+      th.textContent = h;
+      head.appendChild(th);
+    });
+    table.appendChild(head);
+    ins.daily.forEach(d => {
+      const tr = document.createElement("tr");
+      [d.date, d.views, d.likes, d.comments].forEach(v => {
+        const td = document.createElement("td");
+        td.textContent = v;
+        tr.appendChild(td);
+      });
+      table.appendChild(tr);
+    });
+    sheet.appendChild(table);
+  } catch (e) { load.textContent = "Could not load insights."; }
+  const cancel = document.createElement("button");
+  cancel.className = "sheet-row";
+  cancel.textContent = "✕ Close";
+  cancel.onclick = () => closeReelMenu();
+  sheet.appendChild(cancel);
+}
+
+// Phase 134: open one post (from the My-insights top list) as
+// a full card inside the sheet — the app has no single-post
+// view, so the card itself is the view.
+async function openTopPost(postId) {
+  const sheet = $("reel-sheet");
+  sheet.innerHTML = "";
+  const load = document.createElement("div");
+  load.className = "hint";
+  load.textContent = "Loading post…";
+  sheet.appendChild(load);
+  $("reel-sheet-wrap").hidden = false;
+  updateBackButton();
+  try {
+    const p = await api("/posts/" + postId);
+    load.remove();
+    sheet.appendChild(postCard(p));
+  } catch (e) { load.textContent = "Could not load this post."; }
+  const cancel = document.createElement("button");
+  cancel.className = "sheet-row";
+  cancel.textContent = "✕ Close";
+  cancel.onclick = () => closeReelMenu();
+  sheet.appendChild(cancel);
+}
+
 // same sheet. On save the card's caption + hashtag chips
 // repaint in place (feed/profile cards); reels just keep
 // the updated data.
@@ -3117,6 +3236,61 @@ async function myExtras() {
       } catch (e) { tipsBox.textContent = "Could not load tips."; }
     };
     wrap.append(tipsBtn, tipsBox);
+    // Phase 134: My insights — totals across your posts plus
+    // your top 5 posts by views; tap a post to open it.
+    const insBtn = document.createElement("button");
+    insBtn.className = "wide";
+    insBtn.textContent = "📊 My insights";
+    const insBox = document.createElement("div");
+    insBox.className = "card ins-card";
+    insBox.hidden = true;
+    let insLoaded = false;
+    insBtn.onclick = async () => {
+      insBox.hidden = !insBox.hidden;
+      if (insBox.hidden || insLoaded) return;
+      insLoaded = true;
+      try {
+        const ins = await api("/me/insights");
+        const t = ins.totals;
+        const head = document.createElement("div");
+        head.className = "ins-totals";
+        [["👁", t.views, "Views"], ["🤍", t.likes, "Likes"],
+         ["💬", t.comments, "Comments"],
+         ["📝", t.posts, "Posts"],
+         ["⭐", t.tips_stars, "Tips"]].forEach(([ic, n, label]) => {
+          const cell = document.createElement("div");
+          cell.className = "ins-total";
+          const v = document.createElement("div");
+          v.className = "ins-num";
+          v.textContent = ic + " " + n;
+          const l = document.createElement("div");
+          l.className = "ins-label";
+          l.textContent = label;
+          cell.append(v, l);
+          head.appendChild(cell);
+        });
+        insBox.appendChild(head);
+        const h = document.createElement("div");
+        h.className = "tips-head";
+        h.textContent = "Top posts";
+        insBox.appendChild(h);
+        if (!ins.top_posts.length) {
+          const e = document.createElement("div");
+          e.className = "hint";
+          e.textContent = "No posts yet.";
+          insBox.appendChild(e);
+        }
+        ins.top_posts.forEach(tp => {
+          const r = document.createElement("button");
+          r.className = "sheet-row ins-top-row";
+          r.textContent = "👁 " + tp.views + " · 🤍 " + tp.likes +
+            " — " + (tp.caption_excerpt || "(no caption)");
+          r.onclick = () => openTopPost(tp.id);
+          insBox.appendChild(r);
+        });
+      } catch (e) { insBox.textContent = "Could not load insights."; }
+    };
+    wrap.append(insBtn, insBox);
     if (me.bot_username) {
       const link = "https://t.me/" + me.bot_username + "?start=ref_" + me.telegram_id;
       const rh = document.createElement("h3");
