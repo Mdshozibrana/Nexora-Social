@@ -203,6 +203,9 @@ function markViewed(kind, id, onViews) {
 }
 
 function showView(name, viaBack) {
+  // Phase 146: leaving the profile view forgets the remembered
+  // profile — only a reload while still on a profile restores it.
+  if (name !== "profile") forgetProfile();
   // Phase 20: defense in depth — the admin view refuses to open for
   // non-admins even if triggered programmatically (the API is guarded
   // too; this keeps the shell itself private as the owner expects).
@@ -2929,8 +2932,37 @@ function renderLevelBlock(level, badges) {
   return wrap;
 }
 
+// Phase 146 (owner): a reload must re-open the profile being
+// viewed, not the viewer's own. The viewed id is remembered
+// in sessionStorage (same pattern as nx_open_admin / nx_actas):
+// it survives a reload in the same WebView and dies with the
+// session. Leaving the profile view forgets it, so a reload
+// from anywhere else boots normally.
+function rememberProfile(id) {
+  try { sessionStorage.setItem("nx_profile", String(id)); }
+  catch (e) {}
+}
+function forgetProfile() {
+  try { sessionStorage.removeItem("nx_profile"); } catch (e) {}
+}
+function readRememberedProfile() {
+  let id = 0;
+  try {
+    id = parseInt(sessionStorage.getItem("nx_profile") || "", 10)
+      || 0;
+  } catch (e) {}
+  return id;
+}
+function restoreProfile() {
+  const id = readRememberedProfile();
+  if (id > 0) openProfile(id);
+}
+
 async function openProfile(userId) {
   profileId = userId;
+  // Phase 146: remember the profile being viewed so a reload
+  // re-opens it instead of defaulting to the viewer's own.
+  rememberProfile(userId);
   profileCursor = null;
   showView("profile");
   const box = $("profile-box");
@@ -4761,13 +4793,16 @@ function routeStartParam() {
   }
   if (p && p.indexOf("profile_") === 0) {
     const id = parseInt(p.slice(8), 10);
-    if (id) openProfile(id);
+    if (id) { openProfile(id); return true; }
   }
+  return false;
 }
 function bootOk() {
   loadAnnouncementBar();
   loadFeed(true);
-  routeStartParam();
+  // Phase 146: a deep link (start param) wins; otherwise a
+  // reload re-opens the profile the member was viewing.
+  if (!routeStartParam()) restoreProfile();
 }
 
 function bootFailed() {
@@ -4987,13 +5022,19 @@ document.querySelectorAll(".gb-item[data-go]").forEach(b => {
   b.onclick = () => {
     const go = b.dataset.go;
     closeSidebar();
-    showView(go);
+    // Phase 146: "My Profile" must open the viewer's own
+    // profile — showView("profile") alone would keep showing
+    // whichever profile was last rendered.
+    if (go === "profile" && me) openProfile(me.telegram_id);
+    else showView(go);
     if (go === "profile") loadMe();
   };
 });
 $("gb-foot").onclick = () => {
   closeSidebar();
-  showView("profile");
+  // Phase 146: same as the sidebar "My Profile" item — open
+  // the viewer's own profile, not the last-rendered one.
+  if (me) openProfile(me.telegram_id); else showView("profile");
   loadMe();
 };
 $("gb-official").onclick = () => {
@@ -5811,7 +5852,11 @@ $("design-more").onclick = () => loadDesigns(false);
     shared: () => loadShared(),
     notifications: () => loadNotifications(true),
     messages: () => loadMessages(),
-    profile: () => { if (me) openProfile(me.telegram_id); },
+    // Phase 146 (owner): pull-to-refresh on a profile re-opens
+    // the profile being viewed — the old code always opened
+    // the viewer's own profile instead.
+    profile: () => { if (profileId) openProfile(profileId);
+                     else if (me) openProfile(me.telegram_id); },
     admin: () => loadAdmin(),
     museum: () => loadMuseum(true),
   };
