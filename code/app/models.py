@@ -519,3 +519,27 @@ class Tip(Base):
                                         unique=True, index=True)
     status = Column(String(16), default="completed", nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
+
+class ScheduledPost(Base):
+    """Phase 135: a post waiting for its time — text plus an
+    optional already-uploaded media reference, and the UTC time it
+    should go out. The sweeper publishes it through the normal
+    post path; a failed row stays failed with a short error and is
+    never retried automatically. Polls are NOT scheduled (they
+    live on a live post)."""
+    __tablename__ = "scheduled_posts"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("users.telegram_id"),
+                     index=True, nullable=False)
+    text = Column(Text, default="")
+    media_file_id = Column(String(256), nullable=True)
+    media_type = Column(String(16), nullable=True)  # photo | video
+    scheduled_at = Column(DateTime, nullable=False, index=True)
+    status = Column(String(16), default="pending", nullable=False)
+    # pending | posted | failed | cancelled
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    posted_post_id = Column(Integer, ForeignKey("posts.id"),
+                            nullable=True)
+    error = Column(String(256), nullable=True)

@@ -5,8 +5,8 @@ after an admin backup download last_backup_at is set with kind
 "download" and last_restore_at stays null; after a backup send
 (mocked) kind becomes "send"; after a restore last_restore_at is
 set and the last backup (from the restored audit rows) survives;
-non-admin 403, unauthenticated 401; backup still carries 37 tables;
-?v=134 x5, no ?v=134; backup-reminder client markers + Phase 123-131
+non-admin 403, unauthenticated 401; backup still carries 38 tables;
+?v=135 x5, no ?v=135; backup-reminder client markers + Phase 123-131
 markers intact.
 """
 import hashlib, hmac, json, os, time, urllib.parse
@@ -120,15 +120,15 @@ with TestClient(app) as c:
             action="backup_restore").count() == 1
     print("backup-status after restore OK")
 
-    # 6. Backup still carries 37 tables, no migration change.
+    # 6. Backup still carries 38 tables, no migration change.
     r = c.get("/admin/backup", headers=ADMIN)
     assert r.status_code == 200, r.status_code
-    assert len(r.json()["tables"]) == 37, len(r.json()["tables"])
-    print("backup: 37 tables OK")
+    assert len(r.json()["tables"]) == 38, len(r.json()["tables"])
+    print("backup: 38 tables OK")
 
     # 7. Client markers + asset version.
     html = open("webapp/index.html").read()
-    assert html.count("?v=134") == 5, html.count("?v=134")
+    assert html.count("?v=135") == 5, html.count("?v=135")
     assert "?v=131" not in html
     assert 'id="backup-reminder"' in html
     assert 'id="backup-warn"' in html
@@ -144,6 +144,6 @@ with TestClient(app) as c:
               "loadSecurityLog", "loadPayouts", "loadBroadcasts",
               "BC_TARGET_LABELS"):
         assert m in js, m
-    print("client markers + ?v=134 OK")
+    print("client markers + ?v=135 OK")
 
 print("PHASE-132 TESTS PASSED")

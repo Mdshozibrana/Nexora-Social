@@ -6,8 +6,8 @@ target reaches only verified members; new_7d only recent joiners;
 inactive_30d only members with no post AND no app activity in the
 last 30 days; an empty target set succeeds with 0/0 and still records
 the row; unknown target 400; empty text 400; non-admin 403 on both
-endpoints; history newest-first + limit cap; backup carries 37 tables
-incl. broadcasts; ?v=134 x5, no ?v=130; broadcast client markers +
+endpoints; history newest-first + limit cap; backup carries 38 tables
+incl. broadcasts; ?v=135 x5, no ?v=130; broadcast client markers +
 Phase 123-130 markers intact.
 """
 import hashlib, hmac, json, os, time, urllib.parse
@@ -196,19 +196,19 @@ with TestClient(app) as c:
     assert r.status_code == 401, r.status_code
     print("broadcast validation + auth OK")
 
-    # 8. Backup carries 37 tables incl. broadcasts with the rows.
+    # 8. Backup carries 38 tables incl. broadcasts with the rows.
     r = c.get("/admin/backup", headers=ADMIN)
     assert r.status_code == 200, r.status_code
     bk = r.json()
-    assert len(bk["tables"]) == 37, len(bk["tables"])
+    assert len(bk["tables"]) == 38, len(bk["tables"])
     assert "broadcasts" in bk["tables"], list(bk["tables"])
     assert len(bk["tables"]["broadcasts"]) >= 6, \
         len(bk["tables"]["broadcasts"])
-    print("backup: 37 tables incl. broadcasts OK")
+    print("backup: 38 tables incl. broadcasts OK")
 
     # 9. Client markers + asset version.
     html = open("webapp/index.html").read()
-    assert html.count("?v=134") == 5, html.count("?v=134")
+    assert html.count("?v=135") == 5, html.count("?v=135")
     assert "?v=130" not in html
     assert 'id="admin-bc-target"' in html
     assert 'id="admin-bc-history"' in html
@@ -220,6 +220,6 @@ with TestClient(app) as c:
               "goFeedTo", "loadTrending", "loadHealth", "loadAdminBrowse",
               "loadSecurityLog", "loadPayouts"):
         assert m in js, m
-    print("client markers + ?v=134 OK")
+    print("client markers + ?v=135 OK")
 
 print("PHASE-131 TESTS PASSED")

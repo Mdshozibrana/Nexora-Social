@@ -100,6 +100,8 @@ RATE_LIMITS = {
     "tip": (120, 3600),
     # Phase 134: post insights (creator analytics).
     "insights": (120, 3600),
+    # Phase 135: scheduled posts — queueing + cancelling.
+    "scheduled": (120, 3600),
     "payout_admin": (120, 3600),
 }
 

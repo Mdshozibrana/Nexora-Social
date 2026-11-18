@@ -95,8 +95,8 @@ with TestClient(app) as c:
         "Phase 111 cache gone"
     print("Phase 108/109/110/111 markers OK")
 
-    for asset in ("style.css?v=134", "app.js?v=134", "games.js?v=134"):
+    for asset in ("style.css?v=135", "app.js?v=135", "games.js?v=135"):
         assert asset in html, asset
-    print("asset version ?v=134 OK")
+    print("asset version ?v=135 OK")
 
 print("PHASE 112 OK")

@@ -25,7 +25,7 @@ from sqlalchemy import func, inspect, or_, text
 from sqlalchemy.orm import Session
 from telegram import LabeledPrice
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from . import filesig, geoip, imgconv, models, moderation, notify, \
     ratelimit, \
@@ -514,15 +514,25 @@ _bot_app = None
 
 @app.on_event("startup")
 async def _startup():
-    global _bot_app
+    global _bot_app, _sweeper_task
     if settings.BOT_TOKEN:
         from .bot import build_bot_app, start_bot
         _bot_app = build_bot_app()
         await start_bot(_bot_app)
 
+    _sweeper_task = asyncio.create_task(_scheduled_posts_loop())
+
 
 @app.on_event("shutdown")
 async def _shutdown():
+    global _sweeper_task
+    if _sweeper_task is not None:
+        _sweeper_task.cancel()
+        try:
+            await _sweeper_task
+        except asyncio.CancelledError:
+            pass
+        _sweeper_task = None
     if _bot_app:
         try:
             await _bot_app.updater.stop()
@@ -1765,6 +1775,178 @@ def publish_draft(draft_id: int, user: models.User = Depends(current_user),
     db.delete(d)
     db.commit()
     return post_dict(db, post, viewer_id=user.telegram_id)
+
+
+# Phase 135 — Scheduled posts: a member picks a date + time and
+# the post goes out then, through the normal post path (points,
+# hashtags, screening — exactly like posting now). The sweeper
+# below wakes every 60 seconds; on the free Render plan the
+# service sleeps when idle, so a scheduled post can land up to
+# ~10 minutes late (the keepalive ping keeps it warm) — the PRD
+# says so plainly, and the client never promises exact timing.
+# Polls are NOT scheduled (they live on a live post); text +
+# media only.
+_SCHEDULER_INTERVAL_S = 60
+_sweeper_task = None
+
+
+class ScheduledPostIn(BaseModel):
+    text: str = Field(default="", max_length=2000)
+    media_file_id: Optional[str] = Field(default=None, max_length=256)
+    media_type: Optional[str] = Field(default=None, max_length=16)
+    scheduled_at: str = Field(max_length=64)
+
+
+def _parse_scheduled_at(value):
+    """Parse an ISO date-time (with or without a zone) into a
+    naive UTC datetime, or 400."""
+    v = (value or "").strip()
+    if not v:
+        raise HTTPException(400, "scheduled_at is required")
+    try:
+        dt = datetime.fromisoformat(v.replace("Z", "+00:00"))
+    except ValueError:
+        raise HTTPException(400, "scheduled_at must be an ISO date-time")
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt
+
+
+def scheduled_dict(r):
+    return {"id": r.id, "text": r.text,
+            "media_file_id": r.media_file_id,
+            "media_type": r.media_type,
+            "scheduled_at": r.scheduled_at.isoformat()
+            if r.scheduled_at else None,
+            "status": r.status,
+            "created_at": r.created_at.isoformat()
+            if r.created_at else None,
+            "posted_post_id": r.posted_post_id,
+            "error": r.error}
+
+
+@app.post("/scheduled-posts")
+def create_scheduled_post(body: ScheduledPostIn,
+                          user: models.User = Depends(current_user),
+                          db: Session = Depends(get_db)):
+    """Queue a post for a future time — at least 5 minutes from
+    now, at most 90 days out. No poll: polls belong to a live post."""
+    _enforce_rate("scheduled", f"u{user.telegram_id}")
+    if body.media_type is not None \
+            and body.media_type not in ("photo", "video"):
+        raise HTTPException(400, "media_type must be photo or video")
+    if not (body.text or "").strip() and not body.media_file_id:
+        raise HTTPException(400, "A scheduled post needs text or media")
+    at = _parse_scheduled_at(body.scheduled_at)
+    now = datetime.utcnow()
+    if at < now + timedelta(minutes=5):
+        raise HTTPException(400,
+                            "Pick a time at least 5 minutes from now")
+    if at > now + timedelta(days=90):
+        raise HTTPException(400,
+                            "You can schedule up to 90 days ahead")
+    row = models.ScheduledPost(
+        user_id=user.telegram_id,
+        text=(body.text or "").strip(),
+        media_file_id=body.media_file_id,
+        media_type=body.media_type, scheduled_at=at)
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return scheduled_dict(row)
+
+
+@app.get("/scheduled-posts")
+def list_scheduled_posts(user: models.User = Depends(current_user),
+                         db: Session = Depends(get_db)):
+    rows = db.query(models.ScheduledPost).filter_by(
+        user_id=user.telegram_id).order_by(
+        models.ScheduledPost.created_at.desc()).limit(50).all()
+    return {"scheduled_posts": [scheduled_dict(r) for r in rows]}
+
+
+@app.delete("/scheduled-posts/{row_id}")
+def cancel_scheduled_post(row_id: int,
+                          user: models.User = Depends(current_user),
+                          db: Session = Depends(get_db)):
+    """Cancel a pending scheduled post. Posted, failed and already
+    cancelled rows cannot be cancelled."""
+    row = db.get(models.ScheduledPost, row_id)
+    if row is None or row.user_id != user.telegram_id:
+        raise HTTPException(404, "Scheduled post not found")
+    if row.status != "pending":
+        raise HTTPException(400,
+                            "Only a pending post can be cancelled")
+    row.status = "cancelled"
+    db.commit()
+    return {"ok": True, "id": row_id, "status": "cancelled"}
+
+
+def _publish_scheduled_row(db, row):
+    """Publish one due row through the normal post path. On
+    success the row is posted with its post id; on a screening
+    rejection or any other failure it is failed with a short
+    human message — and never retried automatically."""
+    user = db.get(models.User, row.user_id)
+    if user is None:
+        row.status = "failed"
+        row.error = "Account no longer exists."
+        db.commit()
+        return
+    ptype = row.media_type or "text"
+    if ptype not in ("photo", "video", "text"):
+        ptype = "text"
+    try:
+        if moderation.active() and ptype in ("photo", "video") \
+                and row.media_file_id:
+            verdict = _screen_file_id(ptype, row.media_file_id)
+            if verdict != "clean":
+                log_security_event(db, "screen_reject",
+                                   actor_id=row.user_id, detail=
+                                   f"{ptype} screened out ({verdict})")
+                row.status = "failed"
+                row.error = moderation.block_message(ptype, verdict)[:256]
+                db.commit()
+                return
+        post, _, _ = register_post(db, user, ptype,
+                                   row.media_file_id, row.text or "")
+        row.status = "posted"
+        row.posted_post_id = post.id
+        row.error = None
+        db.commit()
+    except Exception:
+        # A failed row is never retried: the member sees the
+        # reason and can delete or re-schedule it.
+        db.rollback()
+        row.status = "failed"
+        row.error = "Could not publish this post."
+        db.commit()
+
+
+def _run_scheduled_sweep():
+    """One sweep: publish every pending row whose time has come.
+    Sync — the loop runs it in a thread so screening network
+    calls never block the event loop."""
+    now = datetime.utcnow()
+    with SessionLocal() as db:
+        rows = db.query(models.ScheduledPost).filter(
+            models.ScheduledPost.status == "pending",
+            models.ScheduledPost.scheduled_at <= now).order_by(
+            models.ScheduledPost.scheduled_at.asc()).all()
+        for row in rows:
+            _publish_scheduled_row(db, row)
+
+
+async def _scheduled_posts_loop():
+    """Wake every 60 seconds and sweep due scheduled posts."""
+    while True:
+        try:
+            await asyncio.sleep(_SCHEDULER_INTERVAL_S)
+            await asyncio.to_thread(_run_scheduled_sweep)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logging.exception("scheduled-posts sweep failed")
 
 
 class PollVoteIn(BaseModel):
@@ -5183,6 +5365,8 @@ _BACKUP_TABLES = [
     ("broadcasts", models.Broadcast),
     # Phase 133: Stars tips.
     ("tips", models.Tip),
+    # Phase 135: scheduled posts.
+    ("scheduled_posts", models.ScheduledPost),
 ]
 _BACKUP_MODELS = {name: m for name, m in _BACKUP_TABLES}
 _BACKUP_MAX_BYTES = 50 * 1024 * 1024

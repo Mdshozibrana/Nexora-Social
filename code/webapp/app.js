@@ -3381,6 +3381,59 @@ async function myExtras() {
   };
   wrap.appendChild(draftsBtn);
   wrap.appendChild(draftsBox);
+  // Phase 135: Scheduled posts — what is queued, what went out,
+  // what failed (with the reason), and Cancel for pending rows.
+  const schedBtn = document.createElement("button");
+  schedBtn.className = "wide";
+  schedBtn.textContent = "📅 Scheduled";
+  const schedBox = document.createElement("div");
+  schedBox.className = "drafts-box";
+  schedBox.hidden = true;
+  const loadScheduled = async () => {
+    schedBox.innerHTML = "Loading…";
+    try {
+      const data = await api("/scheduled-posts");
+      schedBox.innerHTML = "";
+      if (!data.scheduled_posts.length) {
+        schedBox.textContent = "Nothing scheduled — write something in the composer and tap 🕐 Schedule.";
+        return;
+      }
+      data.scheduled_posts.forEach(s => {
+        const rowEl = document.createElement("div");
+        rowEl.className = "draft-row";
+        const tx = document.createElement("span");
+        tx.className = "draft-text";
+        const when = new Date(s.scheduled_at).toLocaleString();
+        const st = s.status === "pending" ? "⏳ Pending" :
+                   s.status === "posted" ? "✅ Posted" :
+                   s.status === "failed" ? "❌ Failed" : "🚫 Cancelled";
+        tx.textContent = st + " · " + when + " — " +
+          (s.text || (s.media_type ? "📷 " + s.media_type : "…")).slice(0, 100);
+        if (s.status === "failed" && s.error) {
+          tx.textContent += " (" + s.error + ")";
+        }
+        rowEl.appendChild(tx);
+        if (s.status === "pending") {
+          const cancel = document.createElement("button");
+          cancel.textContent = "Cancel";
+          cancel.onclick = async () => {
+            try {
+              await api("/scheduled-posts/" + s.id, { method: "DELETE" });
+              loadScheduled();
+            } catch (e) { setStatus("Could not cancel."); }
+          };
+          rowEl.appendChild(cancel);
+        }
+        schedBox.appendChild(rowEl);
+      });
+    } catch (e) { schedBox.textContent = "Could not load scheduled posts."; }
+  };
+  schedBtn.onclick = () => {
+    schedBox.hidden = !schedBox.hidden;
+    if (!schedBox.hidden) loadScheduled();
+  };
+  wrap.appendChild(schedBtn);
+  wrap.appendChild(schedBox);
   try {
     const mon = await api("/me/monetization");
     const card = document.createElement("div");
@@ -3908,6 +3961,68 @@ $("composer-draft").onclick = async () => {
     composerStatus("Draft saved ✓ — find it under 📝 My drafts on your profile.");
     setStatus("Draft saved.");
   } catch (e) { composerStatus("Could not save the draft."); }
+};
+
+// Phase 135: schedule this post — pick a date + time and the
+// server posts it then. Text only from the composer: a photo or
+// video attached here is posted right away instead (the composer
+// has no media-only upload), and a poll cannot be scheduled —
+// both are refused here with a plain message, never silently
+// dropped. The API itself accepts media_file_id.
+let composerSchedOn = false;
+function schedLocalInput(d) {
+  const p = n => String(n).padStart(2, "0");
+  return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()) +
+    "T" + p(d.getHours()) + ":" + p(d.getMinutes());
+}
+$("composer-schedule-toggle").onclick = () => {
+  composerSchedOn = !composerSchedOn;
+  $("composer-schedule").hidden = !composerSchedOn;
+  $("composer-schedule-toggle").classList.toggle("on", composerSchedOn);
+  if (composerSchedOn) {
+    const inp = $("composer-sched-datetime");
+    inp.min = schedLocalInput(new Date(Date.now() + 5 * 60000));
+    if (!inp.value) {
+      inp.value = schedLocalInput(new Date(Date.now() + 3600000));
+    }
+  }
+};
+$("composer-sched-send").onclick = async () => {
+  const text = $("composer-text").value.trim();
+  if (!text && !composerFile) {
+    composerStatus("Write something or attach a photo/video first 📷");
+    return;
+  }
+  if (composerFile) {
+    composerStatus("Scheduling with a photo/video isn't supported yet — post it now, or remove the attachment to schedule the text 🕐");
+    return;
+  }
+  if (composerPoll()) {
+    composerStatus("Polls can't be scheduled — post it now, or clear the poll 📊");
+    return;
+  }
+  const val = $("composer-sched-datetime").value;
+  if (!val) {
+    composerStatus("Pick a date and time first 🕐");
+    return;
+  }
+  const at = new Date(val);
+  if (isNaN(at.getTime()) || at.getTime() <= Date.now() + 5 * 60000) {
+    composerStatus("Pick a time at least 5 minutes from now 🕐");
+    return;
+  }
+  try {
+    const row = await api("/scheduled-posts", { method: "POST",
+      body: JSON.stringify({ text, scheduled_at: at.toISOString() }) });
+    composerStatus("Scheduled ✓ — it will post on " +
+      new Date(row.scheduled_at).toLocaleString() +
+      ". See 📅 Scheduled on your profile.");
+    setStatus("Post scheduled.");
+    $("composer-text").value = "";
+    composerSchedOn = false;
+    $("composer-schedule").hidden = true;
+    $("composer-schedule-toggle").classList.remove("on");
+  } catch (e) { composerStatus("Could not schedule the post."); }
 };
 
 $("composer-post").onclick = async () => {
