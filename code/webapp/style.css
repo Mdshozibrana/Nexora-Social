@@ -2135,6 +2135,26 @@ img { -webkit-user-drag: none; }
   max-width: 76px; overflow: hidden; text-overflow: ellipsis;
   white-space: nowrap; }
 .nb-story-dist { font-size: 11.5px; color: #8A6D7B; }
+
+/* ---------- Phase 147: Nearby goes 3D (MapLibre + OpenFreeMap) --
+   The 3D engine renders into the same #nearby-map box; these rules
+   style the MapLibre markers/popups to match the clay theme, plus
+   the small 2D/3D switch above the map. */
+.nb-mode-row { display: flex; justify-content: flex-end; margin: 2px 0 0; }
+.nb-mode-btn { border: none; cursor: pointer; font-weight: 800;
+  font-size: 13px; color: #3E8FD0; background: #FFFBFC;
+  border-radius: 999px; padding: 7px 13px;
+  box-shadow: 0 6px 16px rgba(62, 143, 208,.12); }
+.nb-ml-pin { width: 46px; height: 56px; }
+.nb-ml-me { width: 46px; height: 46px; }
+#nearby-map .maplibregl-popup-content { background: #FFFBFC;
+  color: #3A2E33; border-radius: 16px; padding: 12px 14px;
+  font: inherit; box-shadow: 0 10px 24px rgba(71,42,62,.25); }
+#nearby-map .maplibregl-popup-close-button { color: #3A2E33;
+  font-size: 18px; padding: 2px 8px; }
+#nearby-map .maplibregl-popup-tip { border-top-color: #FFFBFC; }
+#nearby-map .maplibregl-ctrl-attrib { font-size: 10px; }
+#nearby-map .maplibregl-ctrl-attrib a { color: #3E8FD0; }
 .nb-pin { width: 46px; height: 46px; background: #fff;
   border-radius: 50%; box-shadow: 0 4px 12px rgba(71,42,62,.35);
   position: relative; display: flex; align-items: center;

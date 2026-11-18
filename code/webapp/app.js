@@ -312,6 +312,201 @@ if (tg.BackButton) tg.BackButton.onClick(onAppBack);
 let nbMap = null, nbMeMarker = null, nbMarkers = {}, nbRouteLine = null;
 let nbTimer = null, nbPos = null, nbSharing = false, nbTarget = null;
 let nbLastSent = 0, nbLastLat = null, nbLastLon = null;
+// Phase 147 (owner): Nearby goes 3D — MapLibre GL JS (vendored)
+// over the free OpenFreeMap "liberty" style, whose building-3d
+// layer extrudes OSM buildings (no API key anywhere). Leaflet
+// stays as the automatic 2D fallback: if MapLibre is missing,
+// WebGL is unavailable, or the 3D style fails to load, the old
+// 2D map is used instead and the map never goes blank. All
+// people/route/toggle code below talks to the engine through
+// the nb* adapter helpers and never touches L.* or
+// maplibregl.* directly.
+let nbML = null, nbMLMarkers = {}, nbMLMe = null, nbMLPopup = null;
+let nbEngine = null;      // "3d" | "2d" once a map exists
+let nb3DFailed = false;   // 3D tried and failed this session
+let nbInitPromise = null; // in-flight engine initialisation
+let nbModePref = null;    // "3d" | "2d" | null (auto)
+try { nbModePref = localStorage.getItem("nx_nb_mode"); } catch (e) {}
+if (nbModePref !== "3d" && nbModePref !== "2d") nbModePref = null;
+const NB_3D_STYLE = "https://tiles.openfreemap.org/styles/liberty";
+const NB_3D_PITCH = 60;
+
+function nbCan3D() {
+  if (nb3DFailed || nbModePref === "2d") return false;
+  try {
+    return typeof maplibregl !== "undefined" && maplibregl.supported();
+  } catch (e) { return false; }
+}
+
+function nbMLEl(q) {
+  const d = document.createElement("div");
+  d.className = "nb-ml-pin";
+  d.innerHTML = '<div class="nb-pin">' + nbAvaHTML(q, "nb-pin-img") + "</div>";
+  return d;
+}
+
+function nbMLMeEl() {
+  const d = document.createElement("div");
+  d.className = "nb-ml-me";
+  d.innerHTML = nbMePinHTML();
+  return d;
+}
+
+function nbClosePopups() {
+  if (nbEngine === "3d") {
+    if (nbMLPopup) { try { nbMLPopup.remove(); } catch (e) {}
+      nbMLPopup = null; }
+  } else if (nbMap) nbMap.closePopup();
+}
+
+function nbWirePopupEl(el) {
+  if (!el) return;
+  const pb = el.querySelector("[data-nb-profile]");
+  if (pb) pb.onclick = () => { nbClosePopups();
+    openProfile(+pb.dataset.nbProfile); };
+  const rb = el.querySelector("[data-nb-route]");
+  if (rb) rb.onclick = () => {
+    const m = nbMarkers[rb.dataset.nbRoute] ||
+      nbMLMarkers[rb.dataset.nbRoute];
+    if (m && m._nb) { nbClosePopups(); nbRoute(m._nb); }
+  };
+}
+
+function nbGoTo(lat, lon, zoom) {
+  if (nbEngine === "3d" && nbML)
+    nbML.easeTo({ center: [lon, lat], zoom: zoom, duration: 500 });
+  else if (nbMap) nbMap.setView([lat, lon], zoom);
+}
+
+function nbOpenPersonPopup(id) {
+  if (nbEngine === "3d") {
+    const m = nbMLMarkers[id];
+    if (!m) return;
+    const pop = m.getPopup();
+    if (!pop) return;
+    if (nbMLPopup && nbMLPopup !== pop) nbMLPopup.remove();
+    nbMLPopup = pop;
+    pop.addTo(nbML);
+  } else {
+    const m = nbMarkers[id];
+    if (m) m.openPopup();
+  }
+}
+
+function nbDrawRoute3D(pts) {
+  const gj = { type: "Feature", geometry: { type: "LineString",
+    coordinates: pts.map(p => [p[1], p[0]]) } };
+  const src = nbML.getSource("nb-route");
+  if (src) { src.setData(gj); return; }
+  nbML.addSource("nb-route", { type: "geojson", data: gj });
+  // Glowing green route, like the owner's reference: a wide soft
+  // casing under a bright core line.
+  nbML.addLayer({ id: "nb-route-glow", type: "line", source: "nb-route",
+    paint: { "line-color": "#00E676", "line-width": 12,
+      "line-opacity": 0.28, "line-blur": 3 } });
+  nbML.addLayer({ id: "nb-route-core", type: "line", source: "nb-route",
+    paint: { "line-color": "#00E676", "line-width": 5,
+      "line-opacity": 0.95 } });
+}
+
+function nbClearRoute3D() {
+  if (!nbML) return;
+  ["nb-route-glow", "nb-route-core"].forEach(id => {
+    if (nbML.getLayer(id)) nbML.removeLayer(id);
+  });
+  if (nbML.getSource("nb-route")) nbML.removeSource("nb-route");
+}
+
+function nbFitRoute3D(pts) {
+  const b = new maplibregl.LngLatBounds();
+  pts.forEach(p => b.extend([p[1], p[0]]));
+  nbML.fitBounds(b, { padding: 30, duration: 500 });
+}
+
+function nbInit3D() {
+  return new Promise(res => {
+    let done = false;
+    const fail = () => {
+      if (done) return;
+      done = true; nb3DFailed = true;
+      try { if (nbML) nbML.remove(); } catch (e) {}
+      nbML = null; res(false);
+    };
+    try {
+      const map = new maplibregl.Map({
+        container: "nearby-map",
+        style: NB_3D_STYLE,
+        center: [90.4125, 23.8103], zoom: 15,
+        pitch: NB_3D_PITCH, maxPitch: 70, bearing: 0
+      });
+      nbML = map;
+      const to = setTimeout(fail, 12000);
+      map.once("load", () => {
+        if (done) return;
+        done = true; clearTimeout(to);
+        nbEngine = "3d"; res(true);
+      });
+      map.on("error", () => { if (!done) fail(); });
+    } catch (e) { fail(); }
+  });
+}
+
+function nbInit2D() {
+  nbMap = L.map("nearby-map", { zoomControl: false });
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+    { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(nbMap);
+  nbMap.setView([23.8103, 90.4125], 13);
+  nbMap.on("popupopen", e => nbWirePopupEl(e.popup.getElement()));
+  nbEngine = "2d";
+}
+
+function nbPaintModeBtn() {
+  const b = $("nearby-mode");
+  if (!b) return;
+  let ok = false;
+  try {
+    ok = typeof maplibregl !== "undefined" && maplibregl.supported();
+  } catch (e) {}
+  b.hidden = !ok;
+  b.textContent = nbEngine === "3d" ? "🧊 3D view" : "🗺 2D view";
+}
+
+function nbDestroyEngine() {
+  nbClearRoute();
+  if (nbEngine === "3d" && nbML) {
+    try { nbML.remove(); } catch (e) {}
+    nbML = null; nbMLMarkers = {}; nbMLMe = null; nbMLPopup = null;
+  }
+  if (nbEngine === "2d" && nbMap) {
+    try { nbMap.remove(); } catch (e) {}
+    nbMap = null; nbMarkers = {}; nbMeMarker = null; nbRouteLine = null;
+  }
+  nbEngine = null; nbInitPromise = null;
+}
+
+function nbEnsureMap() {
+  if (nbEngine) {
+    if (nbEngine === "3d" && nbML) nbML.resize();
+    else if (nbMap) nbMap.invalidateSize();
+    return Promise.resolve(true);
+  }
+  if (nbInitPromise) return nbInitPromise;
+  nbInitPromise = (async () => {
+    try {
+      if (nbCan3D()) {
+        if (await nbInit3D()) { nbPaintModeBtn(); return true; }
+      }
+      if (typeof L === "undefined") {
+        nbSetStatus("The map is still loading — reopen Nearby in a moment.");
+        return false;
+      }
+      nbInit2D();
+      nbPaintModeBtn();
+      return true;
+    } finally { nbInitPromise = null; }
+  })();
+  return nbInitPromise;
+}
 const NB_DIRS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
 
 function nbDir(b) { return NB_DIRS[Math.round(b / 45) % 8]; }
@@ -342,9 +537,12 @@ function nbBubbleIcon(q) {
     iconSize: [46, 56], iconAnchor: [23, 52], popupAnchor: [0, -50] });
 }
 
+function nbMePinHTML() {
+  return '<div class="nb-me-pin"><svg viewBox="0 0 24 24" width="24" height="24" fill="#fff"><circle cx="12" cy="8" r="4.2"/><path d="M3.5 20.5c.8-4 4.2-6 8.5-6s7.7 2 8.5 6"/></svg></div>';
+}
 function nbMeIcon() {
   return L.divIcon({ className: "nb-wrap",
-    html: '<div class="nb-me-pin"><svg viewBox="0 0 24 24" width="24" height="24" fill="#fff"><circle cx="12" cy="8" r="4.2"/><path d="M3.5 20.5c.8-4 4.2-6 8.5-6s7.7 2 8.5 6"/></svg></div>',
+    html: nbMePinHTML(),
     iconSize: [46, 46], iconAnchor: [23, 23] });
 }
 
@@ -398,7 +596,26 @@ function nbPaintPeople(people) {
       '">👤 View profile</button>' +
       '<button class="nb-pop-btn alt" data-nb-route="' + q.id +
       '">🚶 Show route</button></div>';
-    if (nbMarkers[q.id]) {
+    // Phase 147: markers live on the active engine (3D or 2D).
+    if (nbEngine === "3d") {
+      const ex = nbMLMarkers[q.id];
+      if (ex) {
+        ex.setLngLat([q.lon, q.lat]); ex._nb = q;
+        if (ex.getPopup()) ex.getPopup().setHTML(popup);
+      } else {
+        const pop = new maplibregl.Popup({ offset: 30 })
+          .setHTML(popup);
+        const m = new maplibregl.Marker({ element: nbMLEl(q),
+          anchor: "bottom", offset: [0, -8] })
+          .setLngLat([q.lon, q.lat]).setPopup(pop).addTo(nbML);
+        pop.on("open", () => {
+          if (nbMLPopup && nbMLPopup !== pop) nbMLPopup.remove();
+          nbMLPopup = pop;
+          nbWirePopupEl(pop.getElement());
+        });
+        m._nb = q; nbMLMarkers[q.id] = m;
+      }
+    } else if (nbMarkers[q.id]) {
       nbMarkers[q.id].setLatLng([q.lat, q.lon]);
       nbMarkers[q.id].setPopupContent(popup);
       nbMarkers[q.id]._nb = q;
@@ -408,8 +625,12 @@ function nbPaintPeople(people) {
       m.bindPopup(popup); m._nb = q; nbMarkers[q.id] = m;
     }
   });
+  // Phase 147: drop stale markers on both engines.
   Object.keys(nbMarkers).forEach(id => {
-    if (!seen[id]) { nbMap.removeLayer(nbMarkers[id]); delete nbMarkers[id]; }
+    if (!seen[id]) { if (nbMap) nbMap.removeLayer(nbMarkers[id]); delete nbMarkers[id]; }
+  });
+  Object.keys(nbMLMarkers).forEach(id => {
+    if (!seen[id]) { nbMLMarkers[id].remove(); delete nbMLMarkers[id]; }
   });
   nbPaintStories(people);
   const list = $("nearby-list");
@@ -431,8 +652,9 @@ function nbPaintPeople(people) {
       (q.username ? "@" + nbEsc(q.username) + "  ·  " : "") +
       nbDir(q.bearing) + "  ·  " + q.distance_m + " m</span></span>" +
       '<button class="nb-route-btn">Route</button>';
-    row.onclick = () => { if (nbMap) { nbMap.setView([q.lat, q.lon], 17);
-      nbMarkers[q.id].openPopup(); } };
+    // Phase 147: list rows pan the live engine.
+    row.onclick = () => { nbGoTo(q.lat, q.lon, 17);
+      nbOpenPersonPopup(q.id); };
     row.querySelector(".nb-route-btn").onclick = e => {
       e.stopPropagation();
       if (nbMarkers[q.id]) nbRoute(nbMarkers[q.id]._nb);
@@ -459,8 +681,9 @@ function nbPaintStories(people) {
       '<span class="nb-story-name">' +
       nbEsc((q.name || "").split(" ")[0]) + "</span>" +
       '<span class="nb-story-dist">' + q.distance_m + " m</span>";
-    b.onclick = () => { if (nbMap) { nbMap.setView([q.lat, q.lon], 17);
-      nbMarkers[q.id].openPopup(); } };
+    // Phase 147: story circles pan the live engine.
+    b.onclick = () => { nbGoTo(q.lat, q.lon, 17);
+      nbOpenPersonPopup(q.id); };
     wrap.append(b);
   });
   const inv = document.createElement("button");
@@ -484,7 +707,18 @@ async function nbRefresh() {
   if (pos) {
     nbPos = pos;
     nbSendLocation();
-    if (nbMap) {
+    // Phase 147: the 'You are here' pin lives on the live engine.
+    if (nbEngine === "3d" && nbML) {
+      if (!nbMLMe) {
+        nbMLMe = new maplibregl.Marker({ element: nbMLMeEl(),
+          anchor: "center" }).setLngLat([pos.lon, pos.lat])
+          .addTo(nbML);
+        nbMLMe.setPopup(new maplibregl.Popup({ offset: 20 })
+          .setHTML("<b>You are here</b>"));
+        nbML.easeTo({ center: [pos.lon, pos.lat], zoom: 16,
+          duration: 600 });
+      } else nbMLMe.setLngLat([pos.lon, pos.lat]);
+    } else if (nbMap) {
       if (!nbMeMarker) {
         nbMeMarker = L.marker([pos.lat, pos.lon],
           { icon: nbMeIcon() }).addTo(nbMap);
@@ -508,7 +742,7 @@ async function nbRefresh() {
 }
 
 async function nbRoute(q, silent) {
-  if (!nbPos || !nbMap) return;
+  if (!nbPos || (!nbMap && !nbML)) return;
   nbTarget = q.id;
   const url = "https://routing.openstreetmap.de/routed-foot/route/v1/" +
     "driving/" + nbPos.lon + "," + nbPos.lat + ";" + q.lon + "," +
@@ -524,11 +758,17 @@ async function nbRoute(q, silent) {
     }
   } catch (e) {}
   if (!pts) pts = [[nbPos.lat, nbPos.lon], [q.lat, q.lon]];
-  if (nbRouteLine) nbMap.removeLayer(nbRouteLine);
-  nbRouteLine = L.polyline(pts, { color: "#3E8FD0", weight: 5,
-    opacity: .9, dashArray: dur === null ? "2 8" : null }).addTo(nbMap);
-  if (!silent) nbMap.fitBounds(nbRouteLine.getBounds(),
-    { padding: [30, 30] });
+  // Phase 147: the route is a glowing green line in 3D.
+  if (nbEngine === "3d" && nbML) {
+    nbDrawRoute3D(pts);
+    if (!silent) nbFitRoute3D(pts);
+  } else {
+    if (nbRouteLine) nbMap.removeLayer(nbRouteLine);
+    nbRouteLine = L.polyline(pts, { color: "#3E8FD0", weight: 5,
+      opacity: .9, dashArray: dur === null ? "2 8" : null }).addTo(nbMap);
+    if (!silent) nbMap.fitBounds(nbRouteLine.getBounds(),
+      { padding: [30, 30] });
+  }
   const bar = $("nearby-route");
   bar.hidden = false;
   bar.innerHTML = "🚶 Walking route to <b>" + nbEsc(q.name) + "</b>: " +
@@ -539,33 +779,22 @@ async function nbRoute(q, silent) {
 
 function nbClearRoute() {
   nbTarget = null;
+  if (nbEngine === "3d") nbClearRoute3D();
   if (nbRouteLine && nbMap) nbMap.removeLayer(nbRouteLine);
   nbRouteLine = null;
   $("nearby-route").hidden = true;
 }
 
-function openNearby() {
-  if (typeof L === "undefined") {
-    nbSetStatus("The map is still loading — reopen Nearby in a moment.");
-    return;
-  }
-  if (!nbMap) {
-    nbMap = L.map("nearby-map", { zoomControl: false });
-    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-      { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(nbMap);
-    nbMap.setView([23.8103, 90.4125], 13);
-    nbMap.on("popupopen", e => {
-      const el = e.popup.getElement();
-      if (!el) return;
-      const pb = el.querySelector("[data-nb-profile]");
-      if (pb) pb.onclick = () => { nbMap.closePopup();
-        openProfile(+pb.dataset.nbProfile); };
-      const rb = el.querySelector("[data-nb-route]");
-      if (rb) rb.onclick = () => { const m = nbMarkers[rb.dataset.nbRoute];
-        if (m) { nbMap.closePopup(); nbRoute(m._nb); } };
-    });
-  }
-  setTimeout(() => { if (nbMap) nbMap.invalidateSize(); }, 60);
+async function openNearby() {
+  // Phase 147: the map engine (3D first, 2D fallback) is ready
+  // before any people or route is painted, so a slow 3D style
+  // load can never paint markers onto a missing map.
+  const ok = await nbEnsureMap();
+  if (!ok) return;
+  setTimeout(() => {
+    if (nbEngine === "3d" && nbML) nbML.resize();
+    else if (nbMap) nbMap.invalidateSize();
+  }, 60);
   api("/me/nearby").then(r => {
     nbSharing = !!r.sharing;
     nbPaintToggle();
@@ -586,9 +815,13 @@ $("nearby-toggle").onclick = async () => {
     nbSharing = false;
     nbPaintToggle();
     nbClearRoute();
+    // Phase 147: turning sharing off clears 3D markers too.
     Object.keys(nbMarkers).forEach(id => {
       if (nbMap) nbMap.removeLayer(nbMarkers[id]);
       delete nbMarkers[id];
+    });
+    Object.keys(nbMLMarkers).forEach(id => {
+      nbMLMarkers[id].remove(); delete nbMLMarkers[id];
     });
     $("nearby-list").innerHTML = "";
     $("nearby-stories").innerHTML = "";
@@ -616,6 +849,20 @@ $("nearby-toggle").onclick = async () => {
       nbRefresh();
     }
   } catch (e) { nbSetStatus("Could not turn sharing on — try again."); }
+};
+
+// Phase 147: let the member switch between the 3D map and the
+// flat 2D map (e.g. a slow phone). The choice is remembered
+// on the device; switching rebuilds the map and repaints
+// people and the route from the next refresh.
+$("nearby-mode").onclick = async () => {
+  if (!nbEngine) return;
+  const want3D = nbEngine !== "3d";
+  nbModePref = want3D ? "3d" : "2d";
+  if (want3D) nb3DFailed = false;
+  try { localStorage.setItem("nx_nb_mode", nbModePref); } catch (e) {}
+  nbDestroyEngine();
+  if (await nbEnsureMap()) nbRefresh();
 };
 
 

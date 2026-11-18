@@ -242,6 +242,11 @@ async def webapp_no_cache(request, call_next):
 # --- Phase 28: security middleware (requirements §3/§4/§14) --------------
 # Content-Security-Policy notes: script sources stay strict ('self' +
 # Telegram + the AdsGram SDK host). Image/media sources allow https:
+# Phase 147: the 3D Nearby map (MapLibre) fetches vector tiles,
+# glyphs and sprites from tiles.openfreemap.org (connect-src)
+# and runs its renderer in a blob: Web Worker (worker-src) —
+# without worker-src the worker falls back to script-src,
+# which has no blob:, and the 3D map would fail silently.
 # because ad creatives are served from rotating ad-network CDNs —
 # scripts, the dangerous vector, remain locked down. Framing is
 # restricted to Telegram's own web clients (frame-ancestors): the Mini
@@ -253,7 +258,8 @@ _CSP = (
     "style-src 'self' 'unsafe-inline'; "
     "img-src 'self' data: blob: https:; "
     "media-src 'self' blob: https:; "
-    "connect-src 'self' https://sad.adsgram.ai https://api.adsgram.ai https://routing.openstreetmap.de; "
+    "connect-src 'self' https://sad.adsgram.ai https://api.adsgram.ai https://routing.openstreetmap.de https://tiles.openfreemap.org; "
+    "worker-src 'self' blob:; "
     "font-src 'self' data:; "
     "object-src 'none'; base-uri 'self'; form-action 'self'; "
     "frame-ancestors 'self' https://web.telegram.org "
