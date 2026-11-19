@@ -326,10 +326,19 @@ async def start_bot(app: Application):
     # must never stop the bot, so it is fully guarded.
     if settings.WEBAPP_URL:
         try:
+            # Phase 148: version the menu-button URL so Telegram
+            # opens a fresh page on every deploy instead of a
+            # cached shell — the owner saw the pre-147 shell (no
+            # 3D button at all) because the bare URL was cached.
+            # Future version sweeps must bump this ?v=N with the
+            # shell version.
+            menu_url = settings.WEBAPP_URL
+            if "?" not in menu_url:
+                menu_url = menu_url.rstrip("/") + "/?v=148"
             await app.bot.set_chat_menu_button(
                 menu_button=MenuButtonWebApp(
                     text="Open App",
-                    web_app=WebAppInfo(url=settings.WEBAPP_URL)))
+                    web_app=WebAppInfo(url=menu_url)))
         except Exception:
             pass
     await app.updater.start_polling(drop_pending_updates=True)

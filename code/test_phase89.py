@@ -42,5 +42,5 @@ for bit in ("scores[0] >= cfg.quota", "burst(TGT.x, TGT.y"):
     assert bit in GAMES, bit
 # Nexa learned the climb
 assert "level climb" in MAIN
-assert "app.js?v=147" in HTML and "games.js?v=147" in HTML
+assert "app.js?v=148" in HTML and "games.js?v=148" in HTML
 print("PHASE 89 OK")

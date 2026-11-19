@@ -109,5 +109,5 @@ assert "ptr-global" in JS and "Pull to refresh" in JS
 assert 'id="design-ptr"' in HTML
 print("ptr OK")
 
-assert "app.js?v=147" in HTML and "style.css?v=147" in HTML
+assert "app.js?v=148" in HTML and "style.css?v=148" in HTML
 print("PHASE 72 OK")

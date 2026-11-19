@@ -324,6 +324,7 @@ let nbLastSent = 0, nbLastLat = null, nbLastLon = null;
 let nbML = null, nbMLMarkers = {}, nbMLMe = null, nbMLPopup = null;
 let nbEngine = null;      // "3d" | "2d" once a map exists
 let nb3DFailed = false;   // 3D tried and failed this session
+let nb3DFailKind = null;   // Phase 148: "webgl" | "style" — why the last 3D attempt failed
 let nbInitPromise = null; // in-flight engine initialisation
 let nbModePref = null;    // "3d" | "2d" | null (auto)
 try { nbModePref = localStorage.getItem("nx_nb_mode"); } catch (e) {}
@@ -426,9 +427,13 @@ function nbFitRoute3D(pts) {
 function nbInit3D() {
   return new Promise(res => {
     let done = false;
-    const fail = () => {
+    // Phase 148: the failure kind is recorded so the Nearby
+    // view can say honestly why 3D is off (and offer a retry)
+    // instead of failing silently.
+    const fail = (kind) => {
       if (done) return;
       done = true; nb3DFailed = true;
+      nb3DFailKind = kind || "style";
       try { if (nbML) nbML.remove(); } catch (e) {}
       nbML = null; res(false);
     };
@@ -443,11 +448,11 @@ function nbInit3D() {
       const to = setTimeout(fail, 12000);
       map.once("load", () => {
         if (done) return;
-        done = true; clearTimeout(to);
+        done = true; clearTimeout(to); nb3DFailKind = null;
         nbEngine = "3d"; res(true);
       });
-      map.on("error", () => { if (!done) fail(); });
-    } catch (e) { fail(); }
+      map.on("error", () => { if (!done) fail("style"); });
+    } catch (e) { fail(/webgl/i.test(String((e && e.message) || e)) ? "webgl" : "style"); }
   });
 }
 
@@ -460,15 +465,47 @@ function nbInit2D() {
   nbEngine = "2d";
 }
 
+// Phase 148: one honest line under the map when 3D is off, so a
+// missing 3D map never looks like a silent failure. The reason
+// is computed live: a missing library (old shell / blocked
+// script), no WebGL on this phone, or a style that failed to
+// load. No note when the member chose 2D on purpose or when
+// 3D is on.
+const NB_3D_NOTES = {
+  lib: "3D didn't start — the 3D library didn't load on this phone. The flat map is showing instead. Tap 🧊 Try 3D to try again.",
+  webgl: "3D isn't available on this phone — it needs WebGL, which this phone doesn't offer. The flat map is showing instead.",
+  style: "3D couldn't load its map in time — showing the flat map. Tap 🧊 Try 3D to try again."
+};
+
+function nb3DWhy() {
+  if (nbModePref === "2d" || nbEngine === "3d") return null;
+  if (typeof maplibregl === "undefined") return "lib";
+  try {
+    if (!maplibregl.supported()) return "webgl";
+  } catch (e) { return "webgl"; }
+  if (nb3DFailKind) return nb3DFailKind;
+  if (nb3DFailed) return "style";
+  return null;
+}
+
+function nbPaint3DNote() {
+  const n = $("nearby-3d-note");
+  if (!n) return;
+  const why = nb3DWhy();
+  n.hidden = !why;
+  n.textContent = why ? NB_3D_NOTES[why] : "";
+}
+
 function nbPaintModeBtn() {
   const b = $("nearby-mode");
   if (!b) return;
-  let ok = false;
-  try {
-    ok = typeof maplibregl !== "undefined" && maplibregl.supported();
-  } catch (e) {}
-  b.hidden = !ok;
-  b.textContent = nbEngine === "3d" ? "🧊 3D view" : "🗺 2D view";
+  // Phase 148: the switch is ALWAYS visible. Hiding it when 3D
+  // was unavailable failed silently — the owner saw no button
+  // at all. When 3D is off it offers a retry instead.
+  b.hidden = false;
+  if (nbEngine === "3d") b.textContent = "🧊 3D view";
+  else if (nb3DWhy()) b.textContent = "🧊 Try 3D";
+  else b.textContent = "🗺 2D view";
 }
 
 function nbDestroyEngine() {
@@ -494,14 +531,15 @@ function nbEnsureMap() {
   nbInitPromise = (async () => {
     try {
       if (nbCan3D()) {
-        if (await nbInit3D()) { nbPaintModeBtn(); return true; }
+        if (await nbInit3D()) { nbPaintModeBtn(); nbPaint3DNote(); return true; }
       }
       if (typeof L === "undefined") {
         nbSetStatus("The map is still loading — reopen Nearby in a moment.");
+        nbPaintModeBtn(); nbPaint3DNote();
         return false;
       }
       nbInit2D();
-      nbPaintModeBtn();
+      nbPaintModeBtn(); nbPaint3DNote();
       return true;
     } finally { nbInitPromise = null; }
   })();
@@ -859,7 +897,7 @@ $("nearby-mode").onclick = async () => {
   if (!nbEngine) return;
   const want3D = nbEngine !== "3d";
   nbModePref = want3D ? "3d" : "2d";
-  if (want3D) nb3DFailed = false;
+  if (want3D) { nb3DFailed = false; nb3DFailKind = null; }
   try { localStorage.setItem("nx_nb_mode", nbModePref); } catch (e) {}
   nbDestroyEngine();
   if (await nbEnsureMap()) nbRefresh();

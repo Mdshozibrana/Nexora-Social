@@ -2145,6 +2145,7 @@ img { -webkit-user-drag: none; }
   font-size: 13px; color: #3E8FD0; background: #FFFBFC;
   border-radius: 999px; padding: 7px 13px;
   box-shadow: 0 6px 16px rgba(62, 143, 208,.12); }
+.nb-3d-note { font-size: 12.5px; color: #8A6D7B; margin: 8px 2px 0; }
 .nb-ml-pin { width: 46px; height: 56px; }
 .nb-ml-me { width: 46px; height: 46px; }
 #nearby-map .maplibregl-popup-content { background: #FFFBFC;
