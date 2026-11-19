@@ -16,6 +16,13 @@ class Settings:
     # ads off. The owner gets the id from adsgram.ai after registering
     # the bot; it is a public placement id, not a secret.
     ADSGRAM_BLOCK_ID: str = os.environ.get("ADSGRAM_BLOCK_ID", "")
+    # Phase 149: Mapillary (free street-level imagery for
+    # Nearby Street View). A free read-only CLIENT token from
+    # mapillary.com/dashboard/developers — designed for
+    # browser use, it ships to the client via /auth (like the
+    # AdsGram block id). Empty = Street View shows the honest
+    # "not set up yet" line. Never hardcode a token value.
+    MAPILLARY_CLIENT_TOKEN: str = os.environ.get("MAPILLARY_CLIENT_TOKEN", "")
     # Phase 69: Nexa, the AI assistant. One free Gemini API key
     # (aistudio.google.com) powers her chat brain AND her voice.
     # Empty = she runs on the built-in guide brain and the phone's

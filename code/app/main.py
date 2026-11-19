@@ -247,6 +247,10 @@ async def webapp_no_cache(request, call_next):
 # and runs its renderer in a blob: Web Worker (worker-src) —
 # without worker-src the worker falls back to script-src,
 # which has no blob:, and the 3D map would fail silently.
+# Phase 149: Nearby Street View (Mapillary) fetches the
+# nearest image from graph.mapillary.com and its pixels from
+# images.mapillary.com (connect-src); thumbs also load as
+# <img> (img-src already allows https:).
 # because ad creatives are served from rotating ad-network CDNs —
 # scripts, the dangerous vector, remain locked down. Framing is
 # restricted to Telegram's own web clients (frame-ancestors): the Mini
@@ -258,7 +262,7 @@ _CSP = (
     "style-src 'self' 'unsafe-inline'; "
     "img-src 'self' data: blob: https:; "
     "media-src 'self' blob: https:; "
-    "connect-src 'self' https://sad.adsgram.ai https://api.adsgram.ai https://routing.openstreetmap.de https://tiles.openfreemap.org; "
+    "connect-src 'self' https://sad.adsgram.ai https://api.adsgram.ai https://routing.openstreetmap.de https://tiles.openfreemap.org https://graph.mapillary.com https://images.mapillary.com; "
     "worker-src 'self' blob:; "
     "font-src 'self' data:; "
     "object-src 'none'; base-uri 'self'; form-action 'self'; "
@@ -736,6 +740,7 @@ async def auth(body: AuthIn, request: Request,
         "theme": _theme_picks(user),
         "media_token": _media_token(),
         "adsgram_block_id": settings.ADSGRAM_BLOCK_ID,
+        "mapillary_client_token": settings.MAPILLARY_CLIENT_TOKEN,
         # Phase 137: level (from lifetime points) + badges.
         "level": level_badges["level"],
         "badges": level_badges["badges"],

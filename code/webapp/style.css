@@ -2146,6 +2146,21 @@ img { -webkit-user-drag: none; }
   border-radius: 999px; padding: 7px 13px;
   box-shadow: 0 6px 16px rgba(62, 143, 208,.12); }
 .nb-3d-note { font-size: 12.5px; color: #8A6D7B; margin: 8px 2px 0; }
+
+/* ---------- Phase 149: Nearby Street View (Mapillary) ----------
+   Full-screen overlay above the map. The [hidden] guards matter:
+   .sv-overlay sets display:flex, which would beat the hidden
+   attribute's display:none without them. */
+.sv-overlay[hidden], .sv-viewer[hidden], .sv-photo[hidden], .sv-note[hidden] { display: none; }
+.sv-overlay { position: fixed; inset: 0; z-index: 120; background: #14100F; display: flex; flex-direction: column; }
+.sv-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; color: #F6F1E7; }
+.sv-head b { font-size: 15px; }
+.sv-close { border: none; background: rgba(255,255,255,.14); color: #fff; font-size: 16px; width: 34px; height: 34px; border-radius: 999px; cursor: pointer; }
+.sv-viewer { flex: 1; min-height: 0; }
+.sv-photo { flex: 1; min-height: 0; width: 100%; object-fit: cover; }
+.sv-note { padding: 12px 14px; color: #F6F1E7; font-size: 13.5px; text-align: center; }
+.sv-credit { padding: 8px 12px 14px; color: rgba(246,241,231,.75); font-size: 12px; text-align: center; }
+.sv-credit a { color: #8ED4F7; }
 .nb-ml-pin { width: 46px; height: 56px; }
 .nb-ml-me { width: 46px; height: 46px; }
 #nearby-map .maplibregl-popup-content { background: #FFFBFC;

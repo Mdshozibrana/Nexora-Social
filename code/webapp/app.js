@@ -371,6 +371,21 @@ function nbWirePopupEl(el) {
       nbMLMarkers[rb.dataset.nbRoute];
     if (m && m._nb) { nbClosePopups(); nbRoute(m._nb); }
   };
+  // Phase 149: Street View — the popup's marker (or "me")
+  // carries the point; the map popup closes first, then the
+  // full-screen viewer opens over the map.
+  const sv = el.querySelector("[data-nb-streetview]");
+  if (sv) sv.onclick = () => {
+    const id = sv.dataset.nbStreetview;
+    let q = null;
+    if (id === "me") {
+      if (nbPos) q = { lat: nbPos.lat, lon: nbPos.lon, name: "You are here" };
+    } else {
+      const m = nbMarkers[id] || nbMLMarkers[id];
+      if (m && m._nb) q = m._nb;
+    }
+    if (q) { nbClosePopups(); nbSVOpen(q.lat, q.lon, q.name || ""); }
+  };
 }
 
 function nbGoTo(lat, lon, zoom) {
@@ -545,6 +560,180 @@ function nbEnsureMap() {
   })();
   return nbInitPromise;
 }
+// Phase 149 (owner): Nearby Street View via Mapillary (free).
+// Tapping 📷 Street View in a member popup (or the "You are
+// here" popup) opens a full-screen street-level viewer for
+// the nearest Mapillary photo to that point. MapillaryJS
+// v4.1.2 is vendored (webapp/vendor/mapillary/) like
+// MapLibre — no CDN at runtime. The token is a free
+// read-only CLIENT token from mapillary.com/dashboard/
+// developers; it arrives from the server via /auth as
+// me.mapillary_client_token (empty = not set up yet).
+// MapillaryJS renders with WebGL — the owner's phone most
+// likely fails WebGL (the Phase 147 3D diagnosis) — so when
+// the interactive viewer cannot start, the nearest photo is
+// shown as a plain image instead. Street View never fails
+// silently: no token -> "not set up yet", no photo nearby
+// -> "no photo here yet", viewer fails -> static photo +
+// one honest line. Attribution is required (CC BY-SA 4.0):
+// "© Mapillary contributors" + the photo's creator/date +
+// a "View on Mapillary" link ride with every picture.
+const NB_SV_GRAPH = "https://graph.mapillary.com/images";
+const NB_SV_FIELDS = "id,computed_geometry,thumb_1024_url,thumb_512_url,captured_at,creator,is_pano";
+let nbSVViewer = null;
+
+function nbSVToken() {
+  return (me && me.mapillary_client_token) || "";
+}
+
+function nbSVWebGL() {
+  try {
+    const c = document.createElement("canvas");
+    return !!(c.getContext("webgl2") || c.getContext("webgl"));
+  } catch (e) { return false; }
+}
+
+function nbSVCanInteractive() {
+  try {
+    return typeof mapillary !== "undefined" && !!mapillary.Viewer && nbSVWebGL();
+  } catch (e) { return false; }
+}
+
+function nbSVPickNearest(lat, lon, imgs) {
+  let best = null, bestD = Infinity;
+  (imgs || []).forEach(im => {
+    const g = im.computed_geometry || im.geometry;
+    if (!g || !g.coordinates) return;
+    const dLat = (g.coordinates[1] - lat) * 111320;
+    const dLon = (g.coordinates[0] - lon) * 111320 * Math.cos(lat * Math.PI / 180);
+    const d = dLat * dLat + dLon * dLon;
+    if (d < bestD) { bestD = d; best = im; }
+  });
+  return best;
+}
+
+function nbFetchTimeout(url, ms) {
+  return Promise.race([fetch(url),
+    new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), ms))]);
+}
+
+async function nbSVLookup(lat, lon) {
+  const tok = nbSVToken();
+  if (!tok) return null;
+  const base = NB_SV_GRAPH + "?access_token=" + encodeURIComponent(tok) +
+    "&fields=" + NB_SV_FIELDS;
+  try {
+    let r = await nbFetchTimeout(base + "&lat=" + lat + "&lng=" + lon +
+      "&radius=50&limit=5", 8000);
+    let j = await r.json();
+    let imgs = (j && j.data) || [];
+    if (!imgs.length) {
+      // Radius search is capped at 50 m; widen to a small
+      // bbox (0.003 deg square — far under the 0.01 deg API
+      // limit) and take the nearest of those.
+      const d = 0.0015;
+      const bbox = [lon - d, lat - d, lon + d, lat + d].join(",");
+      r = await nbFetchTimeout(base + "&bbox=" + bbox + "&limit=10", 8000);
+      j = await r.json();
+      imgs = (j && j.data) || [];
+    }
+    return nbSVPickNearest(lat, lon, imgs);
+  } catch (e) { return null; }
+}
+
+function nbSVAttribution(img) {
+  let by = "";
+  const c = img && img.creator;
+  if (typeof c === "string" && c) by = c;
+  else if (c && typeof c === "object" && c.username) by = c.username;
+  let date = "";
+  if (img && img.captured_at) {
+    try { date = new Date(img.captured_at).toISOString().slice(0, 10); } catch (e) {}
+  }
+  return {
+    text: "© Mapillary contributors" + (by ? " · photo by " + by : "") +
+      (date ? " · " + date : ""),
+    link: "https://www.mapillary.com/app/?pKey=" + (img && img.id ? img.id : "")
+  };
+}
+
+function nbSVShowNote(t) {
+  const n = $("sv-note");
+  if (!n) return;
+  n.hidden = !t;
+  n.textContent = t || "";
+}
+
+function nbSVHideNote() { nbSVShowNote(""); }
+
+function nbSVShowStatic(img, why) {
+  const box = $("sv-viewer");
+  if (box) { box.hidden = true; box.innerHTML = ""; }
+  const ph = $("sv-photo");
+  if (ph) {
+    ph.src = img.thumb_1024_url || img.thumb_512_url || "";
+    ph.hidden = false;
+  }
+  nbSVShowNote(why || "");
+}
+
+async function nbSVOpen(lat, lon, label) {
+  const ov = $("streetview");
+  if (!ov) return;
+  nbSVClose();
+  ov.hidden = false;
+  const t = $("sv-title");
+  if (t) t.textContent = "Street View" + (label ? " — " + label : "");
+  if (!nbSVToken()) {
+    nbSVShowNote("Street View isn't set up yet — the Mapillary token is missing.");
+    return;
+  }
+  nbSVShowNote("Looking for a street-level photo…");
+  const img = await nbSVLookup(lat, lon);
+  if (!img) {
+    nbSVShowNote("No street-level photo here yet.");
+    return;
+  }
+  const att = nbSVAttribution(img);
+  const cr = $("sv-credit");
+  if (cr) cr.textContent = att.text;
+  const lk = $("sv-mapillary-link");
+  if (lk) lk.href = att.link;
+  if (nbSVCanInteractive()) {
+    let ok = false;
+    try {
+      const box = $("sv-viewer");
+      box.hidden = false;
+      const viewer = new mapillary.Viewer({
+        accessToken: nbSVToken(), container: box,
+        imageId: String(img.id), component: { cover: false }
+      });
+      nbSVViewer = viewer;
+      ok = await Promise.race([
+        viewer.moveTo(String(img.id)).then(() => true, () => false),
+        new Promise(res => setTimeout(() => res(false), 10000))
+      ]);
+      if (!ok) { try { viewer.remove(); } catch (e) {} nbSVViewer = null; }
+    } catch (e) {
+      try { if (nbSVViewer) nbSVViewer.remove(); } catch (e2) {}
+      nbSVViewer = null;
+    }
+    if (ok) { nbSVHideNote(); return; }
+  }
+  nbSVShowStatic(img, "Interactive view needs WebGL on this phone — showing the photo instead.");
+}
+
+function nbSVClose() {
+  if (nbSVViewer) { try { nbSVViewer.remove(); } catch (e) {} nbSVViewer = null; }
+  const box = $("sv-viewer");
+  if (box) { box.hidden = true; box.innerHTML = ""; }
+  const ph = $("sv-photo");
+  if (ph) { ph.hidden = true; ph.src = ""; }
+  nbSVHideNote();
+  const ov = $("streetview");
+  if (ov) ov.hidden = true;
+}
+
 const NB_DIRS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
 
 function nbDir(b) { return NB_DIRS[Math.round(b / 45) % 8]; }
@@ -633,7 +822,9 @@ function nbPaintPeople(people) {
       '<button class="nb-pop-btn" data-nb-profile="' + q.id +
       '">👤 View profile</button>' +
       '<button class="nb-pop-btn alt" data-nb-route="' + q.id +
-      '">🚶 Show route</button></div>';
+      '">🚶 Show route</button>' +
+      '<button class="nb-pop-btn" data-nb-streetview="' + q.id +
+      '">📷 Street View</button></div>';
     // Phase 147: markers live on the active engine (3D or 2D).
     if (nbEngine === "3d") {
       const ex = nbMLMarkers[q.id];
@@ -752,7 +943,8 @@ async function nbRefresh() {
           anchor: "center" }).setLngLat([pos.lon, pos.lat])
           .addTo(nbML);
         nbMLMe.setPopup(new maplibregl.Popup({ offset: 20 })
-          .setHTML("<b>You are here</b>"));
+          .setHTML("<b>You are here</b><br><button class=\"nb-pop-btn\" data-nb-streetview=\"me\">📷 Street View</button>"));
+        nbMLMe.getPopup().on("open", () => nbWirePopupEl(nbMLMe.getPopup().getElement()));
         nbML.easeTo({ center: [pos.lon, pos.lat], zoom: 16,
           duration: 600 });
       } else nbMLMe.setLngLat([pos.lon, pos.lat]);
@@ -760,7 +952,7 @@ async function nbRefresh() {
       if (!nbMeMarker) {
         nbMeMarker = L.marker([pos.lat, pos.lon],
           { icon: nbMeIcon() }).addTo(nbMap);
-        nbMeMarker.bindPopup("<b>You are here</b>");
+        nbMeMarker.bindPopup("<b>You are here</b><br><button class=\"nb-pop-btn\" data-nb-streetview=\"me\">📷 Street View</button>");
         nbMap.setView([pos.lat, pos.lon], 16);
       } else nbMeMarker.setLatLng([pos.lat, pos.lon]);
     }
@@ -902,6 +1094,11 @@ $("nearby-mode").onclick = async () => {
   nbDestroyEngine();
   if (await nbEnsureMap()) nbRefresh();
 };
+
+// Phase 149: Street View close button (the overlay is a plain
+// fixed div — closing it returns to the map exactly as it was).
+const svCloseBtn = $("sv-close");
+if (svCloseBtn) svCloseBtn.onclick = nbSVClose;
 
 
 const NAV_IDS = ["nav-feed", "nav-videos", "nav-design", "nav-games", "nav-tasks",

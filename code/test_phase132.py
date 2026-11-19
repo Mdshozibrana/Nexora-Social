@@ -6,7 +6,7 @@ after an admin backup download last_backup_at is set with kind
 (mocked) kind becomes "send"; after a restore last_restore_at is
 set and the last backup (from the restored audit rows) survives;
 non-admin 403, unauthenticated 401; backup still carries 39 tables;
-?v=148 x5, no ?v=148; backup-reminder client markers + Phase 123-131
+?v=149 x5, no ?v=149; backup-reminder client markers + Phase 123-131
 markers intact.
 """
 import hashlib, hmac, json, os, time, urllib.parse
@@ -129,7 +129,7 @@ with TestClient(app) as c:
 
     # 7. Client markers + asset version.
     html = open("webapp/index.html").read()
-    assert html.count("?v=148") == 7, html.count("?v=148")
+    assert html.count("?v=149") == 9, html.count("?v=149")
     assert "?v=131" not in html
     assert 'id="backup-reminder"' in html
     assert 'id="backup-warn"' in html
@@ -145,6 +145,6 @@ with TestClient(app) as c:
               "loadSecurityLog", "loadPayouts", "loadBroadcasts",
               "BC_TARGET_LABELS"):
         assert m in js, m
-    print("client markers + ?v=148 OK")
+    print("client markers + ?v=149 OK")
 
 print("PHASE-132 TESTS PASSED")

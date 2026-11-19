@@ -133,12 +133,12 @@ with TestClient(app) as c:
                 "loadDesigns(false)"):
         assert bit in js, bit
     assert 'id="design-more"' in html, "button element must stay in DOM"
-    for asset in ("style.css?v=148", "app.js?v=148", "games.js?v=148"):
+    for asset in ("style.css?v=149", "app.js?v=149", "games.js?v=149"):
         assert asset in html, asset
     assert "loadRelatedDesigns" in js, "Phase 115 wiring gone"
     assert "loadMyQr" in js, "Phase 114 wiring gone"
     assert "showTaskAd" in js, "Phase 113 wiring gone"
     assert "openPhotoViewer" in js, "Phase 112 wiring gone"
-    print("client: seed, infinite scroll, Load More gone, ?v=148 OK")
+    print("client: seed, infinite scroll, Load More gone, ?v=149 OK")
 
 print("PHASE 116 OK")

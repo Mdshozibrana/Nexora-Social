@@ -133,8 +133,8 @@ with TestClient(app) as c:
     assert "the follow task 10" in main, "Nexa manual task values stale"
     print("Phase 111/112 markers OK")
 
-    for asset in ("style.css?v=148", "app.js?v=148", "games.js?v=148"):
+    for asset in ("style.css?v=149", "app.js?v=149", "games.js?v=149"):
         assert asset in html, asset
-    print("asset version ?v=148 OK")
+    print("asset version ?v=149 OK")
 
 print("PHASE 113 OK")
