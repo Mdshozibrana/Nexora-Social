@@ -169,6 +169,17 @@ input, textarea { font: inherit; width: 100%; padding: 10px; border-radius: 10px
 .composer-row #composer-post { flex: none; }
 .composer .tool-btn { background: #334155; color: #F1F5F9;
                       border-radius: 999px; padding: 8px 13px; font-size: 17px; }
+
+/* Phase 150: composer labelled buttons too big (owner
+   screenshot 2026-11-19: the circled "Save draft" /
+   "Schedule" / "Post" text looked huge). The 17px
+   .tool-btn size fits the icon-only buttons (emoji) but
+   not the labelled ones, so only the labelled buttons
+   shrink to 13px and Post to 14px. Icon-only buttons
+   stay exactly as they are. Phase 143's flex-wrap is
+   untouched — the row still wraps at phone width. */
+.composer-row #composer-draft, .composer-row #composer-schedule-toggle { font-size: 13px; padding: 7px 12px; }
+.composer-row #composer-post { font-size: 14px; padding: 7px 16px; }
 .attach-chip { background: rgba(51,65,85,.55); border: 1px solid rgba(100,116,139,.5);
                border-radius: 999px; padding: 4px 6px 4px 10px; font-size: 13px;
                color: #F1F5F9; max-width: 55%; overflow: hidden;
