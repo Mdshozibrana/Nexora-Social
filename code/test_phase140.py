@@ -11,7 +11,7 @@ it — repost rows carry no hashtags, exactly like the #tag
 search); private accounts (a private author's hashtagged posts
 stay hidden from non-followers, visible to followers, and
 going private hides even older posts); backup 42 tables incl.
-hashtag_follows rows; ?v=150 x5; hashtag-follow client markers
+hashtag_follows rows; ?v=151 x5; hashtag-follow client markers
 + Phase 123-139 markers intact.
 
 Survey note: hashtags live as a space-joined lowercase string
@@ -163,7 +163,7 @@ with TestClient(app) as c:
     r = c.get("/admin/backup", headers=ALICE)
     assert r.status_code == 200, r.text
     bk = r.json()
-    assert len(bk["tables"]) == 42, len(bk["tables"])
+    assert len(bk["tables"]) == 43, len(bk["tables"])
     assert "hashtag_follows" in bk["tables"], list(bk["tables"])
     assert len(bk["tables"]["hashtag_follows"]) >= 2, \
         len(bk["tables"]["hashtag_follows"])
@@ -171,7 +171,7 @@ with TestClient(app) as c:
 
     # 6. Client markers + asset version.
     html = open("webapp/index.html").read()
-    assert html.count("?v=150") == 9, html.count("?v=150")
+    assert html.count("?v=151") == 9, html.count("?v=151")
     assert "?v=13" + "9" not in html
     js = open("webapp/app.js").read()
     for m in ("tab-hashtags", "search-tag-follow", "hashtag-card",
@@ -200,6 +200,6 @@ with TestClient(app) as c:
         assert m in js, m
     css = open("webapp/style.css").read()
     assert ".hashtag-row" in css
-    print("client markers + ?v=150 OK")
+    print("client markers + ?v=151 OK")
 
 print("PHASE-140 TESTS PASSED")

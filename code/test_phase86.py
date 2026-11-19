@@ -14,7 +14,7 @@ CSS = open("webapp/style.css").read()
 # sidebar entry + view wiring
 assert 'data-go="museum"' in HTML and "🏛️" in HTML
 assert '<section id="view-museum" hidden>' in HTML
-assert '"nearby", "museum", "qr", "trending", "settings"]' in JS
+assert '"nearby", "museum", "qr", "trending", "settings", "blood"]' in JS
 assert 'if (name === "museum") openMuseum();' in JS
 assert "museum: () => loadMuseum(true)," in JS
 # data source + room building
@@ -43,5 +43,5 @@ for bit in ("#museum-stage", ".m-wall", ".m-floor", ".m-spot",
             ".plan-room.on", "--m-frame", "touch-action: none",
             "@keyframes mfadein"):
     assert bit in CSS, bit
-assert "app.js?v=150" in HTML and "style.css?v=150" in HTML
+assert "app.js?v=151" in HTML and "style.css?v=151" in HTML
 print("PHASE 86 OK")

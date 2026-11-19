@@ -15,8 +15,9 @@ MAX_PER_HOUR = 20
 # Keys are the toggles; every key defaults ON — a missing key, or
 # no prefs at all, means the member never changed it, so today's
 # behaviour is preserved for everyone until they opt out.
+# Phase 151: blood requests + donor answers (8th toggle).
 NOTIF_PREF_KEYS = ("likes", "comments", "follows", "follow_requests",
-                   "tips", "messages", "system")
+                   "tips", "messages", "system", "blood")
 # Which pref key gates each notification type the app actually
 # creates. "mention" is deliberately absent: no code path ever
 # creates a mention notification, so there is nothing to toggle.
@@ -29,6 +30,8 @@ NOTIF_TYPE_MAP = {
     "payout": "system", "verification": "system",
     "post_live": "system", "announcement": "system",
     "broadcast": "system",
+    # Phase 151: blood-request alerts + donor answers.
+    "blood_request": "blood", "blood_respond": "blood",
 }
 
 

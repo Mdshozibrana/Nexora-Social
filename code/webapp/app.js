@@ -228,7 +228,7 @@ function showView(name, viaBack) {
                    games: "nav-games",
                    game: "nav-games", tasks: "nav-tasks",
                    leaderboard: "nav-ranks", profile: "nav-me" };
-  ["feed", "videos", "designs", "search", "tasks", "leaderboard", "profile", "saved", "shared", "games", "game", "admin", "notifications", "messages", "chat", "assistant", "nearby", "museum", "qr", "trending", "settings"].forEach(v => {
+  ["feed", "videos", "designs", "search", "tasks", "leaderboard", "profile", "saved", "shared", "games", "game", "admin", "notifications", "messages", "chat", "assistant", "nearby", "museum", "qr", "trending", "settings", "blood"].forEach(v => {
     $("view-" + v).hidden = v !== name;
   });
   // Phase 21: only tab views move the highlight. Views without a tab
@@ -253,6 +253,7 @@ function showView(name, viaBack) {
   if (name === "leaderboard") loadRanks();
   if (name === "designs") loadDesigns(true);
   if (name === "trending") loadTrending();
+  if (name === "blood") loadBlood();
   if (name === "assistant") openAssistant();
   if (name !== "assistant") nexaStop();
   if (name === "museum") openMuseum();
@@ -1616,6 +1617,171 @@ async function loadTrending() {
     });
     empty.hidden = (posts.posts || []).length > 0;
   } catch (e) { setStatus("Could not load Trending."); }
+}
+
+
+// ---------- Phase 151: blood donors ----------
+const BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
+let bloodTab = "donors";
+let bloodGroupFilter = "";
+
+function bloodGroupBadge(group) {
+  const b = document.createElement("span");
+  b.className = "blood-group-badge";
+  b.textContent = "🩸 " + group;
+  return b;
+}
+
+async function loadBlood() {
+  const dTab = $("blood-tab-donors");
+  const rTab = $("blood-tab-requests");
+  if (!dTab) return;
+  // Tabs + new-request form (bound every open; .onclick replaces).
+  dTab.onclick = () => { bloodTab = "donors"; loadBlood(); };
+  rTab.onclick = () => { bloodTab = "requests"; loadBlood(); };
+  const form = $("blood-form");
+  $("blood-new-btn").onclick = () => { form.hidden = !form.hidden; };
+  const gsel = $("blood-form-group");
+  if (!gsel.options.length) BLOOD_GROUPS.forEach(g => {
+    const o = document.createElement("option");
+    o.value = g; o.textContent = g; gsel.appendChild(o);
+  });
+  $("blood-form-send").onclick = async () => {
+    const units = parseInt($("blood-form-units").value, 10);
+    try {
+      await api("/blood/requests", { method: "POST",
+        body: JSON.stringify({ blood_group: gsel.value,
+          hospital: $("blood-form-hospital").value,
+          city: $("blood-form-city").value,
+          units: isNaN(units) ? 1 : units,
+          note: $("blood-form-note").value,
+          contact: $("blood-form-contact").value }) });
+      form.hidden = true;
+      $("blood-form-hospital").value = "";
+      $("blood-form-city").value = "";
+      $("blood-form-note").value = "";
+      $("blood-form-contact").value = "";
+      setStatus("Blood request posted — matching donors have been notified. 🩸");
+      loadBloodRequests();
+    } catch (e) { setStatus("Could not post the request — check the hospital, city and units."); }
+  };
+  dTab.classList.toggle("active", bloodTab === "donors");
+  rTab.classList.toggle("active", bloodTab === "requests");
+  $("blood-donor-filters").hidden = bloodTab !== "donors";
+  $("blood-donor-list").hidden = bloodTab !== "donors";
+  $("blood-request-pane").hidden = bloodTab !== "requests";
+  if (bloodTab === "donors") loadBloodDonors();
+  else loadBloodRequests();
+}
+
+async function loadBloodDonors() {
+  const box = $("blood-donor-list");
+  const filters = $("blood-donor-filters");
+  const empty = $("blood-empty");
+  if (!box) return;
+  filters.innerHTML = "";
+  const mkChip = (label, val) => {
+    const c = document.createElement("button");
+    c.className = "chip" + (bloodGroupFilter === val ? " active" : "");
+    c.textContent = label;
+    c.onclick = () => { bloodGroupFilter = val; loadBloodDonors(); };
+    filters.appendChild(c);
+  };
+  mkChip("All groups", "");
+  BLOOD_GROUPS.forEach(g => mkChip(g, g));
+  box.innerHTML = "Loading…";
+  empty.hidden = true;
+  try {
+    const d = await api("/blood/donors" +
+      (bloodGroupFilter ? "?group=" + encodeURIComponent(bloodGroupFilter) : ""));
+    box.innerHTML = "";
+    (d.donors || []).forEach(u => {
+      const card = document.createElement("div");
+      card.className = "card blood-card";
+      const av = avatarEl(u.first_name, u.telegram_id, false, null);
+      const info = document.createElement("div");
+      info.className = "blood-info";
+      const nm = document.createElement("div");
+      nm.className = "blood-name";
+      nm.textContent = u.first_name + (u.username ? " (@" + u.username + ")" : "");
+      const sub = document.createElement("div");
+      sub.className = "muted";
+      sub.textContent = u.country || "";
+      info.append(nm, sub);
+      const msg = document.createElement("button");
+      msg.className = "btn blood-msg";
+      msg.textContent = "💬 Message";
+      msg.onclick = () => openChat(u.telegram_id);
+      card.append(av, info, bloodGroupBadge(u.blood_group), msg);
+      box.appendChild(card);
+    });
+    if (!(d.donors || []).length) {
+      empty.hidden = false;
+      empty.textContent = bloodGroupFilter
+        ? "No donors of " + bloodGroupFilter + " yet — opt in from Settings to be the first."
+        : "No donors yet — opt in from Settings → Profile to be the first.";
+    }
+  } catch (e) { box.innerHTML = ""; empty.hidden = false; empty.textContent = "Could not load donors."; }
+}
+
+async function loadBloodRequests() {
+  const box = $("blood-request-list");
+  const empty = $("blood-empty");
+  if (!box) return;
+  box.innerHTML = "Loading…";
+  empty.hidden = true;
+  try {
+    const d = await api("/blood/requests");
+    box.innerHTML = "";
+    (d.requests || []).forEach(r => {
+      const card = document.createElement("div");
+      card.className = "card blood-card blood-req";
+      const info = document.createElement("div");
+      info.className = "blood-info";
+      const head = document.createElement("div");
+      head.className = "blood-name";
+      head.textContent = r.hospital + " · " + r.city;
+      const sub = document.createElement("div");
+      sub.className = "muted";
+      sub.textContent = r.units + " unit" + (r.units === 1 ? "" : "s") + " · by " + (r.author_name || "?") + (r.note ? " · " + r.note : "") + (r.contact ? " · " + r.contact : "");
+      info.append(head, sub);
+      card.append(bloodGroupBadge(r.blood_group), info);
+      if (r.mine) {
+        const done = document.createElement("button");
+        done.className = "btn blood-act";
+        done.textContent = "Fulfilled ✓";
+        done.onclick = async () => {
+          try { await api("/blood/requests/" + r.id + "/fulfill", { method: "POST" }); setStatus("Marked fulfilled — thank you! 🩸"); loadBloodRequests(); }
+          catch (e) { setStatus("Could not update the request."); }
+        };
+        const cancel = document.createElement("button");
+        cancel.className = "btn blood-act";
+        cancel.textContent = "Cancel";
+        cancel.onclick = async () => {
+          try { await api("/blood/requests/" + r.id + "/cancel", { method: "POST" }); setStatus("Request cancelled."); loadBloodRequests(); }
+          catch (e) { setStatus("Could not update the request."); }
+        };
+        card.append(done, cancel);
+      } else {
+        const go = document.createElement("button");
+        go.className = "btn blood-act";
+        go.textContent = "আমি দেবো";
+        go.onclick = async () => {
+          try {
+            const res = await api("/blood/requests/" + r.id + "/respond", { method: "POST" });
+            setStatus("The requester has been notified — opening your chat with them. 🩸");
+            openChat(res.author_id);
+          } catch (e) { setStatus("Could not respond to the request."); }
+        };
+        card.appendChild(go);
+      }
+      box.appendChild(card);
+    });
+    if (!(d.requests || []).length) {
+      empty.hidden = false;
+      empty.textContent = "No open requests right now.";
+    }
+  } catch (e) { box.innerHTML = ""; empty.hidden = false; empty.textContent = "Could not load requests."; }
 }
 
 async function loadSuggestedInto(slot) {
@@ -3518,6 +3684,14 @@ async function openProfile(userId) {
     stats.textContent = u.followers + " followers · " +
       u.following_count + " following";
     hero.append(headWrap, bio, stats);
+    // Phase 151: blood-donor badge — only when the member opted
+    // in (the API sends blood_group only for opted-in donors).
+    if (u.blood_group) {
+      const bb = document.createElement("div");
+      bb.className = "blood-badge";
+      bb.textContent = "🩸 Blood donor · " + u.blood_group;
+      hero.appendChild(bb);
+    }
     // Phase 145 (owner): Stars-received line removed from the
     // profile hero — it already lives in Settings ("My tips").
     // Phase 145 (owner): level + badges removed from the profile
@@ -4456,6 +4630,7 @@ const NOTIF_PREF_META = [
   ["tips", "⭐ Tips", "Someone tips you Stars"],
   ["messages", "💬 Direct messages", "Someone sends you a DM"],
   ["system", "🛡️ System", "Payouts, verification decisions, your posts going live, admin announcements"],
+  ["blood", "🩸 Blood requests", "A matching blood request needs your group, or a donor answers your request"],
 ];
 
 async function loadSettings() {
@@ -4522,6 +4697,48 @@ async function loadSettings() {
     photoBtn.textContent = "👤 Open my profile";
     photoBtn.onclick = () => openProfile(me.telegram_id);
     prof.append(photoHint, photoBtn);
+    // Phase 151: blood donor opt-in — group picker + toggle.
+    // The group is shown to others ONLY while opted in.
+    const bloodHead = document.createElement("div");
+    bloodHead.className = "settings-sub";
+    bloodHead.textContent = "🩸 Blood donor";
+    const bloodSel = document.createElement("select");
+    bloodSel.id = "settings-blood-group";
+    const noGroup = document.createElement("option");
+    noGroup.value = "";
+    noGroup.textContent = "No blood group set";
+    bloodSel.appendChild(noGroup);
+    BLOOD_GROUPS.forEach(g => {
+      const o = document.createElement("option");
+      o.value = g;
+      o.textContent = g;
+      bloodSel.appendChild(o);
+    });
+    bloodSel.value = u.blood_group || "";
+    const bloodRow = document.createElement("label");
+    bloodRow.className = "privacy-row";
+    const bloodChk = document.createElement("input");
+    bloodChk.type = "checkbox";
+    bloodChk.checked = !!u.blood_donor;
+    const bloodTx = document.createElement("span");
+    bloodTx.textContent = "আমি রক্ত দিতে চাই — show me as a donor of this group.";
+    bloodRow.append(bloodChk, bloodTx);
+    const bloodSave = document.createElement("button");
+    bloodSave.className = "btn";
+    bloodSave.id = "settings-blood-save";
+    bloodSave.textContent = "Save blood donor status";
+    bloodSave.onclick = async () => {
+      try {
+        const r = await api("/me/blood-group", { method: "POST",
+          body: JSON.stringify({ blood_group: bloodSel.value || null,
+                                 is_donor: bloodChk.checked }) });
+        setStatus(r.blood_donor ? "You are now listed as a 🩸 " + r.blood_group + " donor." : "Blood donor status cleared.");
+      } catch (e) { setStatus("Could not save blood donor status."); }
+    };
+    const bloodHint = document.createElement("p");
+    bloodHint.className = "hint";
+    bloodHint.textContent = "Your blood group is shown only while you opt in as a donor. Contact happens only by DM — no phone number is ever shown.";
+    prof.append(bloodHead, bloodSel, bloodRow, bloodSave, bloodHint);
     // 2. Theme — the same picker as Me (themeCard is reused).
     box.appendChild(themeCard());
     // 3. Privacy — the same toggle as the profile edit form,
@@ -5589,7 +5806,8 @@ const NOTIF_ICONS = { like: "❤️", comment: "💬", follow: "👥",
                       follow_request: "👥",
                       share: "📤", post_live: "🎬", announcement: "📣",
                       verification: "🛡️", repost: "🔁", reply: "↩️",
-                      tip: "⭐" };
+                      tip: "⭐", blood_request: "🩸",
+                      blood_respond: "🩸" };
 async function loadNotifications(reset) {
   const box = $("notif-list");
   if (reset) { box.innerHTML = ""; notifCursor = null; }

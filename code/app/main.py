@@ -65,7 +65,7 @@ def _migrate():
               "theme": "VARCHAR(256)",
               "lon": "FLOAT", "loc_at": "TIMESTAMP",
               # Phase 144: notification prefs JSON (one TEXT
-              # column, no new table — backup stays 42).
+              # column, no new table — backup was 42 at Phase 144).
               "notif_prefs": "TEXT"}
     with engine.begin() as conn:
         for name, ddl in wanted.items():
@@ -130,6 +130,16 @@ def _migrate():
         if "is_private" not in existing:
             conn.execute(text(
                 "ALTER TABLE users ADD COLUMN is_private BOOLEAN DEFAULT FALSE"))
+    # Phase 151: blood donors — group + opt-in flag on users
+    # (Postgres-legal DEFAULT FALSE; the Phase 126 lesson:
+    # never a 0 default on a boolean in raw SQL).
+    with engine.begin() as conn:
+        if "blood_group" not in existing:
+            conn.execute(text(
+                "ALTER TABLE users ADD COLUMN blood_group VARCHAR(3)"))
+        if "blood_donor" not in existing:
+            conn.execute(text(
+                "ALTER TABLE users ADD COLUMN blood_donor BOOLEAN DEFAULT FALSE"))
     # Phase 138: DM photos — media columns on messages (plain
     # VARCHAR, nullable; create_all never alters existing tables).
     msg_cols = {c["name"] for c in inspect(engine).get_columns("messages")}
@@ -741,6 +751,9 @@ async def auth(body: AuthIn, request: Request,
         "media_token": _media_token(),
         "adsgram_block_id": settings.ADSGRAM_BLOCK_ID,
         "mapillary_client_token": settings.MAPILLARY_CLIENT_TOKEN,
+        # Phase 151: the caller's own blood-donor status.
+        "blood_group": user.blood_group,
+        "blood_donor": bool(getattr(user, "blood_donor", False)),
         # Phase 137: level (from lifetime points) + badges.
         "level": level_badges["level"],
         "badges": level_badges["badges"],
@@ -2609,6 +2622,11 @@ def public_profile(telegram_id: int, user: models.User = Depends(current_user),
         # Phase 136: private-account state for the profile view
         # (lock notice + Follow/Requested button).
         "is_private": bool(getattr(target, "is_private", False)),
+        # Phase 151: blood group is health-adjacent — shown
+        # only when the member opted in as a donor.
+        "blood_group": (target.blood_group
+                      if bool(getattr(target, "blood_donor", False))
+                      else None),
         "has_pending_request": db.query(models.FollowRequest).filter_by(
             requester_id=user.telegram_id, target_id=telegram_id,
             status="pending").first() is not None,
@@ -2917,6 +2935,267 @@ def my_hashtags(user: models.User = Depends(current_user),
 
 
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Phase 151: blood donors — a life-or-death community need in
+# Bangladesh, built on profiles / Settings / DMs / notifications.
+# Text-only, no media, no phone numbers anywhere: a donor opts in
+# with a blood group (Settings), requests list open calls, a donor
+# taps "আমি দেবো" and the requester is notified — contact is then
+# an in-app DM. No points, no payments, no in-app upload.
+# Privacy: a private donor appears only to followers/self (the
+# Phase 136 rule, reused via _can_see_posts), and a private
+# author's requests reach only followers too; blocked pairs never
+# see each other (feed rule). The GEMINI media screening
+# (moderation.py) is image-only and never touches this text flow;
+# the banned-word check (Phase 142) still runs on request text.
+# ---------------------------------------------------------------------------
+
+BLOOD_GROUPS = ("A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-")
+
+
+def _blood_donor_out(u):
+    """A directory row: name + group + country only — never a
+    phone number, never a precise location."""
+    return {"telegram_id": u.telegram_id,
+            "first_name": u.first_name,
+            "username": u.username,
+            "blood_group": u.blood_group,
+            "country": u.country}
+
+
+def _blood_visible_donors(db, viewer_id):
+    """Opted-in donors the viewer may see, newest first: private
+    donors only to their followers (Phase 136), never anyone in
+    a block pair (feed rule)."""
+    hidden = _block_related_ids(db, viewer_id)
+    rows = db.query(models.User).filter(
+        models.User.blood_donor == True,
+        models.User.blood_group.isnot(None)).all()
+    visible = [u for u in rows
+               if u.telegram_id not in hidden
+               and _can_see_posts(db, viewer_id, u.telegram_id)]
+    visible.sort(key=lambda u: (u.created_at or datetime.min,
+                                u.telegram_id), reverse=True)
+    return visible
+
+
+def _blood_request_out(db, r, viewer_id):
+    author = db.get(models.User, r.author_id)
+    return {"id": r.id,
+            "author_id": r.author_id,
+            "author_name": author.first_name if author else "?",
+            "author_username": author.username if author else None,
+            "blood_group": r.blood_group,
+            "hospital": r.hospital,
+            "city": r.city,
+            "units": r.units,
+            "note": r.note or "",
+            "contact": r.contact or "",
+            "status": r.status,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+            "fulfilled_at": (r.fulfilled_at.isoformat()
+                             if r.fulfilled_at else None),
+            "mine": r.author_id == viewer_id}
+
+
+class BloodGroupIn(BaseModel):
+    blood_group: Optional[str] = None
+    is_donor: bool = False
+
+
+@app.post("/me/blood-group")
+def set_blood_group(body: BloodGroupIn,
+                    user: models.User = Depends(current_user),
+                    db: Session = Depends(get_db)):
+    """Set or clear your own donor status. The group must be one
+    of the 8, or null to clear it. Opting in as a donor needs a
+    group; clearing removes the member from the directory."""
+    _enforce_rate("blood", f"u{user.telegram_id}")
+    group = (body.blood_group or "").strip().upper() or None
+    if group is not None and group not in BLOOD_GROUPS:
+        raise HTTPException(400, "Not a valid blood group")
+    if body.is_donor and group is None:
+        raise HTTPException(
+            400, "Choose a blood group to become a donor")
+    user.blood_group = group
+    user.blood_donor = bool(body.is_donor) and group is not None
+    db.commit()
+    return {"blood_group": user.blood_group,
+            "blood_donor": bool(user.blood_donor)}
+
+
+@app.get("/blood/donors")
+def list_blood_donors(group: str = "",
+                      user: models.User = Depends(current_user),
+                      db: Session = Depends(get_db)):
+    """Opted-in donors only — nobody appears here until they opt
+    in. Optional group filter; newest members first."""
+    g = (group or "").strip().upper() or None
+    if g is not None and g not in BLOOD_GROUPS:
+        raise HTTPException(400, "Not a valid blood group")
+    donors = _blood_visible_donors(db, user.telegram_id)
+    if g is not None:
+        donors = [u for u in donors if u.blood_group == g]
+    return {"donors": [_blood_donor_out(u) for u in donors]}
+
+
+class BloodRequestIn(BaseModel):
+    blood_group: str = Field(default="", max_length=3)
+    hospital: str = Field(default="", max_length=200)
+    city: str = Field(default="", max_length=100)
+    units: int = 1
+    note: str = Field(default="", max_length=500)
+    contact: Optional[str] = Field(default=None, max_length=200)
+
+
+@app.post("/blood/requests")
+async def create_blood_request(body: BloodRequestIn,
+                               user: models.User = Depends(current_user),
+                               db: Session = Depends(get_db)):
+    """An open call for blood — text only. The banned-word check
+    runs on the typed text (Phase 142); "blood" / "রক্ত" itself
+    is not a banned word, so an ordinary request always passes.
+    Matching donors are notified — ONLY the opted-in donors of
+    this exact group who can see the requester, never every
+    donor and never other groups."""
+    _enforce_rate("blood", f"u{user.telegram_id}")
+    group = (body.blood_group or "").strip().upper()
+    if group not in BLOOD_GROUPS:
+        raise HTTPException(400, "Not a valid blood group")
+    hospital = (body.hospital or "").strip()
+    city = (body.city or "").strip()
+    if not hospital or not city:
+        raise HTTPException(400, "Hospital and city are required")
+    units = body.units
+    if not isinstance(units, int) or units < 1 or units > 10:
+        raise HTTPException(400, "Units must be 1-10")
+    note = (body.note or "").strip()
+    contact = (body.contact or "").strip() or None
+    bad = banned_word_in(db, " ".join(
+        [hospital, city, note, contact or ""]))
+    if bad:
+        raise HTTPException(400, BANNED_WORD_MESSAGE)
+    req = models.BloodRequest(author_id=user.telegram_id,
+                              blood_group=group, hospital=hospital,
+                              city=city, units=units, note=note,
+                              contact=contact)
+    db.add(req)
+    db.commit()
+    db.refresh(req)
+    hidden = _block_related_ids(db, user.telegram_id)
+    donors = db.query(models.User).filter(
+        models.User.blood_donor == True,
+        models.User.blood_group == group).all()
+    for donor in donors:
+        if donor.telegram_id == user.telegram_id:
+            continue
+        if donor.telegram_id in hidden:
+            continue
+        if not _can_see_posts(db, donor.telegram_id,
+                              user.telegram_id):
+            continue
+        await notify.notify_user(
+            db, donor.telegram_id, "blood_request",
+            f"🩸 Blood needed: {group} at {hospital}, {city} — "
+            f"{units} unit(s). Open the Blood page to respond.")
+        notify.record(db, donor.telegram_id, "blood_request",
+                      actor_id=user.telegram_id,
+                      text=f"blood needed: {group} at {hospital}, {city}")
+    return _blood_request_out(db, req, user.telegram_id)
+
+
+@app.get("/blood/requests")
+def list_blood_requests(group: str = "", status: str = "open",
+                        user: models.User = Depends(current_user),
+                        db: Session = Depends(get_db)):
+    """Open requests, newest first; optional group filter and
+    status filter (open | fulfilled | cancelled). A private
+    author's requests reach only followers (Phase 136)."""
+    g = (group or "").strip().upper() or None
+    if g is not None and g not in BLOOD_GROUPS:
+        raise HTTPException(400, "Not a valid blood group")
+    st = (status or "open").strip().lower()
+    if st not in ("open", "fulfilled", "cancelled"):
+        raise HTTPException(400, "Not a valid status")
+    q = db.query(models.BloodRequest).filter(
+        models.BloodRequest.status == st)
+    if g is not None:
+        q = q.filter(models.BloodRequest.blood_group == g)
+    rows = q.order_by(models.BloodRequest.id.desc()).all()
+    hidden = _block_related_ids(db, user.telegram_id)
+    out = []
+    for r in rows:
+        if r.author_id in hidden:
+            continue
+        if not _can_see_posts(db, user.telegram_id, r.author_id):
+            continue
+        out.append(_blood_request_out(db, r, user.telegram_id))
+    return {"requests": out}
+
+
+@app.post("/blood/requests/{req_id}/respond")
+async def respond_blood_request(req_id: int,
+                                user: models.User = Depends(current_user),
+                                db: Session = Depends(get_db)):
+    """'আমি দেবো' — the requester is notified; the client then
+    opens a DM with the requester. No responses table: the
+    notification + the DM IS the response."""
+    _enforce_rate("blood", f"u{user.telegram_id}")
+    req = db.get(models.BloodRequest, req_id)
+    if req is None:
+        raise HTTPException(404, "Blood request not found")
+    if req.author_id == user.telegram_id:
+        raise HTTPException(400, "You cannot respond to your own request")
+    if req.status != "open":
+        raise HTTPException(400, "This request is no longer open")
+    await notify.notify_user(
+        db, req.author_id, "blood_respond",
+        f"🩸 {user.first_name} wants to donate {req.blood_group} "
+        f"blood for your request at {req.hospital}.")
+    notify.record(db, req.author_id, "blood_respond",
+                  actor_id=user.telegram_id,
+                  text="wants to donate blood for your request")
+    return {"ok": True, "author_id": req.author_id}
+
+
+def _blood_request_for_author(req_id, user, db):
+    req = db.get(models.BloodRequest, req_id)
+    if req is None:
+        raise HTTPException(404, "Blood request not found")
+    if req.author_id != user.telegram_id:
+        raise HTTPException(403, "Only the requester can do this")
+    return req
+
+
+@app.post("/blood/requests/{req_id}/fulfill")
+def fulfill_blood_request(req_id: int,
+                          user: models.User = Depends(current_user),
+                          db: Session = Depends(get_db)):
+    """The author marks their request fulfilled (blood found)."""
+    _enforce_rate("blood", f"u{user.telegram_id}")
+    req = _blood_request_for_author(req_id, user, db)
+    if req.status != "open":
+        raise HTTPException(400, "This request is no longer open")
+    req.status = "fulfilled"
+    req.fulfilled_at = datetime.utcnow()
+    db.commit()
+    return _blood_request_out(db, req, user.telegram_id)
+
+
+@app.post("/blood/requests/{req_id}/cancel")
+def cancel_blood_request(req_id: int,
+                         user: models.User = Depends(current_user),
+                         db: Session = Depends(get_db)):
+    """The author withdraws their request."""
+    _enforce_rate("blood", f"u{user.telegram_id}")
+    req = _blood_request_for_author(req_id, user, db)
+    if req.status != "open":
+        raise HTTPException(400, "This request is no longer open")
+    req.status = "cancelled"
+    db.commit()
+    return _blood_request_out(db, req, user.telegram_id)
+
 # Blocking (second-pass audit R5, security §5/§6): a member's
 # self-help control against harassment. Blocking hides both sides'
 # content from each other, removes follows in both directions, and
@@ -6217,6 +6496,8 @@ _BACKUP_TABLES = [
     ("hashtag_follows", models.HashtagFollow),
     # Phase 142: banned-word list.
     ("banned_words", models.BannedWord),
+    # Phase 151: blood requests.
+    ("blood_requests", models.BloodRequest),
 ]
 _BACKUP_MODELS = {name: m for name, m in _BACKUP_TABLES}
 _BACKUP_MAX_BYTES = 50 * 1024 * 1024

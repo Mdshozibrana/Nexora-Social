@@ -117,6 +117,8 @@ RATE_LIMITS = {
     "dm_react": (120, 3600),
     # Phase 140: hashtag follows.
     "hashtag_follow": (120, 3600),
+    # Phase 151: blood donors + requests.
+    "blood": (120, 3600),
     "payout_admin": (120, 3600),
 }
 

@@ -34,7 +34,7 @@ Covers:
   loadSettings with all six sections, notification toggle rows,
   themeCard/dataCard reuse, wallet form ids, neighbouring
   markers intact; backup still 42 tables (one TEXT column, no
-  new table); ?v=150 x5, no older shell version; source guard (no BOOLEAN
+  new table); ?v=151 x5, no older shell version; source guard (no BOOLEAN
   DEFAULT 0 anywhere in the new code).
 """
 import hashlib, hmac, json, os, re, time, urllib.parse
@@ -89,7 +89,7 @@ GRACE = H(777, "Grace")
 HANK = H(888, "Hank")
 
 KEYS = ["likes", "comments", "follows", "follow_requests", "tips",
-        "messages", "system"]
+        "messages", "system", "blood"]
 
 
 def notif_count(uid, ntype=None):
@@ -376,7 +376,7 @@ with TestClient(app) as c:
     HTML = open("webapp/index.html").read()
     JS = open("webapp/app.js").read()
     CSS = open("webapp/style.css").read()
-    assert HTML.count("?v=150") == 9, HTML.count("?v=150")
+    assert HTML.count("?v=151") == 9, HTML.count("?v=151")
     assert "?v=14" + "3" not in HTML
     for m in ("view-settings", "settings-box", "⚙️ Settings",
               'data-go="settings"', "Settings</span>"):
@@ -394,7 +394,7 @@ with TestClient(app) as c:
     for m in ("settings-sec", "settings-head", "settings-sub",
               "settings-row", "settings-blocked-row"):
         assert m in CSS, m
-    # Every toggle label is on the page (seven keys, no mentions).
+    # Every toggle label is on the page (eight keys, no mentions).
     for key in KEYS:
         assert f'"notif-row-" + key' in JS or key in JS, key
     assert "mentions" not in JS.split("NOTIF_PREF_META")[1].split("];")[0]
@@ -404,7 +404,7 @@ with TestClient(app) as c:
               "tab-hashtags", "loadAutoBackup", "openStoryViewers",
               "themeCard", "dataCard", "rainCard", "loadMe"):
         assert m in JS, m
-    print("client markers + ?v=150 OK")
+    print("client markers + ?v=151 OK")
 
     # 10b. SCOPE UPDATE (owner 2026-11-18 23:39): Me keeps only
     # name, photo, bio, cover and posts — nothing else renders there.
@@ -431,7 +431,7 @@ with TestClient(app) as c:
     # the column itself persists on the member row.
     r = c.get("/admin/backup", headers=ALICE)
     assert r.status_code == 200, r.text
-    assert len(r.json()["tables"]) == 42, len(r.json()["tables"])
+    assert len(r.json()["tables"]) == 43, len(r.json()["tables"])
     with SessionLocal() as db:
         u = db.get(models.User, 222)
         assert u.notif_prefs is not None, u.notif_prefs

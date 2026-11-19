@@ -20,10 +20,10 @@
 <meta name="twitter:description" content="Share photos, watch reels, discover designs and play classic games — all inside Telegram.">
 <meta name="twitter:image" content="https://nexora-9pip.onrender.com/webapp/og-image.png">
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
-<link rel="stylesheet" href="style.css?v=150">
-<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=150">
-<link rel="stylesheet" href="vendor/maplibre/maplibre-gl-4.7.1.css?v=150">
-<link rel="stylesheet" href="vendor/mapillary/mapillary.css?v=150">
+<link rel="stylesheet" href="style.css?v=151">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=151">
+<link rel="stylesheet" href="vendor/maplibre/maplibre-gl-4.7.1.css?v=151">
+<link rel="stylesheet" href="vendor/mapillary/mapillary.css?v=151">
 </head>
 <body>
 <div id="entry-screen">
@@ -183,6 +183,31 @@
   <p id="trend-empty" class="empty" hidden>No trending posts yet.
   Like, comment or watch something and it could show up here!</p>
   <button id="trend-refresh" class="wide">↻ Refresh</button>
+</section>
+
+<section id="view-blood" hidden>
+  <h2 class="view-title">🩸 Blood</h2>
+  <p class="hint">Find blood donors — and answer a call when someone needs your group. Donors opt in from Settings; contact happens only by DM, never by phone.</p>
+  <div class="blood-tabs">
+    <button id="blood-tab-donors" class="active">🩸 Donors</button>
+    <button id="blood-tab-requests">📣 Requests</button>
+  </div>
+  <div id="blood-donor-filters" class="blood-filters"></div>
+  <main id="blood-donor-list"></main>
+  <div id="blood-request-pane" hidden>
+    <button id="blood-new-btn" class="wide">🩸 New request</button>
+    <div id="blood-form" class="card blood-form" hidden>
+      <select id="blood-form-group"></select>
+      <input id="blood-form-hospital" type="text" maxlength="200" placeholder="Hospital">
+      <input id="blood-form-city" type="text" maxlength="100" placeholder="City / area">
+      <input id="blood-form-units" type="number" min="1" max="10" value="1" placeholder="Units needed (1-10)">
+      <textarea id="blood-form-note" rows="2" maxlength="500" placeholder="Note (optional) — e.g. patient ward, when needed"></textarea>
+      <input id="blood-form-contact" type="text" maxlength="200" placeholder="Contact info (optional — shown on the request)">
+      <button id="blood-form-send" class="btn wide">Post request</button>
+    </div>
+    <main id="blood-request-list"></main>
+  </div>
+  <p id="blood-empty" class="empty" hidden></p>
 </section>
 
 <section id="view-saved" hidden>
@@ -786,6 +811,7 @@
   <button class="gb-item" data-go="designs"><span class="gb-ic">🎨</span><span class="gb-label">Design</span></button>
   <button class="gb-item" data-go="games"><span class="gb-ic">🎮</span><span class="gb-label">Games</span></button>
   <button class="gb-item" data-go="nearby"><span class="gb-ic">📍</span><span class="gb-label">Nearby</span></button>
+  <button class="gb-item" data-go="blood"><span class="gb-ic">🩸</span><span class="gb-label">Blood</span></button>
   <button class="gb-item" data-go="museum"><span class="gb-ic">🏛️</span><span class="gb-label">Museum</span></button>
   <div class="gb-sec">LIBRARY</div>
   <button class="gb-item" data-go="messages"><span class="gb-ic">💬</span><span class="gb-label">Messages</span><span id="gb-msg-badge" class="gb-badge" hidden></span></button>
@@ -839,10 +865,10 @@
   <button id="pv-close" type="button" aria-label="Close">✕</button>
 </div>
 
-<script src="vendor/leaflet/leaflet.js?v=150"></script>
-<script src="vendor/maplibre/maplibre-gl-4.7.1.js?v=150"></script>
-<script src="vendor/mapillary/mapillary.js?v=150"></script>
-<script src="app.js?v=150"></script>
-<script src="games.js?v=150"></script>
+<script src="vendor/leaflet/leaflet.js?v=151"></script>
+<script src="vendor/maplibre/maplibre-gl-4.7.1.js?v=151"></script>
+<script src="vendor/mapillary/mapillary.js?v=151"></script>
+<script src="app.js?v=151"></script>
+<script src="games.js?v=151"></script>
 </body>
 </html>

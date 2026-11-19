@@ -2899,3 +2899,19 @@ html[data-theme] .suggest-follow.on { background: var(--t-chip, #F3DCE7);
 .settings-sub { font-weight: 600; margin-top: 4px; }
 .settings-row { display: flex; gap: 8px; flex-wrap: wrap; }
 .settings-blocked-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 4px 0; }
+
+/* Phase 151: Blood donors — donor directory + open requests.
+   Red accents on the Organic Clay look; the group badge is
+   the only red in the app, so a donor stands out at a glance. */
+.blood-tabs { display: flex; gap: 8px; margin: 10px 0; }
+.blood-tabs button { flex: 1; padding: 9px; border-radius: 999px; font-size: 14px; font-weight: 700; background: #FFFBFC; color: var(--ink); box-shadow: var(--clay-shadow-sm); }
+.blood-tabs button.active { background: linear-gradient(145deg, #8ED4F7, #3E8FD0); color: #fff; }
+.blood-filters { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.blood-filters .chip.active { background: #C62828; color: #fff; }
+.blood-card { display: flex; align-items: center; gap: 10px; padding: 10px; }
+.blood-info { flex: 1; min-width: 0; }
+.blood-name { font-weight: 700; font-size: 15px; }
+.blood-group-badge { flex: none; padding: 4px 10px; border-radius: 999px; background: #FCE8E8; color: #B71C1C; font-weight: 800; font-size: 13px; white-space: nowrap; }
+.blood-msg, .blood-act { flex: none; padding: 7px 12px; font-size: 13px; }
+.blood-form { display: flex; flex-direction: column; gap: 8px; padding: 10px; margin: 10px 0; }
+.blood-badge { display: inline-block; margin-top: 8px; padding: 4px 12px; border-radius: 999px; background: #FCE8E8; color: #B71C1C; font-weight: 800; font-size: 13px; }

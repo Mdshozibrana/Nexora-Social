@@ -57,8 +57,14 @@ class User(Base):
     # own row, same pattern as the per-account theme. NULL (or
     # a missing key) means ON, so every existing member keeps
     # today's behaviour until they change it. One column, no
-    # new table — backup stays at 42 tables.
+    # new table — backup was 42 tables at Phase 144.
     notif_prefs = Column(Text, nullable=True)
+    # Phase 151: blood donation — opt-in only. blood_group is
+    # health-adjacent, so it is NULL until the member chooses
+    # one, and blood_donor stays False until they opt in; the
+    # directory and the profile badge read these two columns.
+    blood_group = Column(String(3), nullable=True)
+    blood_donor = Column(Boolean, default=False)
     lat = Column(Float, nullable=True)
     lon = Column(Float, nullable=True)
     loc_at = Column(DateTime, nullable=True)
@@ -617,3 +623,26 @@ class BannedWord(Base):
     word = Column(String(64), nullable=False, unique=True, index=True)
     added_by = Column(BigInteger, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class BloodRequest(Base):
+    """Phase 151: an open call for blood — hospital, city,
+    units, an optional note and an optional contact the author
+    typed voluntarily. Text only; the only contact path is an
+    in-app DM, and no phone number is ever stored or shown.
+    There is NO responses table: a donor's tap notifies the
+    requester and opens a DM — that IS the response."""
+    __tablename__ = "blood_requests"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    author_id = Column(BigInteger, ForeignKey("users.telegram_id"),
+                       index=True, nullable=False)
+    blood_group = Column(String(3), nullable=False)
+    hospital = Column(Text, nullable=False)
+    city = Column(String(100), nullable=False)
+    units = Column(Integer, default=1, nullable=False)
+    note = Column(Text, default="")
+    contact = Column(String(200), nullable=True)
+    status = Column(String(16), default="open", nullable=False)
+    # open | fulfilled | cancelled
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    fulfilled_at = Column(DateTime, nullable=True)

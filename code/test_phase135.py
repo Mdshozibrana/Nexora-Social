@@ -9,7 +9,7 @@ member's 404, cancel unknown 404; sweeper publishes a due post
 hashtags extracted) and skips future rows; sweeper marks a
 screening-rejected post failed with a short human error, logs a
 screen_reject event, and does NOT retry it on the next sweep;
-backup carries 39 tables incl. scheduled_posts rows; ?v=150 x5,
+backup carries 39 tables incl. scheduled_posts rows; ?v=151 x5,
 no ?v=134; scheduled-post client markers + Phase 123-134
 markers intact.
 """
@@ -215,7 +215,7 @@ with TestClient(app) as c:
     r = c.get("/admin/backup", headers=ALICE)
     assert r.status_code == 200, r.status_code
     bk = r.json()
-    assert len(bk["tables"]) == 42, len(bk["tables"])
+    assert len(bk["tables"]) == 43, len(bk["tables"])
     assert "scheduled_posts" in bk["tables"], list(bk["tables"])
     assert len(bk["tables"]["scheduled_posts"]) >= 5, \
         len(bk["tables"]["scheduled_posts"])
@@ -223,7 +223,7 @@ with TestClient(app) as c:
 
     # 8. Client markers + asset version.
     html = open("webapp/index.html").read()
-    assert html.count("?v=150") == 9, html.count("?v=150")
+    assert html.count("?v=151") == 9, html.count("?v=151")
     assert "?v=134" not in html
     assert 'id="composer-schedule-toggle"' in html
     assert 'id="composer-schedule"' in html
@@ -240,6 +240,6 @@ with TestClient(app) as c:
               "loadBackupStatus", "openTipSheet", "openInsights",
               "ins-chart", "ins-table"):
         assert m in js, m
-    print("client markers + ?v=150 OK")
+    print("client markers + ?v=151 OK")
 
 print("PHASE-135 TESTS PASSED")
