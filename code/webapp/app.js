@@ -1639,42 +1639,60 @@ function bloodDistance(d) {
   return d.toFixed(1) + " km away";
 }
 
-// Phase 152: donor distance — under 1 km in metres, else km with
-// one decimal. Null/undefined means nobody shares location.
-function bloodDistance(d) {
-  if (d == null) return "";
-  if (d < 1) return Math.round(d * 1000) + " m away";
-  return d.toFixed(1) + " km away";
+// Phase 153: ask for location when the Blood page opens, so donor
+// distances can show. At most once per app session (bloodLocAsked
+// is in-memory: a reload starts a new session). A denial — or an
+// unavailable location — shows an inline hint with a retry button
+// instead of nagging. Reuses nbLocate() and POST /me/location;
+// Nearby's own toggle, timer and map behaviour are untouched.
+let bloodLocAsked = false;
+
+async function bloodMaybeAskLocation() {
+  if (bloodLocAsked) return;
+  bloodLocAsked = true;
+  const hint = $("blood-loc-hint");
+  let sharing = false;
+  try { sharing = !!(await api("/me/nearby")).sharing; } catch (e) {}
+  if (sharing) { if (hint) hint.hidden = true; return; }
+  const pos = await nbLocate();
+  if (!pos) { if (hint) hint.hidden = false; return; }
+  try {
+    const r = await api("/me/location", { method: "POST",
+      body: JSON.stringify({ lat: pos.lat, lon: pos.lon, share: true }) });
+    if (r && r.sharing) {
+      if (hint) hint.hidden = true;
+      nbSharing = true;
+      if (bloodTab === "donors") loadBloodDonors(); else loadBloodRequests();
+    } else if (hint) hint.hidden = false;
+  } catch (e) { if (hint) hint.hidden = false; }
 }
 
-// Phase 152: donor distance — under 1 km in metres, else km with
-// one decimal. Null/undefined means nobody shares location.
-function bloodDistance(d) {
-  if (d == null) return "";
-  if (d < 1) return Math.round(d * 1000) + " m away";
-  return d.toFixed(1) + " km away";
-}
-
-// Phase 152: donor distance — under 1 km in metres, else km with
-// one decimal. Null/undefined means nobody shares location.
-function bloodDistance(d) {
-  if (d == null) return "";
-  if (d < 1) return Math.round(d * 1000) + " m away";
-  return d.toFixed(1) + " km away";
-}
-
-// Phase 152: donor distance — under 1 km in metres, else km with
-// one decimal. Null/undefined means nobody shares location.
-function bloodDistance(d) {
-  if (d == null) return "";
-  if (d < 1) return Math.round(d * 1000) + " m away";
-  return d.toFixed(1) + " km away";
+// Phase 153: the hint's retry button — user-initiated, so it is
+// NOT gated by the once-per-session flag.
+async function bloodRetryLocation() {
+  const hint = $("blood-loc-hint");
+  const pos = await nbLocate();
+  if (!pos) return;
+  try {
+    const r = await api("/me/location", { method: "POST",
+      body: JSON.stringify({ lat: pos.lat, lon: pos.lon, share: true }) });
+    if (r && r.sharing) {
+      if (hint) hint.hidden = true;
+      nbSharing = true;
+      if (bloodTab === "donors") loadBloodDonors(); else loadBloodRequests();
+    }
+  } catch (e) {}
 }
 
 async function loadBlood() {
   const dTab = $("blood-tab-donors");
   const rTab = $("blood-tab-requests");
   if (!dTab) return;
+  // Phase 153: location permission for donor distances — once
+  // per session, only when sharing is off; a denial shows the
+  // inline hint with a retry button instead of re-prompting.
+  bloodMaybeAskLocation();
+  $("blood-loc-on").onclick = () => bloodRetryLocation();
   // Tabs + new-request form (bound every open; .onclick replaces).
   dTab.onclick = () => { bloodTab = "donors"; loadBlood(); };
   rTab.onclick = () => { bloodTab = "requests"; loadBlood(); };

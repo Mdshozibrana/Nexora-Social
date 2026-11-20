@@ -2847,3 +2847,11 @@ html[data-theme] .suggest-follow.on { background: var(--t-chip, #F3DCE7);
 .blood-bottom { display: flex; align-items: center; gap: 10px; }
 .blood-bottom .muted { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
+/* Phase 153: Blood-page location hint — shown only after the
+   user declines location (or it is unavailable); the "Turn on"
+   button retries on tap. The [hidden] override is explicit
+   because .card sets its own display. */
+.blood-loc-hint { padding: 10px; margin: 8px 0; font-size: 13px; line-height: 1.45; }
+.blood-loc-hint .btn { margin-top: 8px; }
+#blood-loc-hint[hidden] { display: none; }
+
