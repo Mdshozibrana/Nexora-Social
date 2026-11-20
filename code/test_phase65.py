@@ -15,11 +15,14 @@ CSS = open("webapp/style.css").read()
 
 # the old wrapping construction is gone
 assert 'nm.textContent = r.first_name + (isMe ? " (You)" : "")' not in JS
-# name in its own title span, badge after it
-at = JS.index('title.className = "rank-title"')
+# name in its own title span, badge after it — Phase 160 moved
+# title + badge into the shared .vname line (same span, same
+# badge, same one-line behaviour; the tick still sits beside it).
+at = JS.index('title.className = "rank-title vname-text"')
 block = JS[at - 200:at + 1400]
 assert "title.textContent = r.first_name;" in block
-assert "nm.appendChild(title)" in block
+assert "line.appendChild(title)" in block
+assert "nm.appendChild(line)" in block
 assert "verifiedBadge()" in block
 # (You) now joins the username line
 assert 'isMe ? "(You)" : ""' in block

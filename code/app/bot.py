@@ -334,7 +334,7 @@ async def start_bot(app: Application):
             # shell version.
             menu_url = settings.WEBAPP_URL
             if "?" not in menu_url:
-                menu_url = menu_url.rstrip("/") + "/?v=159"
+                menu_url = menu_url.rstrip("/") + "/?v=160"
             await app.bot.set_chat_menu_button(
                 menu_button=MenuButtonWebApp(
                     text="Open App",

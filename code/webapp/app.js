@@ -878,8 +878,8 @@ function nbPaintPeople(people) {
     const row = document.createElement("div");
     row.className = "nb-card";
     row.innerHTML = nbAvaHTML(q, "nb-card-ava") +
-      '<span class="nb-row-main"><b>' + nbEsc(q.name) +
-      (q.verified ? ' <span class="verified">✔</span>' : "") +
+      '<span class="nb-row-main"><b class="vname"><span class="vname-text">' + nbEsc(q.name) +
+      '</span>' + (q.verified ? '<span class="verified">✔</span>' : "") +
       '</b><span class="muted">' +
       (q.username ? "@" + nbEsc(q.username) + "  ·  " : "") +
       nbDir(q.bearing) + "  ·  " + q.distance_m + " m</span></span>" +
@@ -893,6 +893,7 @@ function nbPaintPeople(people) {
     };
     list.append(row);
   });
+  fitVerifiedNames(list);
   nbSetStatus("Sharing is on — " + people.length +
     " member(s) within 500 m.");
 }
@@ -1124,6 +1125,45 @@ function verifiedBadge() {
   return b;
 }
 
+// Phase 160: ONE shared verified-name fit for the whole app
+// (owner: "সবখানেই এই নিয়ম এপ্লাই করো"). Every name + tick
+// renders as a .vname line with a .vname-text span; this one
+// function shrinks the text until title + tick fit the line.
+// It starts at the name's normal size, steps down 0.5px at a
+// time while truncated, and never goes below the 12px floor
+// (at the floor the text ellipsizes — the tick is never
+// shrunk, wrapped or hidden). Re-fit after fonts load and
+// whenever the viewport changes, so a resize/rotation re-grows
+// names that fit again.
+const VNAME_FLOOR = 12;
+function fitVerifiedNames(root) {
+  const scope = root || document;
+  scope.querySelectorAll(".vname-text").forEach(text => {
+    text.style.fontSize = "";
+    const base = parseFloat(getComputedStyle(text).fontSize) || 16;
+    let size = base;
+    while (size > VNAME_FLOOR &&
+           text.scrollWidth > text.clientWidth) {
+      size -= 0.5;
+      text.style.fontSize = size + "px";
+    }
+    if (size >= base) text.style.fontSize = "";
+  });
+}
+// Card/row builders schedule their fit for the next frame,
+// when the element is attached and laid out.
+function fitVerifiedNamesSoon(el) {
+  requestAnimationFrame(() => fitVerifiedNames(el || document));
+}
+let vnameFitTimer = null;
+window.addEventListener("resize", () => {
+  clearTimeout(vnameFitTimer);
+  vnameFitTimer = setTimeout(() => fitVerifiedNames(), 150);
+});
+if (document.fonts && document.fonts.ready) {
+  document.fonts.ready.then(() => fitVerifiedNames());
+}
+
 function avatarEl(name, id, big, photoId) {
   if (photoId) {
     const img = document.createElement("img");
@@ -1242,8 +1282,11 @@ function postCard(p) {
   const who = document.createElement("span");
   who.className = "post-who";
   const nm = document.createElement("span");
-  nm.className = "post-name";
-  nm.textContent = p.author_name;
+  nm.className = "post-name vname";
+  const nmText = document.createElement("span");
+  nmText.className = "vname-text";
+  nmText.textContent = p.author_name;
+  nm.appendChild(nmText);
   if (p.author_verified) nm.appendChild(verifiedBadge());
   const sub = document.createElement("span");
   sub.className = "post-sub";
@@ -1472,6 +1515,7 @@ function postCard(p) {
       cBtn.textContent = "💬 " + p.comment_count;
     } catch (e) { setStatus("Could not send the comment."); }
   };
+  fitVerifiedNamesSoon(el);
   return el;
 }
 
@@ -1481,9 +1525,13 @@ function commentRow(cm, onReply) {
   row.dataset.commentId = cm.id;
   row.appendChild(avatarEl(cm.author_name, cm.user_id, false, cm.author_photo));
   const who = document.createElement("b");
+  who.className = "vname-text";
   who.textContent = cm.author_name;
-  row.appendChild(who);
-  if (cm.author_verified) row.appendChild(verifiedBadge());
+  const nm = document.createElement("span");
+  nm.className = "vname";
+  nm.appendChild(who);
+  if (cm.author_verified) nm.appendChild(verifiedBadge());
+  row.appendChild(nm);
   row.appendChild(document.createTextNode(": " + cm.text));
   // Phase 118: answer a comment directly — the reply nests
   // under it instead of starting a new top-level comment.
@@ -1519,6 +1567,7 @@ function commentRow(cm, onReply) {
   (cm.replies || []).forEach(r => replies.appendChild(commentRow(r, onReply)));
   row.appendChild(replies);
   row._repliesBox = replies;
+  fitVerifiedNamesSoon(row);
   return row;
 }
 
@@ -1575,6 +1624,7 @@ async function loadFeed(reset) {
     } else {
       $("feed-empty").textContent = "No posts yet. Be the first to post!";
     }
+    fitVerifiedNames($("feed-list"));
   } catch (e) { setStatus("Could not load the feed."); }
 }
 
@@ -1618,6 +1668,7 @@ async function loadTrending() {
       list.appendChild(wrap);
     });
     empty.hidden = (posts.posts || []).length > 0;
+    fitVerifiedNames(list);
   } catch (e) { setStatus("Could not load Trending."); }
 }
 
@@ -2075,9 +2126,9 @@ function suggestCard(users) {
     avBtn.onclick = () => openProfile(u.telegram_id);
     person.appendChild(avBtn);
     const nm = document.createElement("div");
-    nm.className = "suggest-name";
+    nm.className = "suggest-name vname";
     const nmText = document.createElement("span");
-    nmText.className = "suggest-name-text";
+    nmText.className = "suggest-name-text vname-text";
     nmText.textContent = u.first_name;
     nm.appendChild(nmText);
     if (u.is_verified) nm.appendChild(verifiedBadge());
@@ -2130,6 +2181,7 @@ function suggestCard(users) {
     scroll.appendChild(person);
   });
   el.appendChild(scroll);
+  fitVerifiedNamesSoon(el);
   return el;
 }
 
@@ -2187,8 +2239,11 @@ function reelCard(p) {
   const author = document.createElement("button");
   author.className = "reel-author";
   const nm = document.createElement("span");
-  nm.className = "post-name";
-  nm.textContent = p.author_name;
+  nm.className = "post-name vname";
+  const nmText = document.createElement("span");
+  nmText.className = "vname-text";
+  nmText.textContent = p.author_name;
+  nm.appendChild(nmText);
   if (p.author_verified) nm.appendChild(verifiedBadge());
   const who = document.createElement("span");
   who.className = "post-who";
@@ -2364,6 +2419,7 @@ function reelCard(p) {
       cCount.textContent = p.comment_count;
     } catch (e) { setStatus("Could not send the comment."); }
   };
+  fitVerifiedNamesSoon(el);
   return el;
 }
 
@@ -2819,8 +2875,14 @@ async function openSharePicker(p) {
       r.className = "pick-row";
       const nm = document.createElement("span");
       nm.className = "pick-name";
-      nm.textContent = u.first_name;
-      if (u.is_verified) nm.appendChild(verifiedBadge());
+      const line = document.createElement("span");
+      line.className = "vname";
+      const nmText = document.createElement("span");
+      nmText.className = "vname-text";
+      nmText.textContent = u.first_name;
+      line.appendChild(nmText);
+      if (u.is_verified) line.appendChild(verifiedBadge());
+      nm.appendChild(line);
       if (u.username) {
         const sm = document.createElement("small");
         sm.textContent = "@" + u.username;
@@ -2860,6 +2922,7 @@ async function openSharePicker(p) {
     cancel.append(ic2, document.createTextNode("Cancel"));
     cancel.onclick = () => closeReelMenu();
     list.append(tgRow, cancel);
+    fitVerifiedNames(list);
   };
 
   try {
@@ -2980,10 +3043,16 @@ async function loadRanks() {
       // its own ellipsis span and " (You)" moves to the muted
       // username line, where there is room.
       const title = document.createElement("span");
-      title.className = "rank-title";
+      title.className = "rank-title vname-text";
       title.textContent = r.first_name;
-      nm.appendChild(title);
-      if (r.is_verified) nm.appendChild(verifiedBadge());
+      // Phase 160 (owner): a long name pushed the blue tick
+      // onto the second line. Title + tick now live in one
+      // shared .vname line and shrink until they fit.
+      const line = document.createElement("span");
+      line.className = "rank-title-line vname";
+      line.appendChild(title);
+      if (r.is_verified) line.appendChild(verifiedBadge());
+      nm.appendChild(line);
       if (r.username || isMe) {
         const small = document.createElement("small");
         small.textContent = [
@@ -3018,6 +3087,7 @@ async function loadRanks() {
       sep.textContent = "···";
       box.append(sep, rowFor(data.me, true));
     }
+    fitVerifiedNames(box);
   } catch (e) { box.textContent = "Could not load the leaderboard."; }
 }
 
@@ -3076,14 +3146,21 @@ async function runSearch(q) {
       const row = document.createElement("button");
       row.className = "user-row";
       row.appendChild(avatarEl(u.first_name, u.telegram_id, false, u.photo_file_id));
-      row.appendChild(document.createTextNode(
-        u.first_name + (u.username
-          ? " @" + String(u.username).replace(/^@+/, "") : "")));
-      if (u.is_verified) row.appendChild(verifiedBadge());
+      const nm = document.createElement("span");
+      nm.className = "vname";
+      const nmText = document.createElement("span");
+      nmText.className = "vname-text";
+      nmText.textContent = u.first_name;
+      nm.appendChild(nmText);
+      if (u.is_verified) nm.appendChild(verifiedBadge());
+      row.appendChild(nm);
+      if (u.username) row.appendChild(document.createTextNode(
+        " @" + String(u.username).replace(/^@+/, "")));
       row.onclick = () => openProfile(u.telegram_id);
       usersBox.appendChild(row);
     });
     data.posts.forEach(p => postsBox.appendChild(postCard(p)));
+    fitVerifiedNames();
     if (!data.users.length && !data.posts.length) setStatus("No results.");
     else setStatus("");
   } catch (e) { setStatus("Search failed."); }
@@ -3899,8 +3976,11 @@ async function openProfile(userId) {
     headWrap.className = "profile-head";
     const col = document.createElement("div");
     const name = document.createElement("div");
-    name.className = "profile-name";
-    name.textContent = u.first_name;
+    name.className = "profile-name vname";
+    const nameText = document.createElement("span");
+    nameText.className = "vname-text";
+    nameText.textContent = u.first_name;
+    name.appendChild(nameText);
     if (u.is_verified) name.appendChild(verifiedBadge());
     const sub = document.createElement("div");
     sub.className = "profile-sub";
@@ -3967,6 +4047,7 @@ async function openProfile(userId) {
     // hero — they already live in Settings ("My level"). The
     // shared level renderer stays: Settings still uses it.
     box.appendChild(hero);
+    fitVerifiedNames(box);
     const wave = document.createElement("div");
     wave.className = "wave-div";
     wave.innerHTML = '<svg viewBox="0 0 720 56" preserveAspectRatio="none" aria-hidden="true">'
@@ -6154,8 +6235,13 @@ async function loadNotifications(reset) {
       const t = document.createElement("div");
       t.className = "notif-text";
       if (n.actor_name) {
-        const nm = document.createElement("b");
-        nm.textContent = n.actor_name + (n.actor_verified ? " ✓" : "");
+        const nm = document.createElement("span");
+        nm.className = "vname";
+        const nmText = document.createElement("b");
+        nmText.className = "vname-text";
+        nmText.textContent = n.actor_name;
+        nm.appendChild(nmText);
+        if (n.actor_verified) nm.appendChild(verifiedBadge());
         t.append(nm, document.createTextNode(" " + n.text));
       } else {
         t.textContent = (NOTIF_ICONS[n.type] || "🔔") + " " + n.text;
@@ -6176,6 +6262,7 @@ async function loadNotifications(reset) {
       }
       box.appendChild(row);
     });
+    fitVerifiedNames(box);
     // Opening the list marks everything read.
     await api("/me/notifications/read", { method: "POST" });
     paintBell(0);
@@ -6369,8 +6456,14 @@ async function openDesignSharePicker(d) {
       r.className = "pick-row";
       const nm = document.createElement("span");
       nm.className = "pick-name";
-      nm.textContent = u.first_name;
-      if (u.is_verified) nm.appendChild(verifiedBadge());
+      const line = document.createElement("span");
+      line.className = "vname";
+      const nmText = document.createElement("span");
+      nmText.className = "vname-text";
+      nmText.textContent = u.first_name;
+      line.appendChild(nmText);
+      if (u.is_verified) line.appendChild(verifiedBadge());
+      nm.appendChild(line);
       if (u.username) {
         const sm = document.createElement("small");
         sm.textContent = "@" + u.username;
@@ -6403,6 +6496,7 @@ async function openDesignSharePicker(d) {
     cancel.append(ic2, document.createTextNode("Cancel"));
     cancel.onclick = () => closeReelMenu();
     list.appendChild(cancel);
+    fitVerifiedNames(list);
   };
 
   try {
@@ -7158,9 +7252,14 @@ async function openUserDetail(telegramId) {
     const info = document.createElement("div");
     info.className = "admin-info";
     const t = document.createElement("div");
-    t.className = "admin-title";
-    t.textContent = "👤 " + u.first_name + (u.is_verified ? " ✓" : "") +
-      (u.is_banned ? " 🚫" : "");
+    t.className = "admin-title vname";
+    t.appendChild(document.createTextNode("👤 "));
+    const tText = document.createElement("span");
+    tText.className = "vname-text";
+    tText.textContent = u.first_name;
+    t.appendChild(tText);
+    if (u.is_verified) t.appendChild(verifiedBadge());
+    if (u.is_banned) t.appendChild(document.createTextNode(" 🚫"));
     const s = document.createElement("div");
     s.className = "admin-sub";
     s.textContent = (u.username ? "@" + u.username + " · " : "") +
@@ -7252,6 +7351,7 @@ async function openUserDetail(telegramId) {
     }
     card.appendChild(ctl);
     box.appendChild(card);
+    fitVerifiedNames(box);
   } catch (e) { box.innerHTML = '<p class="hint">Could not load details.</p>'; }
 }
 
@@ -8218,10 +8318,14 @@ function adminMemberRow(u) {
   const info = document.createElement("div");
   info.className = "admin-info";
   const t = document.createElement("div");
-  t.className = "admin-title";
-  t.textContent = u.first_name + (u.is_verified ? " ✓" : "") +
-    (u.is_managed ? " 🤖" : "") +
-    (u.is_banned ? " 🚫" : "");
+  t.className = "admin-title vname";
+  const tText = document.createElement("span");
+  tText.className = "vname-text";
+  tText.textContent = u.first_name;
+  t.appendChild(tText);
+  if (u.is_verified) t.appendChild(verifiedBadge());
+  if (u.is_managed) t.appendChild(document.createTextNode(" 🤖"));
+  if (u.is_banned) t.appendChild(document.createTextNode(" 🚫"));
   const s = document.createElement("div");
   s.className = "admin-sub";
   s.textContent = (u.username ? "@" + u.username + " · " : "") +
@@ -8248,6 +8352,7 @@ function adminMemberRow(u) {
     } catch (e) { alert(e.message || "Action failed"); }
   };
   row.append(info, details, btn);
+  fitVerifiedNamesSoon(row);
   return row;
 }
 
@@ -8953,8 +9058,12 @@ function personRow(u, subText, onClick) {
   const info = document.createElement("div");
   info.className = "admin-info";
   const nm = document.createElement("div");
-  nm.className = "conv-name";
-  nm.textContent = u.first_name + (u.verified ? " ✓" : "");
+  nm.className = "conv-name vname";
+  const nmText = document.createElement("span");
+  nmText.className = "vname-text";
+  nmText.textContent = u.first_name;
+  nm.appendChild(nmText);
+  if (u.verified) nm.appendChild(verifiedBadge());
   const pv = document.createElement("div");
   pv.className = "admin-sub conv-prev";
   pv.textContent = subText || "";
@@ -8962,6 +9071,7 @@ function personRow(u, subText, onClick) {
   row.appendChild(info);
   row.style.cursor = "pointer";
   row.onclick = onClick;
+  fitVerifiedNamesSoon(row);
   return row;
 }
 
@@ -9029,8 +9139,15 @@ async function loadThread(scroll) {
   if (!chatWith) return;
   try {
     const r = await api("/messages/" + chatWith);
-    $("chat-title").textContent = r.user.first_name +
-      (r.user.verified ? " ✓" : "");
+    const ct = $("chat-title");
+    ct.classList.add("vname");
+    ct.innerHTML = "";
+    const ctText = document.createElement("span");
+    ctText.className = "vname-text";
+    ctText.textContent = r.user.first_name;
+    ct.appendChild(ctText);
+    if (r.user.verified) ct.appendChild(verifiedBadge());
+    fitVerifiedNames(ct);
     const av = $("chat-avatar");
     av.innerHTML = "";
     av.appendChild(avatarEl(r.user.first_name, r.user.telegram_id,
@@ -9267,8 +9384,15 @@ function paintStory() {
   const s = g.stories[storyPos.s];
   if (!s) { nextStory(); return; }
   $("story-img").src = mediaUrl(s.media_file_id);
-  $("story-author").textContent = g.author.first_name +
-    (g.author.verified ? " ✓" : "");
+  const sa = $("story-author");
+  sa.classList.add("vname");
+  sa.innerHTML = "";
+  const saText = document.createElement("span");
+  saText.className = "vname-text";
+  saText.textContent = g.author.first_name;
+  sa.appendChild(saText);
+  if (g.author.verified) sa.appendChild(verifiedBadge());
+  fitVerifiedNames(sa);
   $("story-time").textContent = relTime(s.created_at);
   // Phase 139: the owner sees the viewer count (tap to list
   // viewers); everyone else gets a reply box instead.
@@ -9384,10 +9508,14 @@ async function openStoryViewers(sid) {
                                false, v.user.photo_file_id));
       const tx = document.createElement("div");
       const nm = document.createElement("div");
-      nm.className = "story-viewer-name";
-      nm.textContent = v.user.first_name +
-        (v.user.username ? " @" + v.user.username : "") +
-        (v.user.verified ? " ✓" : "");
+      nm.className = "story-viewer-name vname";
+      const nmText = document.createElement("span");
+      nmText.className = "vname-text";
+      nmText.textContent = v.user.first_name;
+      nm.appendChild(nmText);
+      if (v.user.verified) nm.appendChild(verifiedBadge());
+      if (v.user.username) nm.appendChild(document.createTextNode(
+        " @" + v.user.username));
       const tm = document.createElement("div");
       tm.className = "story-viewer-time";
       tm.textContent = relTime(v.viewed_at);
@@ -9395,6 +9523,7 @@ async function openStoryViewers(sid) {
       row.appendChild(tx);
       list.appendChild(row);
     });
+    fitVerifiedNames(list);
   } catch (e) { load.textContent = "Could not load viewers."; }
 }
 function closeStoryViewers() {

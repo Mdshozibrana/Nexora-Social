@@ -13,7 +13,7 @@ and advances past intro/clear/fail/over, so the whole game is
 playable from the remote alone; 360px geometry (remote clears the
 quota bar, target, archer, mode buttons and bottom nav; mascot
 hidden while Archery is open); help mentions the remote;
-neighbours; backup 44 tables; routes 163; ?v=159 x10, no old
+neighbours; backup 44 tables; routes 163; ?v=160 x10, no old
 version literals.
 """
 import hashlib, hmac, json, os, re, subprocess, time, urllib.parse
@@ -210,10 +210,10 @@ assert len(paths) == 163, len(paths)
 print("routes: 163 OK (no new endpoints)")
 
 # 12. Version.
-assert HTML.count("?v=159") == 10, HTML.count("?v=159")
+assert HTML.count("?v=160") == 10, HTML.count("?v=160")
 assert "?v=15" + "8" not in HTML
-assert "app.js?v=159" in HTML and "games.js?v=159" in HTML
-assert 'menu_url.rstrip("/") + "/?v=159"' in BOT
+assert "app.js?v=160" in HTML and "games.js?v=160" in HTML
+assert 'menu_url.rstrip("/") + "/?v=160"' in BOT
 assert "Phase 159" in CSS and "Phase 159" in GAMES and "Phase 159" in HTML
-print("version OK (?v=159 x10, no old-version literals)")
+print("version OK (?v=160 x10, no old-version literals)")
 print("PHASE 159 OK")

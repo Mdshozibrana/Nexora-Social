@@ -69,7 +69,7 @@ CSP hosts; backup still 42 tables; no token committed; node
 harness runs the real SV helpers with stubs (lookup shape,
 bbox fallback, nearest pick, attribution, token-missing,
 no-imagery, WebGL-static fallback, viewer success, viewer
-failure, close teardown); ?v=159 x9, no old-version literals; neighbouring
+failure, close teardown); ?v=160 x9, no old-version literals; neighbouring
 markers intact.
 """
 CSS = open("webapp/style.css").read()
@@ -92,8 +92,8 @@ for _id in ("streetview", "sv-title", "sv-close", "sv-viewer",
 assert 'id="streetview" class="sv-overlay" hidden' in HTML
 assert HTML.index('id="streetview"') > HTML.index('id="nearby-map"')
 assert HTML.index('id="streetview"') < HTML.index('id="nearby-list"')
-assert 'vendor/mapillary/mapillary.js?v=159' in HTML
-assert 'vendor/mapillary/mapillary.css?v=159' in HTML
+assert 'vendor/mapillary/mapillary.js?v=160' in HTML
+assert 'vendor/mapillary/mapillary.css?v=160' in HTML
 assert 'View on Mapillary' in HTML
 print("Street View overlay markup OK")
 
@@ -133,7 +133,7 @@ for m in (".sv-overlay", ".sv-overlay[hidden]", ".sv-viewer[hidden]",
 print("Street View style OK")
 
 # 4. Menu-button URL versioning (bot.py, start_bot only).
-assert 'menu_url.rstrip("/") + "/?v=159"' in BOT
+assert 'menu_url.rstrip("/") + "/?v=160"' in BOT
 assert "web_app=WebAppInfo(url=menu_url)" in BOT
 assert BOT.count("WebAppInfo(url=settings.WEBAPP_URL)") == 1
 print("menu-button URL versioning OK")
@@ -417,7 +417,7 @@ assert r.returncode == 0, r.stderr or r.stdout
 print("node harness: 149 helpers OK")
 
 # 10. Client markers + asset version.
-assert HTML.count("?v=159") == 10, HTML.count("?v=159")
+assert HTML.count("?v=160") == 10, HTML.count("?v=160")
 assert "?v=14" + "8" not in HTML
 for m in ("loadSettings", "renderLevelBlock", "openTipSheet",
           "loadProfilePosts", "openProfile", "loadMe",
@@ -446,6 +446,6 @@ for m in ("loadSettings", "renderLevelBlock", "openTipSheet",
           "nb3DWhy", "nbPaint3DNote", "nbPaintModeBtn",
           "Try 3D", "NB_3D_NOTES"):
     assert m in JS, m
-print("client markers + ?v=159 OK")
+print("client markers + ?v=160 OK")
 
 print("PHASE-149 TESTS PASSED")

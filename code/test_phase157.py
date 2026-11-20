@@ -98,8 +98,11 @@ print("structure OK (header above thread, composer untouched below)")
 # the header sticks inside (thread scrolls to bottom on open, view
 # resets to top on switch).
 assert '$("chat-back").onclick = () => showView("messages");' in JS
-assert '$("chat-title").textContent = r.user.first_name +' in JS
-assert '(r.user.verified ? " ✓" : "")' in JS
+# Phase 160: the title is now the shared .vname line (name text +
+# blue badge) instead of a textContent string with a text " ✓".
+assert 'ct.classList.add("vname")' in JS
+assert "ctText.textContent = r.user.first_name;" in JS
+assert "if (r.user.verified) ct.appendChild(verifiedBadge());" in JS
 assert '$("chat-avatar")' in JS and "avatarEl(r.user.first_name" in JS
 assert 'const sc = $("app-scroll");' in JS
 assert "sc.scrollTop = sc.scrollHeight" in JS
@@ -152,8 +155,8 @@ with TestClient(app) as c:
     print("routes 158 + backup 43 tables OK (no new endpoints, no schema change)")
 
 # 7. Version.
-assert HTML.count("?v=159") == 10, HTML.count("?v=159")
+assert HTML.count("?v=160") == 10, HTML.count("?v=160")
 assert "?v=15" + "6" not in HTML
-assert 'menu_url.rstrip("/") + "/?v=159"' in BOT
+assert 'menu_url.rstrip("/") + "/?v=160"' in BOT
 assert "Phase 157" in CSS and "Phase 157" in HTML
 print("PHASE 157 OK")

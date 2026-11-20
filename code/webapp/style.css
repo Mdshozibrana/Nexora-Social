@@ -21,6 +21,19 @@ body { font-family: system-ui, sans-serif; margin: 0; padding: 0 12px 84px;
   flex-wrap: wrap; column-gap: 5px; font-weight: 600; }
 .rank-title { min-width: 0; white-space: nowrap; overflow: hidden;
   text-overflow: ellipsis; }
+/* Phase 160: ONE shared verified-name line (owner: "সবখানেই
+   এই নিয়ম এপ্লাই করো"). The line never wraps; the name text
+   shrinks (JS fitVerifiedNames) and ellipsizes only at the
+   12px floor; the tick never shrinks, wraps or hides. */
+.vname { display: inline-flex; align-items: center; min-width: 0; }
+.vname-text { flex: 1 1 auto; min-width: 0; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; }
+.vname .verified { flex: none; }
+/* Phase 160: at these sites the line must take the remaining
+   row width so the text has somewhere to shrink into. */
+.rank-title-line { flex: 1 1 auto; }
+.user-row .vname { flex: 1 1 auto; min-width: 0; }
+#story-author.vname { flex: 1 1 auto; min-width: 0; }
 .rank-name .verified { flex: none; }
 .rank-name small { flex: 0 0 100%; font-weight: 400; opacity: .6;
   font-size: 12px; white-space: nowrap; overflow: hidden;
