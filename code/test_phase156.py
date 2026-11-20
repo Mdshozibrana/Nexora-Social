@@ -118,7 +118,7 @@ assert not os.path.exists("webapp/assets/mascot-head.webp")
 wrap = HTML[HTML.index('id="mascot-wrap"'):]
 wrap = wrap[:wrap.index("</div>\n</div>") + len("</div>\n</div>")]
 assert "<img" not in wrap
-assert "vendor/three/three.min.js?v=156" in HTML
+assert "vendor/three/three.min.js?v=157" in HTML
 three = open("webapp/vendor/three/three.min.js").read()
 assert len(three) > 500 * 1024, len(three)
 assert "WebGLRenderer" in three and "REVISION" in three
@@ -297,7 +297,7 @@ assert "museum" not in JS.lower() and "museum" not in HTML.lower()
 print("neighbours OK (Blood, Nearby, composer, glassbar, feed photos)")
 
 # 10. Version.
-assert HTML.count("?v=156") == 10, HTML.count("?v=156")
+assert HTML.count("?v=157") == 10, HTML.count("?v=157")
 assert "?v=15" + "5" not in HTML
-assert 'menu_url.rstrip("/") + "/?v=156"' in BOT
+assert 'menu_url.rstrip("/") + "/?v=157"' in BOT
 print("PHASE 156 OK")

@@ -7,7 +7,7 @@ inactive_30d only members with no post AND no app activity in the
 last 30 days; an empty target set succeeds with 0/0 and still records
 the row; unknown target 400; empty text 400; non-admin 403 on both
 endpoints; history newest-first + limit cap; backup carries 39 tables
-incl. broadcasts; ?v=156 x5, no ?v=130; broadcast client markers +
+incl. broadcasts; ?v=157 x5, no ?v=130; broadcast client markers +
 Phase 123-130 markers intact.
 """
 import hashlib, hmac, json, os, time, urllib.parse
@@ -208,7 +208,7 @@ with TestClient(app) as c:
 
     # 9. Client markers + asset version.
     html = open("webapp/index.html").read()
-    assert html.count("?v=156") == 10, html.count("?v=156")
+    assert html.count("?v=157") == 10, html.count("?v=157")
     assert "?v=130" not in html
     assert 'id="admin-bc-target"' in html
     assert 'id="admin-bc-history"' in html
@@ -220,6 +220,6 @@ with TestClient(app) as c:
               "goFeedTo", "loadTrending", "loadHealth", "loadAdminBrowse",
               "loadSecurityLog", "loadPayouts"):
         assert m in js, m
-    print("client markers + ?v=156 OK")
+    print("client markers + ?v=157 OK")
 
 print("PHASE-131 TESTS PASSED")

@@ -1315,10 +1315,21 @@ button.liked { animation: heartPop .32s cubic-bezier(.22,.9,.3,1); }
   background: linear-gradient(135deg, #8ED4F7, #3E8FD0);
   color: #fff; font-size: 11px; font-weight: 800;
   border-radius: 999px; padding: 2px 6px; margin-top: 4px; }
-.chat-head { display: flex; align-items: center; gap: 10px;
-  margin-bottom: 10px; }
-.chat-head #chat-title { font-weight: 800; font-size: 17px;
-  color: #3A2E33; }
+/* Phase 157: the DM conversation header stays pinned (owner order Nov 20,
+   screenshot — the circled back button + avatar + name must never scroll
+   off the screen). Messages slide under it; the header never moves. The
+   solid theme background (same var as the page body) + z-index keep
+   bubbles from showing through; the title truncates so the row fits
+   at 360 px. */
+.chat-head { position: sticky; top: 0; z-index: 5; display: flex;
+  align-items: center; gap: 10px; margin: 0 -12px 10px;
+  padding: 8px 12px; background: var(--t-bg, #F6F1E7);
+  border-bottom: 1px solid rgba(58, 46, 51, .08);
+  box-shadow: 0 2px 8px rgba(60, 120, 160, .06); }
+.chat-head #chat-back, .chat-head #chat-avatar { flex: none; }
+.chat-head #chat-title { flex: 1; min-width: 0; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; font-weight: 800;
+  font-size: 17px; color: #3A2E33; }
 #chat-thread { display: flex; flex-direction: column; gap: 8px;
   padding: 4px 2px 12px; }
 .bubble { max-width: 78%; padding: 9px 12px; border-radius: 18px;

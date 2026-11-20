@@ -37,5 +37,5 @@ assert JS.count("loadMe().then(bootOk)") == 2
 assert "Please open this app from inside Telegram." in JS
 print("boot retry OK")
 
-assert "app.js?v=156" in HTML and "style.css?v=156" in HTML
+assert "app.js?v=157" in HTML and "style.css?v=157" in HTML
 print("PHASE 76 OK")
