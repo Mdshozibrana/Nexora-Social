@@ -2954,14 +2954,19 @@ def my_hashtags(user: models.User = Depends(current_user),
 BLOOD_GROUPS = ("A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-")
 
 
-def _blood_donor_out(u):
+def _blood_donor_out(u, distance_km=None):
     """A directory row: name + group + country only — never a
-    phone number, never a precise location."""
-    return {"telegram_id": u.telegram_id,
-            "first_name": u.first_name,
-            "username": u.username,
-            "blood_group": u.blood_group,
-            "country": u.country}
+    phone number, never a precise location. distance_km is
+    included ONLY when both viewer and donor share location
+    (Phase 152); it is a rounded distance, never coordinates."""
+    row = {"telegram_id": u.telegram_id,
+           "first_name": u.first_name,
+           "username": u.username,
+           "blood_group": u.blood_group,
+           "country": u.country}
+    if distance_km is not None:
+        row["distance_km"] = distance_km
+    return row
 
 
 def _blood_visible_donors(db, viewer_id):
@@ -3037,7 +3042,21 @@ def list_blood_donors(group: str = "",
     donors = _blood_visible_donors(db, user.telegram_id)
     if g is not None:
         donors = [u for u in donors if u.blood_group == g]
-    return {"donors": [_blood_donor_out(u) for u in donors]}
+    # Phase 152: distance (haversine, same math as Nearby) — only
+    # when BOTH viewer and donor share location; otherwise the
+    # key is absent and the card shows just the country. Never
+    # any donor lat/lon in the response.
+    me_shares = bool(user.share_location) and user.lat is not None \
+        and user.lon is not None
+    out = []
+    for u in donors:
+        dist = None
+        if me_shares and u.share_location and u.lat is not None \
+                and u.lon is not None:
+            dist = round(_haversine_m(user.lat, user.lon,
+                                      u.lat, u.lon) / 1000.0, 2)
+        out.append(_blood_donor_out(u, distance_km=dist))
+    return {"donors": out}
 
 
 class BloodRequestIn(BaseModel):

@@ -10,7 +10,7 @@ tip (same charge id twice -> still one row), wrong payer ignored,
 creator notified + in-app row; /me/tips sent/received; /users
 public totals (names only, no per-tip amounts); /admin/tips totals
 + top + recent and non-admin 403; backup carries 39 tables incl.
-tips; ?v=151 x5, no ?v=132; tip client markers + Phase 123-132
+tips; ?v=152 x5, no ?v=132; tip client markers + Phase 123-132
 markers intact.
 """
 import asyncio
@@ -243,7 +243,7 @@ with TestClient(app) as c:
 
     # 10. Client markers + asset version.
     html = open("webapp/index.html").read()
-    assert html.count("?v=151") == 9, html.count("?v=151")
+    assert html.count("?v=152") == 9, html.count("?v=152")
     assert "?v=132" not in html
     assert 'id="earn-tips-total"' in html
     assert 'id="earn-tips-top"' in html
@@ -259,7 +259,7 @@ with TestClient(app) as c:
         assert m in js, m
     css = open("webapp/style.css").read()
     assert ".tip-chip.active" in css  # Phase 145: .tip-total left with the profile stars line
-    print("client markers + ?v=151 OK")
+    print("client markers + ?v=152 OK")
 
     # Restore the real (absent in tests) bot app so the TestClient
     # shutdown does not touch the fake's missing updater.

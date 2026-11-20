@@ -1,47 +1,28 @@
-"""Phase-86 tests: the Museum (owner: a Museum section in the
-sidebar — many rooms, each with its own design, pictures on
-the walls; drag or scroll to walk along a room, doors lead to
-the next room).
-
-Client-only: the exhibits are the Design gallery's pictures
-(GET /designs), five per room, each room wearing the next of
-six themes. Tapping a picture opens its design sheet.
+"""Phase-86 tests — CONVERTED by Phase 152 (owner order Nov 20, 2026):
+the Museum section is REMOVED entirely ("Museum এই সেকশনটা
+রিমুভ করো, লাগবে না"). This suite is kept as a removal guard:
+it proves Museum is gone instead of being deleted — a deleted
+suite leaves no proof. The Design gallery (whose pictures the
+Museum re-displayed) stays exactly as it is.
 """
 HTML = open("webapp/index.html").read()
 JS = open("webapp/app.js").read()
 CSS = open("webapp/style.css").read()
+BOT = open("app/bot.py").read()
 
-# sidebar entry + view wiring
-assert 'data-go="museum"' in HTML and "🏛️" in HTML
-assert '<section id="view-museum" hidden>' in HTML
-assert '"nearby", "museum", "qr", "trending", "settings", "blood"]' in JS
-assert 'if (name === "museum") openMuseum();' in JS
-assert "museum: () => loadMuseum(true)," in JS
-# data source + room building
-assert "MUSEUM_THEMES" in JS
-for name in ("Rose Hall", "Midnight Gallery", "Emerald Room",
-             "Sky Gallery", "Sunset Salon", "Marble Hall"):
-    assert name in JS, name
-assert 'api("/designs?limit=40")' in JS
-assert "i += 5" in JS  # five exhibits per room
-assert "openMuseumRoom" in JS and "paintMuseumPlan" in JS
-assert "openDesignSheet(d)" in JS  # tap a picture -> its sheet
-assert "mediaUrl(d.image_file_id)" in JS
-# walking: drag + wheel pan, drag-vs-tap guard, PTR guard
-assert '"pointerdown"' in JS and '"pointermove"' in JS
-assert "museumSetX" in JS and "translateX(" in JS
-assert "museumMoved < 8" in JS
-assert 'addEventListener("wheel"' in JS
-assert 'museum-stage' in JS and "stopPropagation" in JS
-# stage + theme pieces in markup/CSS
-for bit in ('id="museum-stage"', 'id="museum-room"',
-            'id="museum-rooms"', 'id="museum-name"',
-            'id="museum-empty"'):
-    assert bit in HTML, bit
-for bit in ("#museum-stage", ".m-wall", ".m-floor", ".m-spot",
-            ".mframe", ".mplate", ".m-bench", ".m-door",
-            ".plan-room.on", "--m-frame", "touch-action: none",
-            "@keyframes mfadein"):
-    assert bit in CSS, bit
-assert "app.js?v=151" in HTML and "style.css?v=151" in HTML
-print("PHASE 86 OK")
+# Museum is gone from every client file and the server.
+assert "museum" not in HTML.lower(), "museum in index.html"
+assert "museum" not in JS.lower(), "museum in app.js"
+assert "museum" not in CSS.lower(), "museum in style.css"
+assert "museum" not in BOT.lower(), "museum in bot.py"
+# Specifically: no section, no sidebar button, no showView entry.
+assert 'data-go="museum"' not in HTML
+assert '<section id="view-museum"' not in HTML
+assert '"nearby", "qr", "trending", "settings", "blood"]' in JS
+assert "openMuseum" not in JS and "loadMuseum" not in JS
+# Neighbours that shared the Museum's space are intact.
+assert 'data-go="blood"' in HTML and 'id="view-blood"' in HTML
+assert 'data-go="designs"' in HTML and 'id="view-designs"' in HTML
+assert "loadDesigns" in JS and "design-grid" in HTML
+assert "app.js?v=152" in HTML and "style.css?v=152" in HTML
+print("PHASE 86 REMOVAL GUARD OK (Museum gone, neighbours intact)")
