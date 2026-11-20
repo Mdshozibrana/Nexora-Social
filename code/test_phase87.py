@@ -24,5 +24,5 @@ assert "museum" not in CSS.lower()
 # Design gallery (the Museum's picture source) still works.
 assert "loadDesigns" in JS and "design-grid" in HTML
 assert "openDesignSheet" in JS
-assert "app.js?v=163" in HTML and "style.css?v=163" in HTML
+assert "app.js?v=164" in HTML and "style.css?v=164" in HTML
 print("PHASE 87 REMOVAL GUARD OK (Museum zoom/rooms gone)")

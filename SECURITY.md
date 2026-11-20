@@ -42,9 +42,11 @@ Status key: ✅ Implemented & tested · 🟡 Partially implemented ·
   (`MODERATOR_IDS`: reports, comment/post removal, bans — NOT
   points, verify grants, profile edits, member deletion, broadcast,
   managed users, audit log), User. Tested: test_phase28.
-- 🟡 Re-authentication for sensitive actions: self-delete requires
-  a typed `DELETE` confirmation; there is no password to re-check
-  (Telegram auth), so a step-up prompt is the equivalent control.
+- ✅ Re-authentication for sensitive actions: self-delete requires
+  a typed `DELETE` confirmation; admin mutations (Phase 164) need
+  initData no older than 5 minutes — a stale admin session is told
+  to reopen the app. There is no password to re-check (Telegram
+  auth), so step-up freshness is the equivalent control.
 - ✅ Act-as remains admin-only and can never target a real member.
 
 ## 3. API security
@@ -57,10 +59,11 @@ Status key: ✅ Implemented & tested · 🟡 Partially implemented ·
   raw `text()` is a hardcoded migration).
 - ✅ **Rate limiting** per user per action (posts 30/h, comments
   120/h, likes 600/h, follows 200/h, reports 30/day, uploads 30/h,
-  shares 120/h, searches 240/h) and per IP on `/auth` (120/min),
-  answering 429 + `Retry-After`. In-memory (single instance);
-  must move to a shared store if the service scales out.
-  Tested: test_phase28.
+  shares 120/h, searches 240/h, media 60/min) and per IP on `/auth`
+  (120/min), answering 429 + `Retry-After`. The per-IP key uses the
+  LAST X-Forwarded-For hop (Phase 164) — the first hop is
+  client-spoofable. In-memory (single instance); must move to a
+  shared store if the service scales out. Tested: test_phase28/164.
 - ✅ Request-size limits: uploads are read with a hard streaming
   cap (photo 20 MB / video 60 MB) that aborts mid-read — the body
   is never fully buffered before the check. Tested: test_phase28.
@@ -141,6 +144,12 @@ Status key: ✅ Implemented & tested · 🟡 Partially implemented ·
 - 🟡 Encryption at rest: provided by Render's managed Postgres
   (platform), not application-level.
 
+- 🟡 **Row Level Security (Phase 164)**: policies + a least-privilege
+  `nexora_app` role are written and ready (`code/migrations/phase164_rls.sql`,
+  `code/migrations/phase164_rls_role.sql`) but NOT live-enabled —
+  enabling needs a Render DATABASE_URL change (owner step, see §16).
+  Query-level scoping (§2) remains the live control until then.
+
 ## 8. File & media upload security
 - ✅ Extension + MIME allowlists AND **actual file-signature
   (magic byte) validation** — content must agree with the claimed
@@ -150,9 +159,12 @@ Status key: ✅ Implemented & tested · 🟡 Partially implemented ·
   executables cannot be classified or forwarded.
 - ✅ Media is stored on Telegram's servers — outside the web root,
   never executed, served back through the `/media` proxy.
-- ✅ **Media access control**: `/media` now requires a short-lived
-  signed token (HMAC, 7-day expiry, issued at login) — a bare
-  file_id no longer fetches anything. Tested: test_phase16/28.
+- ✅ **Media access control**: `/media` requires a user-bound
+  1-hour signed token (HMAC over user id + issue time + expiry,
+  issued at login, refreshed while the app is open) AND the file
+  must be visible to that member — private-account and DM media
+  answer 404 to strangers, and revoked sessions' tokens die.
+  Rate-limited 60/min per user. Tested: test_phase16/28/164.
 - 🟡 Malware scanning: not implemented (no AV engine); mitigated
   by the strict type allowlist + signature check + Telegram's own
   processing, and by media never being executed or rendered as
@@ -188,9 +200,14 @@ Status key: ✅ Implemented & tested · 🟡 Partially implemented ·
   an admin can ban a moderator.
 - ✅ **Maintenance mode** (`MAINTENANCE_MODE=1` env): API answers
   503 while /health stays up. Tested: test_phase28.
-- ❌ Admin MFA: not implementable inside Telegram auth — admin
-  identity IS the Telegram account, so MFA = Telegram's own
-  two-step verification on the owner's account (owner action).
+- ✅ Admin MFA (Phase 164): two layers. (1) Step-up — mutating
+  admin calls need initData no older than 5 minutes. (2) TOTP —
+  when `ADMIN_TOTP_SECRET` is set in Render, admin calls need a
+  verified 6-digit authenticator code per 12-hour session
+  (`GET /admin/totp/setup` enrolls, `POST /admin/totp/verify`
+  checks, `pyotp`). Until the secret is set, TOTP is dormant and
+  step-up is the live control. Telegram's own two-step verification
+  on the owner's account remains a required owner step (§16).
 
 ## 11. Privacy & data protection
 - ✅ Data collected is minimal: Telegram id/name/username,
@@ -217,6 +234,15 @@ Status key: ✅ Implemented & tested · 🟡 Partially implemented ·
   therefore "best effort" until backups exist — stated plainly,
   not dressed up.
 
+- ✅ **Backup payload encryption (Phase 164)**: when
+  `BACKUP_ENCRYPTION_KEY` is set in Render, every backup (download,
+  send-to-Telegram, weekly auto-backup) leaves the server as a
+  Fernet-encrypted `.json.enc` file; restore accepts encrypted and
+  plaintext. Without the key, backups stay plaintext and the server
+  logs a warning. Losing the key makes encrypted backups
+  unrestorable — the key lives in Render env only. Tested:
+  test_phase164.
+
 ## 13. Logging & monitoring
 - ✅ Security event log (service logs): rejected initData (with
   client IP at /auth), admin/moderator denials, rate-limit hits,
@@ -231,16 +257,27 @@ Status key: ✅ Implemented & tested · 🟡 Partially implemented ·
 - ✅ API disable = maintenance mode or stopping the service in
   Render. ✅ Rollback = redeploy any previous commit from Render
   (deploys are commit-based; the previous version is one click).
-- 🟡 Compromised-credential rotation procedure (owner steps):
+- ✅ Compromised-credential rotation procedure (owner steps):
   1) Bot token: BotFather → /revoke for @NexoraSocial_bot, paste
   the new token into Render env `BOT_TOKEN`, redeploy. All old
   initData dies with the old token — every member just reopens
-  the app.
+  the app. A leaked bot token is a FULL bot compromise until
+  rotated: it signs initData, media tokens and QR tokens.
+  Verify after rotating: /health answers 200, the Mini App opens,
+  and one admin call succeeds.
   2) Database: rotate from the Render dashboard (database →
   credentials), update the service env if not using the internal
   reference, redeploy.
   3) Render/GitHub account credentials: change at the provider;
   enable two-step verification on both and on Telegram.
+  4) Sessions: after any rotation, revoke sessions for affected
+  members (`POST /admin/users/{id}/revoke-sessions`) — a bot-token
+  rotation already kills every initData, so this is belt and
+  braces for the database case.
+  5) Backup key: if `BACKUP_ENCRYPTION_KEY` ever leaks, generate a
+  new Fernet key, set it in Render, and re-take every backup —
+  backups encrypted under the old key stay readable to the key
+  holder and cannot be re-keyed.
 
 ## 15. Security testing
 - ✅ test_phase28.py — the security suite: initData expiry/future,
@@ -278,3 +315,50 @@ member blocking (§5/§6). Evidence: test_phase29 + the full
 27-suite run, all green; live checks after deploy repeated the
 Phase 28 probes (headers, /media 401, /feed 401) plus the new
 client block wiring in the served app.js.
+
+## 16. Phase 164 — 2026-11-21 audit fixes (21 Nov 2026)
+A read-only audit of the Phase 162 code against the owner's
+20-point checklist found 17 Implemented, 2 Partial, 1 Not
+Implemented. Phase 164 fixes every gap (report:
+`~/workspace/nexora_designs/security_audit_2026-11-21.md`):
+- ✅ P1 (Critical): /media token is user-bound, 1-hour, honours
+  revocation, and the handler checks file visibility (same rules
+  as the feed) + a 60/min per-user rate limit.
+- ✅ H1: admin step-up (5-min fresh initData for mutating /admin/*
+  calls) + per-admin TOTP (pyotp, env secret, 12-hour session) +
+  the Admin Panel gate in the client.
+- ✅ H2: client IP = last X-Forwarded-For hop; /media rate-limited.
+- ✅ H3: bot-token rotation runbook (§14).
+- 🟡 H4: RLS policies + `nexora_app` role written
+  (`code/migrations/phase164_rls.sql`,
+  `code/migrations/phase164_rls_role.sql`) — NOT live-enabled.
+  Remaining owner steps, in order: (1) create the role with the
+  role script (needs the DB owner password from Render);
+  (2) point the service's DATABASE_URL at the `nexora_app` role;
+  (3) add `SET LOCAL app.current_user_id / app.is_admin` per
+  session in `get_db` (the policies read these — without them the
+  policies deny everything); (4) verify on staging with a
+  read/write smoke pass before enabling on production. RLS was
+  NOT tested locally: the suites run SQLite, and no local
+  Postgres exists in the sandbox.
+- ✅ M1: Dependabot (`.github/dependabot.yml`, pip, weekly) +
+  monthly `pip-audit` run documented; `pip-audit` run 21 Nov 2026:
+  no known vulnerabilities.
+- 🟡 M2: backup encryption is live in code but dormant until the
+  owner sets `BACKUP_ENCRYPTION_KEY` in Render — backups stay
+  plaintext until then (logged loudly).
+- ✅ L1: the single-instance in-memory limiter assumption was
+  already recorded in `ratelimit.py` + §3 — verified, no change.
+- ✅ #9 MFA: step-up + TOTP (when the secret is set) + Telegram
+  2-Step Verification (owner step) = the implemented equivalent.
+
+Owner steps still open after Phase 164 (do not claim done):
+1. Set `BACKUP_ENCRYPTION_KEY` in the Render service env (Muse
+   hands over the generated key) — then re-take a backup to get
+   the first encrypted one.
+2. Set `ADMIN_TOTP_SECRET` in Render (Muse hands over the
+   generated secret), then enroll via the Admin Panel's
+   "Show setup code" — until then TOTP stays dormant.
+3. Turn on Telegram two-step verification on the owner's account.
+4. H4 live enablement (the 4 steps above) — only when the owner
+   chooses to; the app is safe without it (query-level scoping).

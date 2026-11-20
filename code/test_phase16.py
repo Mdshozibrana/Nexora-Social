@@ -130,6 +130,15 @@ with TestClient(app) as c:
     # --- /media streams the file bytes end to end ---
     # Phase 28: /media requires the signed token issued at /auth;
     # a bare file_id is rejected first.
+    # Phase 164: /media enforces visibility — the fetched file must
+    # belong to the caller. Seed Amy's post for SOME_FILE_ID first.
+    from app.db import SessionLocal as _SL
+    from app import models as _models
+    _db = _SL()
+    _db.add(_models.Post(user_id=888, type="photo",
+                         media_file_id="SOME_FILE_ID", caption="seed"))
+    _db.commit()
+    _db.close()
     r = c.get("/media/SOME_FILE_ID")
     assert r.status_code == 401, r.status_code
     mtok = c.post("/auth", json={

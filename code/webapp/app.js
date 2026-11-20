@@ -13,6 +13,9 @@ let me = null;
 // Phase 28: /media requires the short-lived signed token issued by
 // /auth — <img>/<video> tags cannot send the login header, so the
 // capability rides in the URL and expires (see mediaUrl).
+// Phase 164: the token is user-bound and lives 1 hour — the app
+// refreshes it while open (refreshMediaToken) so long sessions
+// keep their images.
 let mediaToken = "";
 function mediaUrl(id) {
   return "/media/" + encodeURIComponent(id || "") +
@@ -37,7 +40,14 @@ async function api(path, options = {}) {
                ...(actAsId() ? { "X-Act-As": actAsId() } : {}),
                ...(options.headers || {}) },
   });
-  if (!res.ok) throw new Error("API " + res.status);
+  if (!res.ok) {
+    // Phase 164: surface the server's message (the admin step-up
+    // 401 tells the admin to reopen the app — "API 401" would not).
+    let msg = "API " + res.status;
+    try { const j = await res.json(); if (j.detail) msg = j.detail; }
+    catch (e) { /* keep the generic message */ }
+    throw new Error(msg);
+  }
   return res.json();
 }
 
@@ -5541,6 +5551,7 @@ async function downloadQr(btn, qrUrl) {
 // server measure real time-in-app and "active now" for the dashboard.
 // ---------------------------------------------------------------------------
 let heartbeatTimer = null;
+let mediaTimer = null;
 function sendHeartbeat() {
   api("/me/heartbeat", { method: "POST" }).catch(() => {});
 }
@@ -5548,9 +5559,23 @@ function startHeartbeat() {
   if (heartbeatTimer) return;
   sendHeartbeat();
   heartbeatTimer = setInterval(sendHeartbeat, 30000);
+  // Phase 164: the media token lives 1 hour — refresh it while the
+  // app stays open so long sessions keep their images.
+  if (!mediaTimer) mediaTimer = setInterval(refreshMediaToken, 2700000);
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) sendHeartbeat();
   });
+}
+
+// Phase 164: re-issue the media token (1-hour, user-bound) without
+// disturbing the open app — /auth answers with the act-as identity
+// when the admin is acting as a managed user, same as loadMe.
+async function refreshMediaToken() {
+  try {
+    const r = await api("/auth", { method: "POST",
+      body: JSON.stringify({ initData }) });
+    if (r && r.media_token) mediaToken = r.media_token;
+  } catch (e) { /* next refresh retries; images retry meanwhile */ }
 }
 
 async function loadMe() {
@@ -5937,6 +5962,16 @@ document.addEventListener("error", (e) => {
   if (!t || (t.tagName !== "IMG" && t.tagName !== "VIDEO")) return;
   const src = t.getAttribute("src") || "";
   if (!src.includes("/media/")) return;
+  // Phase 164: the media token lives 1 hour — a long-open app may
+  // hold a stale token in old URLs; rebuild once with the current
+  // token before falling back to the cache-buster retry.
+  const m = src.match(/\/media\/([^?]+)/);
+  if (m && mediaToken && !src.includes(encodeURIComponent(mediaToken))
+      && !t.dataset.mtok) {
+    t.dataset.mtok = "1";
+    t.src = mediaUrl(decodeURIComponent(m[1]));
+    return;
+  }
   const tries = Number(t.dataset.mr || 0);
   if (tries >= 3) return;
   t.dataset.mr = tries + 1;
@@ -7451,17 +7486,35 @@ function wireBackupCard() {
     dl.disabled = true;
     say("Preparing the full backup…");
     try {
-      const data = await api("/admin/backup");
-      const blob = new Blob([JSON.stringify(data, null, 1)],
-                            { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "nexora-full-backup-" +
-        new Date().toISOString().slice(0, 10) + ".json";
-      document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 4000);
-      say("Backup downloaded ✓ — keep the file safe.");
+      // Phase 164: download with a plain fetch — an encrypted backup
+      // arrives as bytes, not JSON, so api() cannot parse it.
+      const res = await fetch("/admin/backup", { headers: {
+        "X-Init-Data": initData,
+        ...(actAsId() ? { "X-Act-As": actAsId() } : {}) } });
+      if (!res.ok) throw new Error("API " + res.status);
+      const ct = res.headers.get("content-type") || "";
+      const today = new Date().toISOString().slice(0, 10);
+      if (ct.includes("application/octet-stream")) {
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "nexora-full-backup-" + today + ".json.enc";
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 4000);
+        say("Backup downloaded (encrypted) ✓ — keep the file AND your key safe.");
+      } else {
+        const data = await res.json();
+        const blob = new Blob([JSON.stringify(data, null, 1)],
+                              { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "nexora-full-backup-" + today + ".json";
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 4000);
+        say("Backup downloaded ✓ — keep the file safe.");
+      }
       loadBackupStatus();
     } catch (e) {
       say("Download did not work here — try “Send to my Telegram” instead.");
@@ -7503,8 +7556,17 @@ function wireBackupCard() {
             (parsed.exported_at || "an earlier backup") +
             ". Type RESTORE below, then tap Restore now.");
       } catch (e) {
-        backupPicked = null;
-        say("Could not read that file — pick a Nexora backup JSON.");
+        // Phase 164: not JSON — it may be an encrypted backup
+        // (.json.enc, a Fernet token). Hand it to the server to
+        // decrypt; the server rejects it when the key is wrong.
+        const text = String(rd.result || "").trim();
+        if (text.startsWith("gAAAAA")) {
+          backupPicked = { __encrypted: text };
+          say("Encrypted backup file ready — type RESTORE below, then tap Restore now.");
+        } else {
+          backupPicked = null;
+          say("Could not read that file — pick a Nexora backup JSON.");
+        }
       }
     };
     rd.readAsText(f);
@@ -7520,8 +7582,11 @@ function wireBackupCard() {
     btn.disabled = true;
     say("Restoring the whole site — do not close the app…");
     try {
+      const body = backupPicked.__encrypted
+        ? { confirm: "RESTORE", backup_encrypted: backupPicked.__encrypted }
+        : { confirm: "RESTORE", backup: backupPicked };
       const r = await api("/admin/restore", { method: "POST",
-        body: JSON.stringify({ confirm: "RESTORE", backup: backupPicked }) });
+        body: JSON.stringify(body) });
       const total = Object.values(r.restored || {})
         .reduce((a, n) => a + n, 0);
       say("Restored ✓ — " + total + " rows back in place. Reloading…");
@@ -8037,7 +8102,92 @@ async function loadAnnouncementBar() {
   } catch (e) { bar.hidden = true; }
 }
 
-function loadAdmin() {
+// Phase 164 (H1): authenticator gate for the Admin Panel. When a
+// TOTP secret is configured, the panel stays hidden until the admin
+// proves a fresh code; the server enforces the same rule on every
+// admin call, so this is UX, not the security boundary.
+async function totpGateAdmin() {
+  let ts = null;
+  try { ts = await api("/admin/totp/status"); } catch (e) { return false; }
+  wireTotpCard(ts);
+  if (!ts || !ts.configured || ts.verified) return false;
+  const view = $("view-admin");
+  if (!view) return false;
+  if ($("totp-gate")) return true;
+  [...view.children].forEach(el => { el.hidden = true; });
+  const gate = document.createElement("div");
+  gate.className = "card";
+  gate.id = "totp-gate";
+  const title = document.createElement("b");
+  title.textContent = "🔐 Admin verification";
+  const hint = document.createElement("p");
+  hint.className = "hint";
+  hint.textContent = "Enter the 6-digit code from your authenticator app to open the Admin Panel.";
+  const input = document.createElement("input");
+  input.id = "totp-code";
+  input.type = "text";
+  input.inputMode = "numeric";
+  input.maxLength = 6;
+  input.placeholder = "123456";
+  const btn = document.createElement("button");
+  btn.className = "btn";
+  btn.textContent = "Verify";
+  const msg = document.createElement("p");
+  msg.className = "hint";
+  msg.id = "totp-msg";
+  btn.onclick = async () => {
+    msg.textContent = "Checking…";
+    try {
+      await api("/admin/totp/verify", { method: "POST",
+        body: JSON.stringify({ code: input.value.trim() }) });
+      gate.remove();
+      [...view.children].forEach(el => { el.hidden = false; });
+      loadAdmin();
+    } catch (e) {
+      msg.textContent = e.message || "Wrong code — try again.";
+    }
+  };
+  gate.append(title, hint, input, btn, msg);
+  view.prepend(gate);
+  return true;
+}
+
+function wireTotpCard(ts) {
+  const view = $("view-admin");
+  if (!view || $("totp-card")) return;
+  const card = document.createElement("div");
+  card.className = "card";
+  card.id = "totp-card";
+  const title = document.createElement("b");
+  title.textContent = "🔐 Admin verification (TOTP)";
+  const st = document.createElement("p");
+  st.className = "hint";
+  st.textContent = ts && ts.configured
+    ? "Authenticator verification is ON for admins."
+    : "Authenticator verification is OFF — set ADMIN_TOTP_SECRET in Render to turn it on.";
+  card.append(title, st);
+  if (ts && ts.configured) {
+    const btn = document.createElement("button");
+    btn.className = "btn";
+    btn.textContent = "Show setup code";
+    const out = document.createElement("p");
+    out.className = "hint";
+    btn.onclick = async () => {
+      out.textContent = "Loading…";
+      try {
+        const s = await api("/admin/totp/setup");
+        out.textContent = "Secret: " + s.secret +
+          " — add it to your authenticator app, then enter a code above.";
+      } catch (e) {
+        out.textContent = e.message || "Could not load the setup code.";
+      }
+    };
+    card.append(btn, out);
+  }
+  view.prepend(card);
+}
+
+async function loadAdmin() {
 // Phase 127: crypto payout — wallet form, payout request and the
 // member's own requests, inside the Monetization card on Me.
 async function loadPayoutBox(card, mon) {
@@ -8239,6 +8389,7 @@ async function markPayoutPaid(id) {
 }
 
   if (!me || !me.is_admin) return;
+  if (await totpGateAdmin()) return;
   loadEarnings();
   loadDashboard();
   loadAdminStats();

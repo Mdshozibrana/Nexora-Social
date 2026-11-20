@@ -6,10 +6,10 @@ Cache-Control — every Design visit re-downloaded every image from
 Telegram through the proxy. The grid already lazy-loads; the
 /designs API is not the bottleneck.
 
-Fix: media_proxy now sends `Cache-Control: private, max-age=604800,
+Fix: media_proxy now sends `Cache-Control: private, max-age=3600,
 immutable` on every /media response. A file_id's bytes never change,
-and the signed ?mt= token already bounds access to 7 days (see
-_media_token: exp = now + 7 * 86400), so a 7-day private cache is
+and the signed ?mt= token already bounds access to 1 hour (see
+_media_token: exp = now + 3600), so a 1-hour private cache is
 safe — repeat visits serve images from the browser cache.
 
 Note: the 200 path needs a live bot token, so this suite cannot
@@ -17,7 +17,7 @@ assert the header on a live response (the test token is fake and
 /media answers 503 without a live token). It asserts the header
 wiring in the handler source, that the middleware cannot override
 it (its Cache-Control branch only touches /webapp paths), that the
-token TTL matches the 7-day max-age, and that the media gate still
+token TTL matches the 1-hour max-age, and that the media gate still
 answers 401 without a token. The header itself is live-verified
 after deploy with a real media token.
 """
@@ -47,14 +47,14 @@ src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
 mi = src.index("async def media_proxy")
 mj = src.index("if WEBAPP_DIR.exists():", mi)
 proxy = src[mi:mj]
-assert 'headers["cache-control"] = "private, max-age=604800, immutable"' \
+assert 'headers["cache-control"] = "private, max-age=3600, immutable"' \
     in proxy, proxy
 print("media_proxy cache-control wiring OK")
 
 # The 7-day max-age matches the signed media token's lifetime.
-ti = src.index("def _media_token()")
-assert "7 * 86400" in src[ti:ti + 700], "token TTL is not 7 days"
-print("media token TTL 7 days OK")
+ti = src.index("def _media_token(")
+assert "3600" in src[ti:ti + 700], "token TTL is not 1 hour"
+print("media token TTL 1 hour OK")
 
 # The middleware's Cache-Control branch only touches /webapp paths,
 # so it can never strip or replace the /media header: the guard
@@ -83,8 +83,8 @@ with TestClient(app) as c:
     assert "#app-scroll.sheet-open" in css, "Phase 108 lock gone"
     print("Phase 108/109/110 markers OK")
 
-    for asset in ("style.css?v=163", "app.js?v=163", "games.js?v=163"):
+    for asset in ("style.css?v=164", "app.js?v=164", "games.js?v=164"):
         assert asset in html, asset
-    print("asset version ?v=163 OK")
+    print("asset version ?v=164 OK")
 
 print("PHASE 111 OK")

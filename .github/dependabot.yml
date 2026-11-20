@@ -1,0 +1,13 @@
+# Phase 164 (M1): automated dependency monitoring.
+# pip only — the client is vanilla JS with vendored libraries, there
+# is no package.json / npm build step.
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/code"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"

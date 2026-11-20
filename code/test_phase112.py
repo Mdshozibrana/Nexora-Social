@@ -91,12 +91,12 @@ with TestClient(app) as c:
     assert "tg.downloadFile" in js, "Phase 110 wiring gone"
     main = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
                              "app", "main.py")).read()
-    assert 'headers["cache-control"] = "private, max-age=604800' in main, \
+    assert 'headers["cache-control"] = "private, max-age=3600' in main, \
         "Phase 111 cache gone"
     print("Phase 108/109/110/111 markers OK")
 
-    for asset in ("style.css?v=163", "app.js?v=163", "games.js?v=163"):
+    for asset in ("style.css?v=164", "app.js?v=164", "games.js?v=164"):
         assert asset in html, asset
-    print("asset version ?v=163 OK")
+    print("asset version ?v=164 OK")
 
 print("PHASE 112 OK")

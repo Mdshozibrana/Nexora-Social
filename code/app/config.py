@@ -44,6 +44,15 @@ class Settings:
     # replay window of a captured string (security §1).
     INITDATA_MAX_AGE_SECONDS: int = int(
         os.environ.get("INITDATA_MAX_AGE_SECONDS", "86400"))
+    # Phase 164 (M2): owner-held Fernet key for backup encryption.
+    # Empty = backups stay plaintext (logged loudly). Losing the key
+    # makes encrypted backups unrestorable — keep it in Render env
+    # only, never in code.
+    BACKUP_ENCRYPTION_KEY: str = os.environ.get("BACKUP_ENCRYPTION_KEY", "")
+    # Phase 164 (H1): per-admin TOTP secret (base32) for the
+    # authenticator second factor. Empty = TOTP off; step-up freshness
+    # still applies. The owner enrolls it via GET /admin/totp/setup.
+    ADMIN_TOTP_SECRET: str = os.environ.get("ADMIN_TOTP_SECRET", "")
 
 
 settings = Settings()
@@ -68,6 +77,9 @@ RATE_LIMITS = {
     "message": (300, 3600),
     "search": (240, 3600),
     "auth_ip": (120, 60),
+    # Phase 164 (H2): /media was unthrottled — one token holder could
+    # hammer the Telegram proxy without limit.
+    "media": (60, 60),
     # Second-pass audit (R3): analytics reporters get budgets too —
     # the real client beats ~every 30s and sees a handful of ads.
     "heartbeat": (240, 3600),

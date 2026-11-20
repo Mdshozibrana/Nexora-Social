@@ -127,14 +127,14 @@ with TestClient(app) as c:
     assert "openPhotoViewer" in js, "Phase 112 wiring gone"
     main = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
                              "app", "main.py")).read()
-    assert 'headers["cache-control"] = "private, max-age=604800' in main, \
+    assert 'headers["cache-control"] = "private, max-age=3600' in main, \
         "Phase 111 cache gone"
     assert "A post earns 10 points." in main, "Nexa manual post value stale"
     assert "the follow task 10" in main, "Nexa manual task values stale"
     print("Phase 111/112 markers OK")
 
-    for asset in ("style.css?v=163", "app.js?v=163", "games.js?v=163"):
+    for asset in ("style.css?v=164", "app.js?v=164", "games.js?v=164"):
         assert asset in html, asset
-    print("asset version ?v=163 OK")
+    print("asset version ?v=164 OK")
 
 print("PHASE 113 OK")

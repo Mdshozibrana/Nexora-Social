@@ -10,6 +10,7 @@ import os
 import random
 import re
 import tempfile
+import threading
 import time
 from pathlib import Path
 from typing import Optional
@@ -341,9 +342,13 @@ async def unhandled_error(request, exc):
 
 
 def _client_ip(request) -> str:
+    # Phase 164 (H2): Render appends the real client IP as the LAST
+    # X-Forwarded-For entry — the first entry is client-chosen and
+    # spoofable, so trusting it let anyone dodge the per-IP /auth
+    # budget by rotating fake values.
     fwd = request.headers.get("x-forwarded-for") or ""
     if fwd:
-        return fwd.split(",")[0].strip()
+        return fwd.split(",")[-1].strip()
     return request.client.host if request.client else "unknown"
 
 
@@ -428,20 +433,23 @@ def _check_revoked(user, init_data: str):
             401, "This login was revoked — please reopen the app")
 
 
-def _media_token() -> str:
-    """Short-lived signed capability for /media URLs (H2). <img> and
-    <video> tags cannot send the X-Init-Data header, so media access
-    rides on this token instead: HMAC over an expiry, keyed by the
-    bot token (server-side only). 7 days covers a long-open WebView;
-    the app fetches a fresh one at every open via /auth."""
+def _media_token(user_id: int) -> str:
+    """Phase 164 (P1): user-bound signed capability for /media URLs
+    (HMAC over user id + issue time + expiry, 1 hour), so the token
+    alone never opens another member's media. <img> and <video> tags
+    cannot send the X-Init-Data header, so the capability rides in
+    the URL; the app fetches a fresh one at every open via /auth and
+    refreshes it while open (see refreshMediaToken). The issue time
+    lets the handler honour session revocation."""
     import base64
     import hashlib as _hl
     import hmac as _hm
-    exp = int(time.time()) + 7 * 86400
+    iat = int(time.time())
+    exp = iat + 3600
     sig = _hm.new(settings.BOT_TOKEN.encode(),
-                  f"nexora-media:{exp}".encode(),
+                  f"nexora-media:{user_id}:{iat}:{exp}".encode(),
                   _hl.sha256).hexdigest()
-    raw = f"{exp}.{sig}".encode()
+    raw = f"{user_id}.{iat}.{exp}.{sig}".encode()
     return base64.urlsafe_b64encode(raw).decode()
 
 
@@ -529,25 +537,84 @@ def _build_profile_qr_png(link: str) -> bytes:
     return buf.getvalue()
 
 
-def _media_token_ok(token: str) -> bool:
+def _media_token_ok(token: str):
+    """Phase 164 (P1): verify a media token; returns (user_id,
+    issued_at) or None. Mirrors _qr_token_ok (Phase 114)."""
     import base64
     import hashlib as _hl
     import hmac as _hm
     if not token or not settings.BOT_TOKEN:
-        return False
+        return None
     try:
         decoded = base64.urlsafe_b64decode(
             token.encode()).decode()
-        exp_s, sig = decoded.split(".", 1)
-        exp = int(exp_s)
+        user_s, iat_s, exp_s, sig = decoded.split(".", 3)
+        user_id, iat, exp = int(user_s), int(iat_s), int(exp_s)
     except Exception:
-        return False
+        return None
     if exp < int(time.time()):
-        return False
+        return None
     expected = _hm.new(settings.BOT_TOKEN.encode(),
-                       f"nexora-media:{exp}".encode(),
+                       f"nexora-media:{user_id}:{iat}:{exp}".encode(),
                        _hl.sha256).hexdigest()
-    return _hm.compare_digest(expected, sig)
+    if not _hm.compare_digest(expected, sig):
+        return None
+    return user_id, iat
+
+
+def _media_visible(db, viewer_id: int, file_id: str) -> bool:
+    """Phase 164 (P1): may viewer_id see this Telegram file_id?
+    The file's owner is resolved from the tables that hold it, and
+    the same visibility rules the feed uses apply — private-account
+    + block rules for posts/profiles, participants-only for DM
+    photos, live-only for stories. Unknown file_ids fail closed
+    (404): a token alone never opens a file."""
+    if not file_id:
+        return False
+    post = db.query(models.Post).filter(
+        (models.Post.media_file_id == file_id)
+        | (models.Post.thumb_file_id == file_id),
+        models.Post.is_deleted == False).first()  # noqa: E712
+    if post is not None:
+        if _blocked_by(db, post.user_id, viewer_id) or _blocked_by(
+                db, viewer_id, post.user_id):
+            return False
+        return _can_see_posts(db, viewer_id, post.user_id)
+    story = db.query(models.Story).filter_by(
+        media_file_id=file_id).first()
+    if story is not None:
+        if story.created_at is not None and (
+                datetime.utcnow() - story.created_at).total_seconds() > 86400:
+            return False
+        if _blocked_by(db, story.user_id, viewer_id) or _blocked_by(
+                db, viewer_id, story.user_id):
+            return False
+        return _can_see_posts(db, viewer_id, story.user_id)
+    msg = db.query(models.Message).filter_by(
+        media_file_id=file_id).first()
+    if msg is not None:
+        return viewer_id in (msg.sender_id, msg.recipient_id)
+    design = db.query(models.Design).filter_by(
+        image_file_id=file_id).first()
+    if design is not None:
+        return True  # designs are the public official gallery
+    owner = db.query(models.User).filter(
+        (models.User.photo_file_id == file_id)
+        | (models.User.cover_file_id == file_id)).first()
+    if owner is not None:
+        if _blocked_by(db, owner.telegram_id, viewer_id) or _blocked_by(
+                db, viewer_id, owner.telegram_id):
+            return False
+        return _can_see_posts(db, viewer_id, owner.telegram_id)
+    draft = db.query(models.Draft).filter_by(
+        media_file_id=file_id).first()
+    if draft is not None:
+        return draft.user_id == viewer_id
+    sched = db.query(models.ScheduledPost).filter_by(
+        media_file_id=file_id).first()
+    if sched is not None:
+        return sched.user_id == viewer_id
+    return False
 
 
 def _like_pattern(q: str) -> str:
@@ -722,9 +789,10 @@ async def auth(body: AuthIn, request: Request,
     # Phase 19: Telegram never reveals a member's country, so it is
     # approximated ONCE from the sign-in IP (only the name is stored).
     if not user.country:
-        raw_ip = request.headers.get("x-forwarded-for") or (
-            request.client.host if request.client else "")
-        country = await geoip.lookup_country(raw_ip)
+        # Phase 164 (H2): the country lookup uses the same
+        # proxy-appended IP as the rate limiter — never a
+        # client-supplied first hop.
+        country = await geoip.lookup_country(_client_ip(request))
         if country:
             user.country = country
             db.commit()
@@ -748,7 +816,7 @@ async def auth(body: AuthIn, request: Request,
         "is_admin": user.telegram_id in settings.ADMIN_IDS,
         "is_moderator": user.telegram_id in settings.MODERATOR_IDS,
         "theme": _theme_picks(user),
-        "media_token": _media_token(),
+        "media_token": _media_token(user.telegram_id),
         "adsgram_block_id": settings.ADSGRAM_BLOCK_ID,
         "mapillary_client_token": settings.MAPILLARY_CLIENT_TOKEN,
         # Phase 151: the caller's own blood-donor status.
@@ -2178,12 +2246,14 @@ def _auto_backup_next_due(db):
 
 
 def _build_auto_backup():
-    """Sync (runs in a thread): build the full backup bytes."""
+    """Sync (runs in a thread): build the full backup bytes.
+    Phase 164: encrypted when BACKUP_ENCRYPTION_KEY is set."""
     with SessionLocal() as db:
         payload = _backup_payload(db)
-    data = json.dumps(payload, ensure_ascii=False, indent=1).encode("utf-8")
-    fname = ("nexora-auto-backup-"
-             + datetime.utcnow().strftime("%Y-%m-%d") + ".json")
+    data, fname, encrypted = _backup_pack(payload, prefix="nexora-auto-backup")
+    if not encrypted:
+        sec_log.warning("auto-backup built UNENCRYPTED — set "
+                        "BACKUP_ENCRYPTION_KEY")
     total = sum(len(v) for v in payload["tables"].values())
     return fname, data, total
 
@@ -4695,7 +4765,51 @@ def my_notifications_read(user: models.User = Depends(current_user),
 # telegram ids listed in the ADMIN_IDS env var.
 # ---------------------------------------------------------------------------
 
-def admin_user(user: models.User = Depends(current_user)):
+# Phase 164 (H1): admin step-up — a stolen initData stays dangerous
+# for 24h, so MUTATING admin calls need fresh proof the owner just
+# opened the app: auth_date within the last 5 minutes. Read-only
+# admin calls keep the 24h window. Automated server-side jobs (the
+# Phase 141 auto-backup loop, the scheduled-post sweeper) never go
+# through HTTP, so this cannot lock them out.
+ADMIN_STEP_UP_SECONDS = 300
+
+
+def _require_admin_fresh(request, x_init_data: str, force=False):
+    """Raise 401 when a sensitive admin request rides on stale
+    initData. The client surfaces the detail and the admin reopens
+    the app for a fresh initData. `force` covers secret-revealing
+    GETs (the TOTP setup endpoint) where the method alone does not
+    convey the sensitivity."""
+    method = getattr(request, "method", "GET") or "GET"
+    if not force and method not in ("POST", "PUT", "PATCH", "DELETE"):
+        return
+    auth_date = init_data_auth_date(x_init_data)
+    if auth_date is None or int(time.time()) - auth_date > ADMIN_STEP_UP_SECONDS:
+        raise HTTPException(
+            401, "Admin session is older than 5 minutes — please close "
+                 "and reopen the app, then try again")
+
+
+# Phase 164 (H1): per-admin TOTP verification flags — in-memory,
+# 12 hours per verified code. Single instance only (same assumption
+# as the rate limiter); a restart simply asks for the code again.
+_TOTP_VERIFIED = {}
+_TOTP_VERIFIED_LOCK = threading.Lock()
+_TOTP_SESSION_SECONDS = 12 * 3600
+
+
+def _totp_verified(user_id: int) -> bool:
+    with _TOTP_VERIFIED_LOCK:
+        until = _TOTP_VERIFIED.get(user_id)
+    return bool(until and until > time.time())
+
+
+def _totp_mark_verified(user_id: int):
+    with _TOTP_VERIFIED_LOCK:
+        _TOTP_VERIFIED[user_id] = time.time() + _TOTP_SESSION_SECONDS
+
+
+def _admin_check(user: models.User):
     if user.telegram_id not in settings.ADMIN_IDS:
         sec_log.warning("admin route denied for user %s",
                         user.telegram_id)
@@ -4706,7 +4820,37 @@ def admin_user(user: models.User = Depends(current_user)):
     return user
 
 
-def moderator_user(user: models.User = Depends(current_user)):
+def admin_user(user: models.User = Depends(current_user),
+               request: Request = None,
+               x_init_data: str = Header(default="")):
+    _admin_check(user)
+    # Phase 164 (H1): when an authenticator secret is configured,
+    # admin calls need a verified TOTP code for this session.
+    if getattr(settings, "ADMIN_TOTP_SECRET", ""):
+        if not _totp_verified(user.telegram_id):
+            raise HTTPException(
+                403, "Admin verification required — enter the code "
+                     "from your authenticator app")
+    if request is not None:
+        _require_admin_fresh(request, x_init_data)
+    return user
+
+
+def admin_user_bootstrap(user: models.User = Depends(current_user),
+                         request: Request = None,
+                         x_init_data: str = Header(default="")):
+    """Admin check + step-up WITHOUT the TOTP gate — used only by
+    the TOTP status/setup/verify endpoints themselves, so the owner
+    can never lock himself out of enrolling."""
+    _admin_check(user)
+    if request is not None:
+        _require_admin_fresh(request, x_init_data)
+    return user
+
+
+def moderator_user(user: models.User = Depends(current_user),
+                   request: Request = None,
+                   x_init_data: str = Header(default="")):
     """Phase 28 (M1, least privilege): moderators get the moderation
     subset only — reports, comment/post removal, bans. Points, verify
     grants, profile edits, member deletion, broadcasts, managed
@@ -4719,7 +4863,66 @@ def moderator_user(user: models.User = Depends(current_user)):
                            actor_id=user.telegram_id,
                            detail="Moderator route denied")
         raise HTTPException(403, "Moderators only")
+    if request is not None:
+        _require_admin_fresh(request, x_init_data)
     return user
+
+
+class TotpVerifyIn(BaseModel):
+    code: str = Field(default="", max_length=16)
+
+
+@app.get("/admin/totp/status")
+def admin_totp_status(admin: models.User = Depends(admin_user_bootstrap)):
+    """Phase 164 (H1): is authenticator verification configured,
+    and is this admin verified for the session?"""
+    configured = bool(getattr(settings, "ADMIN_TOTP_SECRET", ""))
+    return {"configured": configured,
+            "verified": _totp_verified(admin.telegram_id) if configured else True}
+
+
+@app.get("/admin/totp/setup")
+def admin_totp_setup(request: Request,
+                     x_init_data: str = Header(default=""),
+                     admin: models.User = Depends(admin_user_bootstrap)):
+    """Phase 164 (H1): enrollment — returns the otpauth URL for the
+    env-stored secret so the owner can add it to his authenticator
+    app. A secret-revealing GET, so it needs fresh initData even
+    though it is a GET."""
+    secret = getattr(settings, "ADMIN_TOTP_SECRET", "")
+    if not secret:
+        raise HTTPException(
+            400, "Authenticator verification is not set up — set "
+                 "ADMIN_TOTP_SECRET in Render first")
+    _require_admin_fresh(request, x_init_data, force=True)
+    import pyotp
+    uri = pyotp.TOTP(secret).provisioning_uri(
+        name="Nexora Admin", issuer_name="Nexora Social")
+    return {"otpauth_url": uri, "secret": secret}
+
+
+@app.post("/admin/totp/verify")
+def admin_totp_verify(body: TotpVerifyIn,
+                      admin: models.User = Depends(admin_user_bootstrap),
+                      db: Session = Depends(get_db)):
+    """Phase 164 (H1): check one TOTP code; success marks this admin
+    verified for 12 hours (in-memory, per process)."""
+    secret = getattr(settings, "ADMIN_TOTP_SECRET", "")
+    if not secret:
+        raise HTTPException(400, "Authenticator verification is not set up")
+    import pyotp
+    code = (body.code or "").strip().replace(" ", "")
+    if not code.isdigit() or len(code) != 6:
+        raise HTTPException(400, "Enter the 6-digit code")
+    if not pyotp.TOTP(secret).verify(code, valid_window=1):
+        sec_log.warning("totp verify failed for admin %s", admin.telegram_id)
+        log_security_event(db, "auth_reject", actor_id=admin.telegram_id,
+                           detail="TOTP code rejected")
+        raise HTTPException(400, "Wrong code — try again")
+    _totp_mark_verified(admin.telegram_id)
+    _audit(db, admin, "totp_verified", detail="Admin TOTP verified")
+    db.commit()
+    return {"verified": True}
 
 
 class BanIn(BaseModel):
@@ -6800,6 +7003,59 @@ def _row_to_dict(row):
     return out
 
 
+def _backup_fernet():
+    """Phase 164 (M2): Fernet cipher for backup payloads, keyed by
+    the owner-held BACKUP_ENCRYPTION_KEY env var. None when the key
+    is absent or malformed — backups then stay plaintext (loudly)."""
+    key = getattr(settings, "BACKUP_ENCRYPTION_KEY", "") or ""
+    if not key:
+        return None
+    try:
+        from cryptography.fernet import Fernet
+        return Fernet(key.encode())
+    except Exception:
+        sec_log.warning("BACKUP_ENCRYPTION_KEY is set but not a valid "
+                        "Fernet key — backups stay unencrypted")
+        return None
+
+
+def _backup_pack(payload: dict, prefix="nexora-full-backup"):
+    """Phase 164 (M2): serialize a backup payload; encrypt it when a
+    key is configured. Returns (bytes, filename, encrypted)."""
+    data = json.dumps(payload, ensure_ascii=False, indent=1).encode("utf-8")
+    cipher = _backup_fernet()
+    stamp = datetime.utcnow().strftime("%Y-%m-%d")
+    if cipher is None:
+        return data, prefix + "-" + stamp + ".json", False
+    return cipher.encrypt(data), prefix + "-" + stamp + ".json.enc", True
+
+
+def _backup_unpack(raw):
+    """Phase 164 (M2): accept both encrypted and plaintext backups.
+    Fernet tokens start with the version byte 0x80 (base64 'gAAAAA');
+    anything else parses as plain JSON. Raises 400 on bad input."""
+    if isinstance(raw, str):
+        raw = raw.encode()
+    if raw[:6] == b"gAAAAA":
+        cipher = _backup_fernet()
+        if cipher is None:
+            raise HTTPException(
+                400, "This backup is encrypted — set "
+                     "BACKUP_ENCRYPTION_KEY on the server to restore it")
+        try:
+            raw = cipher.decrypt(raw)
+        except Exception:
+            raise HTTPException(400, "Could not decrypt this backup — "
+                                     "wrong key?")
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except Exception:
+        raise HTTPException(400, "Backup must be a JSON object")
+    if not isinstance(payload, dict):
+        raise HTTPException(400, "Backup must be a JSON object")
+    return payload
+
+
 def _backup_payload(db: Session) -> dict:
     tables = {}
     for name, model in _BACKUP_TABLES:
@@ -6890,15 +7146,20 @@ def _restore_backup(db: Session, payload: dict) -> dict:
 @app.get("/admin/backup")
 def admin_backup(admin: models.User = Depends(admin_user),
                  db: Session = Depends(get_db)):
-    """Admin-only full-site backup download (Phase 107)."""
+    """Admin-only full-site backup download (Phase 107; Phase 164:
+    encrypted with BACKUP_ENCRYPTION_KEY when configured)."""
     _enforce_rate("backup", f"a{admin.telegram_id}")
     payload = _backup_payload(db)
     total = sum(len(v) for v in payload["tables"].values())
+    data, fname, encrypted = _backup_pack(payload)
     _audit(db, admin, "backup_download",
-           detail=f"{total} rows across {len(payload['tables'])} tables")
+           detail=f"{total} rows across {len(payload['tables'])} tables"
+                  + (" (encrypted)" if encrypted else " (plaintext — no key)"))
     db.commit()
-    fname = ("nexora-full-backup-"
-             + datetime.utcnow().strftime("%Y-%m-%d") + ".json")
+    if encrypted:
+        return Response(content=data, media_type="application/octet-stream",
+                        headers={"Content-Disposition":
+                                 f"attachment; filename={fname}"})
     return JSONResponse(
         content=payload,
         headers={"Content-Disposition": f"attachment; filename={fname}"})
@@ -6908,30 +7169,36 @@ def admin_backup(admin: models.User = Depends(admin_user),
 async def admin_backup_send(admin: models.User = Depends(admin_user),
                             db: Session = Depends(get_db)):
     """Send the full backup to the admin's bot chat (Phase 107) —
-    the reliable route on phones, same as the Phase 100 export."""
+    the reliable route on phones, same as the Phase 100 export.
+    Phase 164: encrypted with BACKUP_ENCRYPTION_KEY when configured."""
     _enforce_rate("backup", f"a{admin.telegram_id}")
     payload = _backup_payload(db)
-    data = json.dumps(payload, ensure_ascii=False, indent=1).encode("utf-8")
-    fname = ("nexora-full-backup-"
-             + datetime.utcnow().strftime("%Y-%m-%d") + ".json")
+    data, fname, encrypted = _backup_pack(payload)
+    if not encrypted:
+        sec_log.warning("backup sent UNENCRYPTED to admin %s — set "
+                        "BACKUP_ENCRYPTION_KEY", admin.telegram_id)
     sent = await notify.send_document(
         admin.telegram_id, fname, data,
         caption="💾 Nexora full-site backup — every user, post, "
                 "comment, like, follow, design and message. Keep "
                 "this file safe: anyone holding it holds the whole "
-                "database.")
+                "database." + (" 🔐 Encrypted — keep your key safe."
+                               if encrypted else ""))
     if sent:
         # Phase 132: a backup sent to Telegram counts as a backup
         # taken — the backup-status endpoint reads the audit log.
         _audit(db, admin, "backup_send",
-               detail=f"{len(data)} bytes")
+               detail=f"{len(data)} bytes"
+                      + (" (encrypted)" if encrypted else ""))
         db.commit()
     return {"sent": bool(sent)}
 
 
 class RestoreIn(BaseModel):
     confirm: str
-    backup: dict
+    backup: Optional[dict] = None
+    # Phase 164: an encrypted backup file's raw text (a Fernet token).
+    backup_encrypted: Optional[str] = None
 
 
 @app.post("/admin/restore")
@@ -6942,17 +7209,27 @@ def admin_restore(body: RestoreIn,
     """Restore the whole site from a backup file (Phase 107).
     Guarded: admin-only, never while acting as another account,
     typed RESTORE, format/version/column validation up front, one
-    transaction (a bad file rolls back clean), audit-logged."""
+    transaction (a bad file rolls back clean), audit-logged.
+    Phase 164: accepts encrypted backups too (decrypted server-side
+    with BACKUP_ENCRYPTION_KEY)."""
     if x_act_as:
         raise HTTPException(
             400, "Switch back to your own account to restore")
     if body.confirm != "RESTORE":
         raise HTTPException(400, "Type RESTORE to confirm the restore")
-    if len(json.dumps(body.backup, ensure_ascii=False)) > _BACKUP_MAX_BYTES:
-        raise HTTPException(413, "Backup file is too large (max 50 MB)")
+    if body.backup_encrypted:
+        if len(body.backup_encrypted) > 70_000_000:
+            raise HTTPException(413, "Backup file is too large (max 50 MB)")
+        payload = _backup_unpack(body.backup_encrypted)
+    elif body.backup is not None:
+        if len(json.dumps(body.backup, ensure_ascii=False)) > _BACKUP_MAX_BYTES:
+            raise HTTPException(413, "Backup file is too large (max 50 MB)")
+        payload = body.backup
+    else:
+        raise HTTPException(400, "Pick a backup file first")
     _enforce_rate("restore", f"a{admin.telegram_id}")
     try:
-        counts = _restore_backup(db, body.backup)
+        counts = _restore_backup(db, payload)
     except HTTPException:
         db.rollback()
         raise
@@ -7064,12 +7341,15 @@ def my_delete_account(body: DeleteAccountIn,
 
 
 @app.get("/media/{file_id}")
-async def media_proxy(file_id: str, request: Request):
+async def media_proxy(file_id: str, request: Request,
+                      db: Session = Depends(get_db)):
     """Stream a Telegram-hosted file to the Mini App. The bot token is used
     only in server-side requests and never appears in a client-visible URL.
-    file_id values are long unguessable strings, the same protection
-    Telegram's own file links rely on. Needs a live token, so this path is
-    verified at deploy time; without a token it answers 503.
+    Phase 164 (P1): access needs a user-bound 1-hour token AND the
+    file must be visible to that member (same rules as the feed) —
+    a bare file_id, or another member's token, answers 404. Needs a
+    live token, so this path is verified at deploy time; without a
+    token it answers 503.
 
     The upstream response is opened HERE (not inside an `async with` that
     exits before the body streams — that closed-client bug silently broke
@@ -7077,12 +7357,27 @@ async def media_proxy(file_id: str, request: Request):
     Range requests are forwarded so video seeking works in reels."""
     if not settings.BOT_TOKEN:
         raise HTTPException(503, "Media unavailable until the bot is live")
-    # Phase 28 (H2): a bare file_id is no longer enough — media
-    # requires the short-lived signed token the app receives at
-    # /auth (image/video tags cannot send the login header, so the
-    # capability rides in the URL and expires).
-    if not _media_token_ok(request.query_params.get("mt", "")):
+    # Phase 164 (P1): the token is bound to one member and one hour,
+    # and it honours revocation — a leaked token dies with the session.
+    checked = _media_token_ok(request.query_params.get("mt", ""))
+    if checked is None:
         raise HTTPException(401, "Media token missing or expired")
+    viewer_id, issued_at = checked
+    viewer = db.get(models.User, viewer_id)
+    if viewer is None or viewer.is_banned:
+        raise HTTPException(401, "Media token missing or expired")
+    if viewer.auth_revoked_at is not None:
+        revoked_ts = int(viewer.auth_revoked_at.replace(
+            tzinfo=timezone.utc).timestamp())
+        if issued_at < revoked_ts:
+            raise HTTPException(401, "Media token missing or expired")
+    # Phase 164 (H2): /media was unthrottled — one token holder could
+    # hammer the Telegram proxy without limit.
+    _enforce_rate("media", f"u{viewer_id}")
+    # Phase 164 (P1): the file's owner/visibility decides — a token
+    # alone never opens another member's private media.
+    if not _media_visible(db, viewer_id, file_id):
+        raise HTTPException(404, "File not found")
     api = f"https://api.telegram.org/bot{settings.BOT_TOKEN}"
     async with httpx.AsyncClient(timeout=30) as client:
         info = await client.get(f"{api}/getFile", params={"file_id": file_id})
@@ -7121,10 +7416,10 @@ async def media_proxy(file_id: str, request: Request):
     # Phase 111 (owner: Design page loads slowly): /media never sent
     # a Cache-Control, so every Design visit re-downloaded every
     # image from Telegram through this proxy. A file_id's bytes never
-    # change, and the signed ?mt= token already bounds access to 7
-    # days, so a private 7-day cache is safe: repeat visits serve
-    # from the browser cache instead of re-fetching.
-    headers["cache-control"] = "private, max-age=604800, immutable"
+    # change, and the signed ?mt= token bounds access to 1 hour
+    # (Phase 164), so a private 1-hour cache is safe: repeat visits
+    # serve from the browser cache instead of re-fetching.
+    headers["cache-control"] = "private, max-age=3600, immutable"
     return StreamingResponse(body(), status_code=resp.status_code,
                              headers=headers,
                              media_type=resp.headers.get("content-type"))
