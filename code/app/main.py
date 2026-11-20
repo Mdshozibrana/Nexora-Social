@@ -2955,15 +2955,18 @@ BLOOD_GROUPS = ("A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-")
 
 
 def _blood_donor_out(u, distance_km=None):
-    """A directory row: name + group + country only — never a
-    phone number, never a precise location. distance_km is
-    included ONLY when both viewer and donor share location
-    (Phase 152); it is a rounded distance, never coordinates."""
+    """A directory row: name + group + country + profile photo —
+    never a phone number, never a precise location. distance_km
+    is included ONLY when both viewer and donor share location
+    (Phase 152); it is a rounded distance, never coordinates.
+    Phase 154: photo_file_id lets the donor card render the real
+    photo (avatarEl falls back to initials when it is None)."""
     row = {"telegram_id": u.telegram_id,
            "first_name": u.first_name,
            "username": u.username,
            "blood_group": u.blood_group,
-           "country": u.country}
+           "country": u.country,
+           "photo_file_id": u.photo_file_id}
     if distance_km is not None:
         row["distance_km"] = distance_km
     return row

@@ -1760,7 +1760,9 @@ async function loadBloodDonors() {
       card.className = "card blood-card blood-donor-card";
       const top = document.createElement("div");
       top.className = "blood-top";
-      const av = avatarEl(u.first_name, u.telegram_id, false, null);
+      // Phase 154: the real profile photo — avatarEl falls back
+      // to initials when photo_file_id is null (member has no photo).
+      const av = avatarEl(u.first_name, u.telegram_id, false, u.photo_file_id);
       const info = document.createElement("div");
       info.className = "blood-info";
       const nm = document.createElement("div");

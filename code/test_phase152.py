@@ -178,7 +178,8 @@ with TestClient(app) as c:
     for d in r.json()["donors"]:
         assert "distance_km" not in d, d
         assert set(d.keys()) == {"telegram_id", "first_name",
-                                 "username", "blood_group", "country"}, d
+                                 "username", "blood_group", "country",
+                                 "photo_file_id"}, d
     print("distance omitted when the viewer does not share: OK")
 
     # Donor stops sharing -> only that donor loses distance.
@@ -212,7 +213,7 @@ assert "distance_km" in MAIN and "me_shares" in MAIN
 print("Museum removal + neighbours OK")
 
 # 6. Version.
-assert HTML.count("?v=153") == 9, HTML.count("?v=153")
+assert HTML.count("?v=154") == 9, HTML.count("?v=154")
 assert "?v=15" + "1" not in HTML
-assert 'menu_url.rstrip("/") + "/?v=153"' in BOT
+assert 'menu_url.rstrip("/") + "/?v=154"' in BOT
 print("PHASE 152 OK")

@@ -30,7 +30,7 @@ layers, mode-button labels); 2D fallback path intact
 (Leaflet init, OSM tiles, OSRM routing); sharing toggle
 server behaviour (on/off, 500 m, off deletes); CSP header
 served live carries worker-src + tiles host; backup still 42
-tables (no schema change); ?v=153 x7, no ?v=146; neighbouring
+tables (no schema change); ?v=154 x7, no ?v=146; neighbouring
 markers intact.
 """
 import hashlib, hmac, json, os, re, subprocess, sys, tempfile, time, urllib.parse
@@ -78,15 +78,15 @@ CSS = open("webapp/style.css").read()
 MAIN = open("app/main.py").read()
 
 # 1. Vendored 3D assets exist, are versioned, and are real.
-assert "vendor/maplibre/maplibre-gl-4.7.1.js?v=153" in HTML
-assert "vendor/maplibre/maplibre-gl-4.7.1.css?v=153" in HTML
+assert "vendor/maplibre/maplibre-gl-4.7.1.js?v=154" in HTML
+assert "vendor/maplibre/maplibre-gl-4.7.1.css?v=154" in HTML
 assert os.path.getsize(
     "webapp/vendor/maplibre/maplibre-gl-4.7.1.js") > 500000
 assert os.path.getsize(
     "webapp/vendor/maplibre/maplibre-gl-4.7.1.css") > 10000
 # The 2D fallback stays vendored and referenced.
-assert "vendor/leaflet/leaflet.js?v=153" in HTML
-assert "vendor/leaflet/leaflet.css?v=153" in HTML
+assert "vendor/leaflet/leaflet.js?v=154" in HTML
+assert "vendor/leaflet/leaflet.css?v=154" in HTML
 assert os.path.getsize("webapp/vendor/leaflet/leaflet.js") > 100000
 # Mode switch markup.
 assert 'id="nearby-mode"' in HTML
@@ -289,7 +289,7 @@ assert r.returncode == 0, r.stderr or r.stdout
 print("node harness: 3D helpers OK")
 
 # 9. Client markers + asset version.
-assert HTML.count("?v=153") == 9, HTML.count("?v=153")
+assert HTML.count("?v=154") == 9, HTML.count("?v=154")
 assert "?v=14" + "6" not in HTML
 for m in ("loadSettings", "renderLevelBlock", "openTipSheet",
           "loadProfilePosts", "openProfile", "loadMe",
@@ -308,6 +308,6 @@ for m in ("loadSettings", "renderLevelBlock", "openTipSheet",
           "search-tag-follow", "hashtag-card", "hashtag-row",
           "followedTags", "/me/hashtags", "/feed/hashtags"):
     assert m in JS, m
-print("client markers + ?v=153 OK")
+print("client markers + ?v=154 OK")
 
 print("PHASE-147 TESTS PASSED")
