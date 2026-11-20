@@ -218,6 +218,8 @@ function showView(name, viaBack) {
     if (viewStack.length > 30) viewStack.shift();
   }
   currentView = name;
+  // Phase 156: the mascot tips follow the page — reset on switch.
+  if (typeof mascotOnView === "function") mascotOnView(name);
   // Phase 30: no video may follow the member to another page.
   pauseAllVideos();
   // Phase 23: each view starts at the top of the app shell.
@@ -9337,24 +9339,138 @@ document.addEventListener("dragstart", (e) => {
   if (e.target && e.target.tagName === "IMG") e.preventDefault();
 }, true);
 
-// ---------- Phase 155: Nexora mascot helper ----------
-// Floating plush-alien button; tap for a rotating tip. The bubble NEVER
-// opens on its own — only on tap. Every tip is true about a live
-// feature (numbers from config.py DAILY_TASKS / MONETIZATION).
-const MASCOT_TIPS = [
+
+// ---------- Phase 156: real 3D mascot + context-aware tips ----------
+// Owner order Nov 20: the mascot is REAL 3D now, not an image, and its
+// tips follow the page you are on. The head is built from Three.js
+// primitives (vendored r149, no CDN): sky-blue fur, cream pom-pom,
+// black button eyes, stitched smile, curved antenna — the owner's
+// pick #11, recoloured to Organic Clay sky. Button is 40 px now
+// (was 48). If WebGL is unavailable a small CSS face takes its place
+// (plain divs — never an image). The bubble NEVER opens on its own —
+// only on tap. Every number in every tip is true about a live feature
+// (cross-checked in test_phase156 against config / routes / games).
+const MASCOT_TIPS_GENERAL = [
   "Check in every day on the Tasks page — each check-in earns you 20 points.",
   "Keep your check-in streak going — 30 days in a row is one of the keys to unlock monetisation.",
-  "You can become a blood donor from Settings \u2192 Profile — pick your group and turn the donor switch on.",
+  "You can become a blood donor from Settings → Profile — pick your group and turn the donor switch on.",
   "To post a photo, send it to @NexoraSocial_bot in chat with a caption — it appears in your feed.",
   "Nearby shows members within 500 m of you — turn sharing on to appear on the map.",
-  "Tap the \u2b50 on any post to tip its author with Stars — tips start at 10 Stars.",
+  "Tap the ⭐ on any post to tip its author with Stars — tips start at 10 Stars.",
   "You can schedule a post from the composer — pick a time and it goes live by itself.",
 ];
+const MASCOT_TIPS_BY_VIEW = {
+  feed: [
+    "To post a photo or video, send it to @NexoraSocial_bot in chat with a caption — it appears in your feed.",
+    "You can schedule a post from the composer — any time from 5 minutes to 90 days ahead.",
+    "Tap the ⭐ on any post to tip its author with Stars — tips start at 10 Stars.",
+    "Stories disappear after 24 hours — tap a circle at the top to watch one.",
+  ],
+  videos: [
+    "Reels play full-screen — swipe up for the next one.",
+    "The rail on the right is for liking and commenting — tap ❤️ or 💬.",
+    "From the ⋮ menu you can share a reel with someone you follow, or via Telegram.",
+  ],
+  designs: [
+    "Designs are official Nexora posts — tap one to see it big.",
+    "The gallery keeps loading more as you scroll down.",
+    "Related designs appear under each design you open.",
+  ],
+  search: [
+    "Search finds members by name or username.",
+    "Start your search with # to find posts by hashtag.",
+  ],
+  tasks: [
+    "Check in every day — each check-in earns you 20 points.",
+    "Follow 3 people (10 points), write 5 comments (5 points), react to 6 posts (10 points) — each task pays once a day.",
+    "A 30-day unbroken check-in streak is one of the keys to unlock monetisation.",
+  ],
+  leaderboard: [
+    "Ranks shows the top 50 members, plus your own rank.",
+    "Your level comes from lifetime points — 5,000 points makes you a Star.",
+    "The blue tick needs 1,000 followers or 50 qualified referrals.",
+  ],
+  profile: [
+    "Your level and badges live in Settings — open “My level”.",
+    "Change your look in Settings → Theme — 33 shades to pick from.",
+    "Your QR code is in Settings → My QR — others can scan it to find you.",
+  ],
+  saved: [
+    "Posts you saved live here — tap the bookmark on any post to save it.",
+    "Tap a saved post to open it again.",
+  ],
+  shared: [
+    "Posts and designs other members shared with you live here.",
+    "Share a post from its ⋮ menu to send it to someone you follow.",
+  ],
+  games: [
+    "11 games are built in — Snake, Tetris, 2048, Pac-Man and more.",
+    "Tap a game card to play it right inside the app.",
+  ],
+  game: [
+    "You are playing inside the app — no download needed.",
+    "Use the back button to return to the games list.",
+  ],
+  admin: [
+    "Admin Panel: backups, broadcast, payout requests and the audit log.",
+    "If no backup was made in the last 7 days, an amber reminder shows here.",
+  ],
+  notifications: [
+    "Likes, comments, follows, tips and blood requests all land here.",
+    "Turn any kind off in Settings → Notification prefs — 8 switches.",
+  ],
+  messages: [
+    "Tap the photo button in a chat to send a photo DM.",
+    "Tap a message to open the emoji picker — 6 reactions to pick from.",
+    "Photo DMs show as “📷 Photo” in this list.",
+  ],
+  chat: [
+    "Tap the photo button to send a photo in this chat.",
+    "Tap a message to open the emoji picker — 6 reactions to pick from.",
+    "Tap a photo message to see it full-screen.",
+  ],
+  nearby: [
+    "Nearby shows members within 500 m of you.",
+    "Turn sharing on to appear on the map — you can turn it off anytime.",
+    "Tap a pin, then Street View, to see the street photo of that spot.",
+    "Use the 3D / 2D switch above the map — 3D needs WebGL.",
+  ],
+  qr: [
+    "This is your profile QR — let someone scan it to find you.",
+    "Your QR is also in Settings, next to your profile.",
+  ],
+  trending: [
+    "Trending ranks the 20 hottest posts from the last 7 days.",
+    "Only posts with likes, comments or views in the last 7 days can trend.",
+  ],
+  settings: [
+    "Theme: pick one of 33 shades — the whole app follows it.",
+    "Notification prefs has 8 switches — likes, comments, follows, tips, messages, system, follow requests and blood.",
+    "Payout wallet: save a TON, Gram or USDT address, then request a payout in points.",
+  ],
+  blood: [
+    "Become a donor in Settings → Profile — pick your group and switch the donor toggle on.",
+    "Tap “আমি দেবো” on a request — the requester gets notified and a DM opens.",
+    "Requests ask for 1 to 10 units — filter donors by any of the 8 blood groups.",
+  ],
+};
 let mascotTipIdx = 0;
+let mascotLastView = "";
+function mascotTipsFor(view) {
+  return MASCOT_TIPS_BY_VIEW[view] || MASCOT_TIPS_GENERAL;
+}
+function mascotOnView(name) {
+  if (name !== mascotLastView) {
+    mascotLastView = name;
+    mascotTipIdx = 0;
+  }
+  mascotHideTip();
+}
 function mascotShowTip() {
   const b = $("mascot-bubble"); if (!b) return;
+  const tips = mascotTipsFor(currentView);
   $("mascot-tip").textContent =
-    MASCOT_TIPS[mascotTipIdx % MASCOT_TIPS.length];
+    tips[mascotTipIdx % tips.length];
   mascotTipIdx++;
   b.hidden = false;
 }
@@ -9367,3 +9483,106 @@ document.addEventListener("click", (e) => {
   const w = $("mascot-wrap");
   if (w && !w.contains(e.target)) mascotHideTip();
 });
+
+// ---- The 3D head (Three.js r149, vendored, no CDN) ----
+function mascotInit3D() {
+  const canvas = $("mascot-canvas");
+  const fallback = $("mascot-fallback");
+  if (!canvas) return;
+  function showFallback() {
+    canvas.hidden = true;
+    if (fallback) fallback.hidden = false;
+  }
+  try {
+    if (typeof THREE === "undefined" || !window.WebGLRenderingContext)
+      return showFallback();
+    const renderer = new THREE.WebGLRenderer({
+      canvas: canvas, alpha: true, antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setSize(80, 80, false);
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 20);
+    camera.position.set(0, 0.25, 4.2);
+    camera.lookAt(0, 0.25, 0);
+    scene.add(new THREE.AmbientLight(0xffffff, 1.0));
+    const key = new THREE.DirectionalLight(0xffffff, 0.9);
+    key.position.set(2, 3, 4);
+    scene.add(key);
+    const SKY = 0x8ED4F7, CREAM = 0xF6F1E7, INK = 0x3A2E33;
+    const fur = new THREE.MeshStandardMaterial({
+      color: SKY, roughness: 0.9, metalness: 0 });
+    const head = new THREE.Group();
+    const skull = new THREE.Mesh(
+      new THREE.SphereGeometry(1, 28, 20), fur);
+    skull.scale.y = 0.92;
+    head.add(skull);
+    // Fluffy tufts: small fur spheres dotted over the top and sides.
+    const TUFTS = [
+      [0.35, 0.4], [0.7, 1.2], [0.5, 2.2], [0.9, 2.9],
+      [1.1, 0.2], [1.3, 1.6], [1.2, 3.0], [0.6, 1.8],
+      [1.6, 0.3], [1.4, 2.5]
+    ];
+    TUFTS.forEach(tp => {
+      const th = tp[0], ph = tp[1], r = 0.98;
+      const tuft = new THREE.Mesh(
+        new THREE.SphereGeometry(0.17, 12, 10), fur);
+      tuft.position.set(
+        r * Math.sin(th) * Math.cos(ph),
+        r * Math.cos(th) * 0.92,
+        r * Math.sin(th) * Math.sin(ph));
+      head.add(tuft);
+    });
+    // Curved antenna + cream pom-pom on top.
+    const antCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(0, 0.82, 0.05),
+      new THREE.Vector3(0.12, 1.18, 0.05),
+      new THREE.Vector3(0.42, 1.36, 0.05)
+    ]);
+    head.add(new THREE.Mesh(
+      new THREE.TubeGeometry(antCurve, 12, 0.045, 8), fur));
+    const pom = new THREE.Mesh(
+      new THREE.SphereGeometry(0.17, 16, 12),
+      new THREE.MeshStandardMaterial({
+        color: CREAM, roughness: 0.9, metalness: 0 }));
+    pom.position.set(0.42, 1.36, 0.05);
+    head.add(pom);
+    // Big black button eyes (+ tiny glints) and the stitched smile.
+    const eyeMat = new THREE.MeshStandardMaterial({
+      color: 0x1a1a1a, roughness: 0.35, metalness: 0 });
+    [-0.36, 0.36].forEach(x => {
+      const eye = new THREE.Mesh(
+        new THREE.SphereGeometry(0.13, 16, 12), eyeMat);
+      eye.position.set(x, 0.15, 0.95);
+      eye.scale.z = 0.6;
+      head.add(eye);
+      const glint = new THREE.Mesh(
+        new THREE.SphereGeometry(0.045, 8, 8),
+        new THREE.MeshBasicMaterial({ color: 0xffffff }));
+      glint.position.set(x - 0.04, 0.21, 1.0);
+      head.add(glint);
+    });
+    const smile = new THREE.Mesh(
+      new THREE.TorusGeometry(0.2, 0.032, 8, 20, Math.PI),
+      new THREE.MeshStandardMaterial({
+        color: INK, roughness: 0.6, metalness: 0 }));
+    smile.position.set(0, -0.3, 0.96);
+    smile.rotation.set(-0.15, 0, Math.PI);
+    head.add(smile);
+    head.scale.set(0.9, 0.9, 0.9);
+    head.position.y = -0.05;
+    scene.add(head);
+    // Gentle idle sway + bob; the loop skips rendering while hidden,
+    // and requestAnimationFrame already pauses in background tabs.
+    function mascotTick(t) {
+      requestAnimationFrame(mascotTick);
+      if (document.hidden) return;
+      const s = t * 0.001;
+      head.rotation.y = Math.sin(s * 0.7) * 0.16;
+      head.rotation.x = Math.sin(s * 0.5) * 0.05;
+      head.position.y = -0.05 + Math.sin(s * 1.4) * 0.05;
+      renderer.render(scene, camera);
+    }
+    requestAnimationFrame(mascotTick);
+  } catch (e) { showFallback(); }
+}
+mascotInit3D();

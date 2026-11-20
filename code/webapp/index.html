@@ -20,10 +20,10 @@
 <meta name="twitter:description" content="Share photos, watch reels, discover designs and play classic games — all inside Telegram.">
 <meta name="twitter:image" content="https://nexora-9pip.onrender.com/webapp/og-image.png">
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
-<link rel="stylesheet" href="style.css?v=155">
-<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=155">
-<link rel="stylesheet" href="vendor/maplibre/maplibre-gl-4.7.1.css?v=155">
-<link rel="stylesheet" href="vendor/mapillary/mapillary.css?v=155">
+<link rel="stylesheet" href="style.css?v=156">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=156">
+<link rel="stylesheet" href="vendor/maplibre/maplibre-gl-4.7.1.css?v=156">
+<link rel="stylesheet" href="vendor/mapillary/mapillary.css?v=156">
 </head>
 <body>
 <div id="entry-screen">
@@ -852,12 +852,15 @@
 </div>
 
 
-<!-- Phase 155: Nexora mascot helper — fluffy plush alien head (owner
-     pick #11, recoloured to Organic Clay sky #8ED4F7). Floating button;
-     tap it for a rotating tip. The bubble NEVER opens on its own. -->
+<!-- Phase 156: Nexora mascot helper is REAL 3D now (owner order Nov 20:
+     "ছবি আকারে না দিয়ে 3D করো") — a Three.js head built from primitives
+     (sky-blue fur, cream pom-pom, button eyes, stitched smile, curved
+     antenna). No image file. Tap it for a tip about the page you are on;
+     the bubble NEVER opens on its own. -->
 <div id="mascot-wrap">
   <button id="mascot-btn" type="button" aria-label="Mascot tips">
-    <img src="assets/mascot-head.webp?v=155" alt="Nexora mascot">
+    <canvas id="mascot-canvas" width="80" height="80" aria-hidden="true"></canvas>
+    <span id="mascot-fallback" hidden aria-hidden="true"><span class="mf-eye mf-eye-l"></span><span class="mf-eye mf-eye-r"></span><span class="mf-smile"></span></span>
   </button>
   <div id="mascot-bubble" hidden>
     <span id="mascot-tip"></span>
@@ -865,10 +868,11 @@
   </div>
 </div>
 
-<script src="vendor/leaflet/leaflet.js?v=155"></script>
-<script src="vendor/maplibre/maplibre-gl-4.7.1.js?v=155"></script>
-<script src="vendor/mapillary/mapillary.js?v=155"></script>
-<script src="app.js?v=155"></script>
-<script src="games.js?v=155"></script>
+<script src="vendor/leaflet/leaflet.js?v=156"></script>
+<script src="vendor/maplibre/maplibre-gl-4.7.1.js?v=156"></script>
+<script src="vendor/mapillary/mapillary.js?v=156"></script>
+<script src="vendor/three/three.min.js?v=156"></script>
+<script src="app.js?v=156"></script>
+<script src="games.js?v=156"></script>
 </body>
 </html>

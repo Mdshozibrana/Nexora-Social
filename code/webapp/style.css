@@ -2855,19 +2855,24 @@ html[data-theme] .suggest-follow.on { background: var(--t-chip, #F3DCE7);
 .blood-loc-hint .btn { margin-top: 8px; }
 #blood-loc-hint[hidden] { display: none; }
 
-/* Phase 155: Nexora mascot helper — floating tips button.
-   Bottom-right above the floating pill bottom-nav: the nav is a pill at
-   bottom: 10px, ~56px tall, so its top edge sits ~66px up; bottom: 86px
-   clears it with room to spare. The in-flow composer lives at the top
-   of the feed, never in this corner. The wrap itself ignores taps
-   (pointer-events: none) — only the button and the bubble take them —
-   so content behind it stays tappable. The cream image background
-   blends with the Organic Clay theme; the button is a circle so the
-   square image never reads as a box. */
+
+/* Phase 156: Nexora mascot helper is REAL 3D now (owner order Nov 20).
+   The head is a Three.js scene on a 40 px canvas (button 48 -> 40 px);
+   the bob/sway happens inside the 3D animation, not in CSS. If WebGL
+   is unavailable a small CSS face (plain divs, never an image) takes
+   its place. Same placement as before: bottom-right above the pill
+   bottom-nav (top edge ~54 px up; bottom: 86px clears it). The wrap
+   ignores taps — only the button and the bubble take them. */
 #mascot-wrap { position: fixed; right: 12px; bottom: 86px; z-index: 70; pointer-events: none; }
-#mascot-btn { pointer-events: auto; width: 48px; height: 48px; padding: 0; border: 0; border-radius: 50%; overflow: hidden; cursor: pointer; background: #F6F1E7; box-shadow: 0 6px 18px rgba(31,27,75,.25); animation: mascot-bob 3s ease-in-out infinite; }
-#mascot-btn img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; display: block; }
-@keyframes mascot-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
-#mascot-bubble { pointer-events: auto; position: absolute; right: 56px; bottom: 2px; width: 230px; max-width: calc(100vw - 84px); background: #FFFBFC; color: var(--ink); border: 1px solid rgba(62,143,208,.25); border-radius: 14px; padding: 10px 30px 10px 12px; font-size: 13px; line-height: 1.45; box-shadow: 0 10px 28px rgba(31,27,75,.25); }
+#mascot-btn { position: relative; pointer-events: auto; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 50%; overflow: hidden; cursor: pointer; background: #8ED4F7; box-shadow: 0 6px 18px rgba(31,27,75,.25); }
+#mascot-canvas { width: 40px; height: 40px; display: block; border-radius: 50%; pointer-events: none; }
+#mascot-canvas[hidden] { display: none; }
+#mascot-fallback { position: absolute; inset: 0; background: #8ED4F7; border-radius: 50%; }
+#mascot-fallback[hidden] { display: none; }
+.mf-eye { position: absolute; top: 13px; width: 6px; height: 6px; background: #1a1a1a; border-radius: 50%; }
+.mf-eye-l { left: 11px; }
+.mf-eye-r { right: 11px; }
+.mf-smile { position: absolute; left: 13px; top: 21px; width: 14px; height: 7px; border-bottom: 2px solid #3A2E33; border-radius: 0 0 14px 14px; }
+#mascot-bubble { pointer-events: auto; position: absolute; right: 48px; bottom: 2px; width: 230px; max-width: calc(100vw - 76px); background: #FFFBFC; color: var(--ink); border: 1px solid rgba(62,143,208,.25); border-radius: 14px; padding: 10px 30px 10px 12px; font-size: 13px; line-height: 1.45; box-shadow: 0 10px 28px rgba(31,27,75,.25); }
 #mascot-bubble[hidden] { display: none; }
 #mascot-close { position: absolute; top: 2px; right: 4px; width: 22px; height: 22px; padding: 0; border: 0; background: transparent; color: var(--ink); font-size: 13px; cursor: pointer; }
