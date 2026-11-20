@@ -121,7 +121,8 @@ with TestClient(app) as c:
     for d in by_id.values():
         assert set(d.keys()) == {"telegram_id", "first_name",
                                  "username", "blood_group",
-                                 "country", "photo_file_id"}, d.keys()
+                                 "country", "photo_file_id",
+                                 "is_verified"}, d.keys()
         assert "phone" not in json.dumps(d).lower()
     print("donors rows OK (photo passes through, null stays null, exact keys)")
 
@@ -147,7 +148,7 @@ assert "museum" not in JS.lower() and "museum" not in HTML.lower()
 print("neighbours OK (Blood flows, distance, Nearby, feed photos, no museum)")
 
 # 7. Version.
-assert HTML.count("?v=162") == 10, HTML.count("?v=162")
+assert HTML.count("?v=163") == 10, HTML.count("?v=163")
 assert "?v=15" + "3" not in HTML
-assert 'menu_url.rstrip("/") + "/?v=162"' in BOT
+assert 'menu_url.rstrip("/") + "/?v=163"' in BOT
 print("PHASE 154 OK")

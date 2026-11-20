@@ -286,9 +286,9 @@ with TestClient(app) as c:
     print("backup restore round-trip: security rows back identical OK")
 
     # ------------------------------------------------------------- client --
-    assert HTML.count("?v=162") == 10, HTML.count("?v=162")
+    assert HTML.count("?v=163") == 10, HTML.count("?v=163")
     assert "?v=127" not in HTML
-    assert "app.js?v=162" in HTML and "style.css?v=162" in HTML
+    assert "app.js?v=163" in HTML and "style.css?v=163" in HTML
     for marker in ("loadSecurityLog", "renderSecLog", "secKind",
                    "secEntries", "/admin/security-log"):
         assert marker in JS, marker
@@ -302,6 +302,6 @@ with TestClient(app) as c:
                    "loadPayoutBox", "loadPayoutList", "loadPayouts",
                    "decidePayout", "markPayoutPaid"):
         assert marker in JS, marker
-    print("client: ?v=162 + security markers + 123-127 markers OK")
+    print("client: ?v=163 + security markers + 123-127 markers OK")
 
 print("ALL PHASE-128 CHECKS PASSED")

@@ -20,7 +20,7 @@ text is accepted while a genuinely banned word still rejects
 (the GEMINI media screening is image-only and never touches
 this text flow); /auth + /users/{id} expose blood_group only
 when opted in; backup 43 tables; routes 158 (6 new blood paths);
-?v=162 x9, no old-version literals.
+?v=163 x9, no old-version literals.
 """
 import hashlib, hmac, json, os, re, time, urllib.parse
 
@@ -84,9 +84,9 @@ def count_type(c, h, ntype):
 
 
 # 1. Client markers: Blood page + sidebar + Settings + badge + toggle.
-assert HTML.count("?v=162") == 10, HTML.count("?v=162")
+assert HTML.count("?v=163") == 10, HTML.count("?v=163")
 assert "?v=15" + "0" not in HTML
-assert 'menu_url.rstrip("/") + "/?v=162"' in BOT
+assert 'menu_url.rstrip("/") + "/?v=163"' in BOT
 assert 'data-go="blood"' in HTML
 assert 'id="view-blood"' in HTML
 for cid in ("blood-tab-donors", "blood-tab-requests",
@@ -111,7 +111,7 @@ assert "Phase 151: Blood donors" in CSS
 for rule in (".blood-tabs", ".blood-group-badge", ".blood-badge",
              ".blood-form", ".blood-card"):
     assert rule in CSS, rule
-print("client markers OK (?v=162 x9, Blood page, Settings, badge, toggle)")
+print("client markers OK (?v=163 x9, Blood page, Settings, badge, toggle)")
 
 # 2. Server markers: model, migration, backup, notify map.
 assert "class BloodRequest(Base):" in MODELS
@@ -168,7 +168,8 @@ with TestClient(app) as c:
     for d in donors:
         assert set(d.keys()) == {"telegram_id", "first_name",
                                  "username", "blood_group",
-                                 "country", "photo_file_id"}, d.keys()
+                                 "country", "photo_file_id",
+                                 "is_verified"}, d.keys()
         assert "phone" not in json.dumps(d).lower()
     r = c.get("/blood/donors?group=O%2B", headers=BOB)
     assert {d["telegram_id"] for d in r.json()["donors"]} == {222, 555}, r.json()

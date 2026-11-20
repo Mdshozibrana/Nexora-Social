@@ -2967,13 +2967,17 @@ def _blood_donor_out(u, distance_km=None):
     is included ONLY when both viewer and donor share location
     (Phase 152); it is a rounded distance, never coordinates.
     Phase 154: photo_file_id lets the donor card render the real
-    photo (avatarEl falls back to initials when it is None)."""
+    photo (avatarEl falls back to initials when it is None).
+    Phase 163: is_verified (same bool(u.is_verified) every
+    other endpoint returns) lets the donor card show the
+    blue tick."""
     row = {"telegram_id": u.telegram_id,
            "first_name": u.first_name,
            "username": u.username,
            "blood_group": u.blood_group,
            "country": u.country,
-           "photo_file_id": u.photo_file_id}
+           "photo_file_id": u.photo_file_id,
+           "is_verified": bool(u.is_verified)}
     if distance_km is not None:
         row["distance_km"] = distance_km
     return row

@@ -16,7 +16,7 @@ Members browse, admin detail, Nearby list, story author +
 viewers); the old text-" ✓" ticks are gone (blue badge
 everywhere); 360px geometry for the 6 main sites with the
 owner's long name; Trending reuses postCard; neighbours; backup
-44 tables; routes 163; ?v=162 x10, no old-version literals.
+44 tables; routes 163; ?v=163 x10, no old-version literals.
 """
 import hashlib, hmac, json, os, re, subprocess, time, urllib.parse
 
@@ -185,7 +185,7 @@ assert 'ct.classList.add("vname")' in JS, "DM chat header"
 assert 'sa.classList.add("vname")' in JS, "story author"
 assert '<b class="vname">' in JS, "Nearby list"
 assert JS.count("vname-text") >= 17, JS.count("vname-text")
-assert JS.count("verifiedBadge()") == 17, "1 def + 16 call sites"
+assert JS.count("verifiedBadge()") == 18, "1 def + 17 call sites"
 print("all sites OK (shared pair at every name+tick render)")
 
 # 5. The old text-" ✓" ticks are gone at every name site — the
@@ -272,7 +272,7 @@ print("fit hooks OK (every render re-fits)")
 # was silently skipped.
 assert "verified" not in SKILL, "skill cards show no tick"
 assert "skill-name" in JS and "vname-text" not in SKILL
-print("audit OK (skill cards carry no tick; 16 badge sites + Nearby "
+print("audit OK (skill cards carry no tick; 17 badge sites + Nearby "
       "HTML tick all converted; nothing skipped)")
 
 # 10. Neighbours intact (Phase 161 removed the Archery remote).
@@ -298,12 +298,12 @@ assert len(paths) == 163, len(paths)
 print("routes: 163 OK (no new endpoints)")
 
 # 12. Version.
-assert HTML.count("?v=162") == 10, HTML.count("?v=162")
+assert HTML.count("?v=163") == 10, HTML.count("?v=163")
 assert "?v=15" + "9" not in HTML
-assert "app.js?v=162" in HTML and "games.js?v=162" in HTML
-assert 'menu_url.rstrip("/") + "/?v=162"' in BOT
+assert "app.js?v=163" in HTML and "games.js?v=163" in HTML
+assert 'menu_url.rstrip("/") + "/?v=163"' in BOT
 assert "Phase 160" in CSS and "Phase 160" in JS and "Phase 160" in HTML
-print("version OK (?v=162 x10, no old-version literals)")
+print("version OK (?v=163 x10, no old-version literals)")
 
 # 13. Phase 162: the tick HUGS the name (owner: "blu tick naam
 # theke dure keno?"). Phase 160's .vname-text had flex-grow 1,
@@ -358,8 +358,8 @@ assert size == 12, size
 assert tick_left == 139, tick_left
 # Resize re-fit: a wider line re-grows the name to its base size.
 assert fit_size(em_width(LONG), 16, 300) == 16, "re-grow on resize"
-# Version: shell on ?v=162, no ?v=162 literal left anywhere.
-assert HTML.count("?v=162") == 10, HTML.count("?v=162")
+# Version: shell on ?v=163, no ?v=163 literal left anywhere.
+assert HTML.count("?v=163") == 10, HTML.count("?v=163")
 assert "?v=16" + "1" not in HTML
 print("Phase 162 hug OK (tick 5px after the name at all 6 sites)")
 

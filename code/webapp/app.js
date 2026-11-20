@@ -1819,9 +1819,17 @@ async function loadBloodDonors() {
       const av = avatarEl(u.first_name, u.telegram_id, false, u.photo_file_id);
       const info = document.createElement("div");
       info.className = "blood-info";
+      // Phase 163 (owner): verified donors show the blue tick
+      // on the card, on the shared .vname line — long names
+      // shrink (floor 12px) and the tick hugs the name, exactly
+      // as everywhere else (Phases 160/162).
       const nm = document.createElement("div");
-      nm.className = "blood-name";
-      nm.textContent = u.first_name;
+      nm.className = "blood-name vname";
+      const nmText = document.createElement("span");
+      nmText.className = "vname-text";
+      nmText.textContent = u.first_name;
+      nm.appendChild(nmText);
+      if (u.is_verified) nm.appendChild(verifiedBadge());
       info.append(nm);
       top.append(av, info, bloodGroupBadge(u.blood_group));
       const bottom = document.createElement("div");
@@ -1839,6 +1847,7 @@ async function loadBloodDonors() {
       card.append(top, bottom);
       box.appendChild(card);
     });
+    fitVerifiedNamesSoon(box);
     if (!(d.donors || []).length) {
       empty.hidden = false;
       empty.textContent = bloodGroupFilter

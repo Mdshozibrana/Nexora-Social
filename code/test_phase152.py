@@ -86,7 +86,9 @@ PC = {"lat": 23.82830, "lon": 90.41250}   # ~2.0 km north of PA
 seg = JS[JS.index("async function loadBloodDonors()"):]
 seg = seg[:seg.index("async function loadBloodRequests()")]
 assert "u.username" not in seg, "username still built in donor cards"
-assert 'nm.textContent = u.first_name;' in seg
+# Phase 163: the name moved into the shared .vname line —
+# still first_name only, now in a .vname-text span + tick.
+assert 'nmText.textContent = u.first_name;' in seg
 assert 'className = "blood-top"' in seg
 assert 'className = "blood-bottom"' in seg
 assert "bloodDistance(u.distance_km)" in seg
@@ -179,7 +181,7 @@ with TestClient(app) as c:
         assert "distance_km" not in d, d
         assert set(d.keys()) == {"telegram_id", "first_name",
                                  "username", "blood_group", "country",
-                                 "photo_file_id"}, d
+                                 "photo_file_id", "is_verified"}, d
     print("distance omitted when the viewer does not share: OK")
 
     # Donor stops sharing -> only that donor loses distance.
@@ -213,7 +215,7 @@ assert "distance_km" in MAIN and "me_shares" in MAIN
 print("Museum removal + neighbours OK")
 
 # 6. Version.
-assert HTML.count("?v=162") == 10, HTML.count("?v=162")
+assert HTML.count("?v=163") == 10, HTML.count("?v=163")
 assert "?v=15" + "1" not in HTML
-assert 'menu_url.rstrip("/") + "/?v=162"' in BOT
+assert 'menu_url.rstrip("/") + "/?v=163"' in BOT
 print("PHASE 152 OK")

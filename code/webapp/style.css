@@ -2858,6 +2858,11 @@ html[data-theme] .suggest-follow.on { background: var(--t-chip, #F3DCE7);
 .blood-card { display: flex; align-items: center; gap: 10px; padding: 10px; }
 .blood-info { flex: 1; min-width: 0; }
 .blood-name { font-weight: 700; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Phase 163: the donor-card name is a shared .vname line — it
+   takes the full .blood-info width so long names have somewhere
+   to shrink into; the text itself stays shrink-only (Phase 162)
+   so the tick hugs the name. */
+.blood-name.vname { display: flex; width: 100%; }
 .blood-group-badge { flex: none; padding: 4px 10px; border-radius: 999px; background: #FCE8E8; color: #B71C1C; font-weight: 800; font-size: 13px; white-space: nowrap; }
 .blood-msg, .blood-act { flex: none; padding: 7px 12px; font-size: 13px; }
 .blood-form { display: flex; flex-direction: column; gap: 8px; padding: 10px; margin: 10px 0; }
