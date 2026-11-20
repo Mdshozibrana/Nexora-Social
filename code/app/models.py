@@ -646,3 +646,19 @@ class BloodRequest(Base):
     # open | fulfilled | cancelled
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     fulfilled_at = Column(DateTime, nullable=True)
+
+
+class SkillEntry(Base):
+    """Phase 158: skill swap — a member lists what they can teach
+    and/or want to learn. Free text, no money, no scheduling in
+    the app; the swap is arranged in a DM. Matching is computed,
+    not stored: teach X matches learn X. There is no ratings or
+    payments table in v1."""
+    __tablename__ = "skill_entries"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("users.telegram_id"),
+                     index=True, nullable=False)
+    skill = Column(String(80), nullable=False, index=True)
+    kind = Column(String(8), nullable=False)  # "teach" | "learn"
+    note = Column(String(200), default="")
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)

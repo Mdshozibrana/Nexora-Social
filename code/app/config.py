@@ -119,6 +119,8 @@ RATE_LIMITS = {
     "hashtag_follow": (120, 3600),
     # Phase 151: blood donors + requests.
     "blood": (120, 3600),
+    # Phase 158: skill swap — add/remove/connect.
+    "skills": (120, 3600),
     "payout_admin": (120, 3600),
 }
 

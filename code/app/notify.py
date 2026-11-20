@@ -17,7 +17,7 @@ MAX_PER_HOUR = 20
 # behaviour is preserved for everyone until they opt out.
 # Phase 151: blood requests + donor answers (8th toggle).
 NOTIF_PREF_KEYS = ("likes", "comments", "follows", "follow_requests",
-                   "tips", "messages", "system", "blood")
+                   "tips", "messages", "system", "blood", "skills")
 # Which pref key gates each notification type the app actually
 # creates. "mention" is deliberately absent: no code path ever
 # creates a mention notification, so there is nothing to toggle.
@@ -32,6 +32,8 @@ NOTIF_TYPE_MAP = {
     "broadcast": "system",
     # Phase 151: blood-request alerts + donor answers.
     "blood_request": "blood", "blood_respond": "blood",
+    # Phase 158: skill-swap connect (9th toggle).
+    "skill_connect": "skills",
 }
 
 

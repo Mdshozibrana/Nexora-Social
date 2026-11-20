@@ -98,10 +98,10 @@ THEMES_N = len(re.findall(r'\{ id: "', m.group(1)))
 assert THEMES_N == 33, THEMES_N
 GAMES_N = len(re.findall(r'\n  id: "', GAMES))
 assert GAMES_N == 11, GAMES_N
-assert len(NOTIF_PREF_KEYS) == 8, NOTIF_PREF_KEYS
+assert len(NOTIF_PREF_KEYS) == 9, NOTIF_PREF_KEYS
 print("live numbers OK (check-in 20, streak 30, Star 5000, tick 1000/50,"
       " 6 reactions, 24 h stories, top 20, units 1-10, 500 m, 5m-90d,"
-      " 33 themes, 11 games, 8 notif switches)")
+      " 33 themes, 11 games, 9 notif switches)")
 
 seg = JS[JS.index("// ---------- Phase 156:"):]
 
@@ -118,7 +118,7 @@ assert not os.path.exists("webapp/assets/mascot-head.webp")
 wrap = HTML[HTML.index('id="mascot-wrap"'):]
 wrap = wrap[:wrap.index("</div>\n</div>") + len("</div>\n</div>")]
 assert "<img" not in wrap
-assert "vendor/three/three.min.js?v=157" in HTML
+assert "vendor/three/three.min.js?v=158" in HTML
 three = open("webapp/vendor/three/three.min.js").read()
 assert len(three) > 500 * 1024, len(three)
 assert "WebGLRenderer" in three and "REVISION" in three
@@ -200,7 +200,7 @@ nums = set()
 for tip in all_tips:
     nums.update(int(n.replace(",", ""))
                 for n in re.findall(r"\d[\d,]*", tip))
-assert nums <= {1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 20, 24, 30, 33, 50,
+assert nums <= {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 20, 24, 30, 33, 50,
                 90, 500, 1000, 2048, 5000}, nums
 print(f"tips OK ({len(by_view)} views x 2-4 + 7 general, numbers match "
       f"live code: {sorted(nums)})")
@@ -280,9 +280,9 @@ with TestClient(app) as c:
     # backup still 43 tables.
     r = c.get("/admin/backup", headers=ALICE)
     assert r.status_code == 200, r.text
-    assert len(r.json()["tables"]) == 43, len(r.json()["tables"])
+    assert len(r.json()["tables"]) == 44, len(r.json()["tables"])
     paths = {rt.path for rt in app.routes}
-    assert len(paths) == 158, len(paths)
+    assert len(paths) == 163, len(paths)
     assert not any("mascot" in p for p in paths), paths
     print("routes 158 + backup 43 tables OK (no new endpoints, no schema change)")
 
@@ -297,7 +297,7 @@ assert "museum" not in JS.lower() and "museum" not in HTML.lower()
 print("neighbours OK (Blood, Nearby, composer, glassbar, feed photos)")
 
 # 10. Version.
-assert HTML.count("?v=157") == 10, HTML.count("?v=157")
+assert HTML.count("?v=158") == 10, HTML.count("?v=158")
 assert "?v=15" + "5" not in HTML
-assert 'menu_url.rstrip("/") + "/?v=157"' in BOT
+assert 'menu_url.rstrip("/") + "/?v=158"' in BOT
 print("PHASE 156 OK")

@@ -201,7 +201,7 @@ assert "museum" not in JS.lower()
 assert "museum" not in CSS.lower()
 assert 'data-go="museum"' not in HTML
 assert '<section id="view-museum"' not in HTML
-assert '"nearby", "qr", "trending", "settings", "blood"]' in JS
+assert '"nearby", "qr", "trending", "settings", "blood", "skills"]' in JS
 assert "openMuseum" not in JS and "loadMuseum" not in JS
 assert "MUSEUM_THEMES" not in JS and "museumZoom" not in JS
 # Neighbours intact: Blood page, Settings opt-in, Design, Nearby, DMs.
@@ -213,7 +213,7 @@ assert "distance_km" in MAIN and "me_shares" in MAIN
 print("Museum removal + neighbours OK")
 
 # 6. Version.
-assert HTML.count("?v=157") == 10, HTML.count("?v=157")
+assert HTML.count("?v=158") == 10, HTML.count("?v=158")
 assert "?v=15" + "1" not in HTML
-assert 'menu_url.rstrip("/") + "/?v=157"' in BOT
+assert 'menu_url.rstrip("/") + "/?v=158"' in BOT
 print("PHASE 152 OK")

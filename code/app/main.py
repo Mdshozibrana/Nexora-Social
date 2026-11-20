@@ -2627,6 +2627,13 @@ def public_profile(telegram_id: int, user: models.User = Depends(current_user),
         "blood_group": (target.blood_group
                       if bool(getattr(target, "blood_donor", False))
                       else None),
+        # Phase 158: skills the member teaches / wants to
+        # learn — shown only when the viewer may see this
+        # profile (the Phase 136 rule); strangers of a
+        # private account get empty lists.
+        "skills": _skills_for_user(db, target.telegram_id)
+        if _can_see_posts(db, user.telegram_id, telegram_id)
+        else {"teach": [], "learn": []},
         "has_pending_request": db.query(models.FollowRequest).filter_by(
             requester_id=user.telegram_id, target_id=telegram_id,
             status="pending").first() is not None,
@@ -3217,6 +3224,258 @@ def cancel_blood_request(req_id: int,
     req.status = "cancelled"
     db.commit()
     return _blood_request_out(db, req, user.telegram_id)
+
+# ---------------------------------------------------------------------------
+# Phase 158: Skill Swap (দক্ষতা বিনিময়) — owner pick #7 from the Nov 20
+# global-problems proposal. Teach what you know, learn what you don't —
+# language, coding, cooking, music. No money, no scheduling inside the
+# app, no ratings in v1: the swap itself is arranged in a DM. A member
+# lists skills (teach and/or learn, free text); matching is computed,
+# not stored — teach X matches learn X. A "connect" notifies the other
+# member (new 9th notification toggle "skills") and the client opens
+# a DM, mirroring Blood's "আমি দেবো" pattern. Privacy reuses the
+# Phase 136 rule via _can_see_posts + block-pair exclusion, same as
+# Blood. The Phase 142 banned-word check runs on skill names/notes.
+# ---------------------------------------------------------------------------
+
+SKILL_KINDS = ("teach", "learn")
+SKILL_MAX_LEN = 80
+SKILL_NOTE_MAX_LEN = 200
+SKILL_MAX_PER_USER = 20
+
+
+def _norm_skill(name):
+    return " ".join((name or "").split())
+
+
+def _skill_entry_out(e):
+    return {"id": e.id,
+            "skill": e.skill,
+            "kind": e.kind,
+            "note": e.note or "",
+            "created_at": e.created_at.isoformat() if e.created_at else None}
+
+
+def _skills_for_user(db, user_id):
+    """{"teach": [names], "learn": [names]} — alphabetical, for
+    profile display. An empty list means the member lists nothing."""
+    rows = db.query(models.SkillEntry).filter_by(user_id=user_id).all()
+    out = {"teach": [], "learn": []}
+    for e in rows:
+        if e.kind in out:
+            out[e.kind].append(e.skill)
+    out["teach"].sort(key=str.lower)
+    out["learn"].sort(key=str.lower)
+    return out
+
+
+def _skill_members(db, viewer_id, q=None, kind=None, skill=None):
+    """Members with listed skills the viewer may see, newest
+    skill first: private members only to their followers
+    (Phase 136), never anyone in a block pair (feed rule). q is a
+    case-insensitive substring on the skill name; skill is an
+    exact (case-insensitive) skill name; kind restricts to teach
+    or learn entries. Returns [(user, [entries])]."""
+    hidden = _block_related_ids(db, viewer_id)
+    rows = db.query(models.SkillEntry).order_by(
+        models.SkillEntry.id.desc()).all()
+    qlow = (q or "").strip().lower() or None
+    slow = (skill or "").strip().lower() or None
+    by_user = {}
+    for e in rows:
+        if kind is not None and e.kind != kind:
+            continue
+        if qlow is not None and qlow not in e.skill.lower():
+            continue
+        if slow is not None and e.skill.lower() != slow:
+            continue
+        by_user.setdefault(e.user_id, []).append(e)
+    out = []
+    for user_id, entries in by_user.items():
+        if user_id in hidden:
+            continue
+        if not _can_see_posts(db, viewer_id, user_id):
+            continue
+        u = db.get(models.User, user_id)
+        if u is None:
+            continue
+        out.append((u, entries))
+    out.sort(key=lambda t: max(e.id for e in t[1]), reverse=True)
+    return out
+
+
+def _skill_member_out(u, entries):
+    return {"telegram_id": u.telegram_id,
+            "first_name": u.first_name,
+            "username": u.username,
+            "photo_file_id": u.photo_file_id,
+            "country": u.country,
+            "teach": [e.skill for e in entries if e.kind == "teach"],
+            "learn": [e.skill for e in entries if e.kind == "learn"]}
+
+
+def _skill_match(db, viewer_id, user_id):
+    """Overlap between two members' lists: skills the viewer
+    wants to learn that the other teaches, and skills the viewer
+    teaches that the other wants to learn. Case-insensitive."""
+    mine = _skills_for_user(db, viewer_id)
+    theirs = _skills_for_user(db, user_id)
+    my_learn = {s.lower(): s for s in mine["learn"]}
+    their_teach = {s.lower(): s for s in theirs["teach"]}
+    teach_for_me = sorted({their_teach[k] for k in my_learn
+                           if k in their_teach}, key=str.lower)
+    my_teach = {s.lower(): s for s in mine["teach"]}
+    their_learn = {s.lower(): s for s in theirs["learn"]}
+    learn_from_me = sorted({their_learn[k] for k in my_teach
+                            if k in their_learn}, key=str.lower)
+    return {"teach_for_me": teach_for_me,
+            "learn_from_me": learn_from_me}
+
+
+class SkillIn(BaseModel):
+    skill: str = ""
+    kind: str = ""
+    note: str = ""
+
+
+@app.post("/me/skills")
+def add_my_skill(body: SkillIn,
+                 user: models.User = Depends(current_user),
+                 db: Session = Depends(get_db)):
+    """List one skill you teach or want to learn. Free text, no
+    money, no scheduling — the swap is arranged in a DM."""
+    _enforce_rate("skills", f"u{user.telegram_id}")
+    skill = _norm_skill(body.skill)
+    kind = (body.kind or "").strip().lower()
+    note = (body.note or "").strip()
+    if kind not in SKILL_KINDS:
+        raise HTTPException(400, "kind must be teach or learn")
+    if not skill or len(skill) > SKILL_MAX_LEN:
+        raise HTTPException(400, "Skill name must be 1-80 characters")
+    if len(note) > SKILL_NOTE_MAX_LEN:
+        raise HTTPException(400, "Note must be at most 200 characters")
+    bad = banned_word_in(db, skill + " " + note)
+    if bad:
+        raise HTTPException(400, BANNED_WORD_MESSAGE)
+    mine = db.query(models.SkillEntry).filter_by(
+        user_id=user.telegram_id).all()
+    if len(mine) >= SKILL_MAX_PER_USER:
+        raise HTTPException(400, "You can list up to 20 skills")
+    for e in mine:
+        if e.kind == kind and e.skill.lower() == skill.lower():
+            raise HTTPException(400, "You already listed this skill")
+    e = models.SkillEntry(user_id=user.telegram_id, skill=skill,
+                          kind=kind, note=note)
+    db.add(e)
+    db.commit()
+    db.refresh(e)
+    return _skill_entry_out(e)
+
+
+@app.get("/me/skills")
+def my_skills(user: models.User = Depends(current_user),
+              db: Session = Depends(get_db)):
+    rows = db.query(models.SkillEntry).filter_by(
+        user_id=user.telegram_id).order_by(
+        models.SkillEntry.id.desc()).all()
+    return {"skills": [_skill_entry_out(e) for e in rows]}
+
+
+@app.delete("/me/skills/{entry_id}")
+def remove_my_skill(entry_id: int,
+                    user: models.User = Depends(current_user),
+                    db: Session = Depends(get_db)):
+    _enforce_rate("skills", f"u{user.telegram_id}")
+    e = db.get(models.SkillEntry, entry_id)
+    if e is None:
+        raise HTTPException(404, "Skill not found")
+    if e.user_id != user.telegram_id:
+        raise HTTPException(403, "Only the owner can remove this skill")
+    db.delete(e)
+    db.commit()
+    return {"ok": True}
+
+
+@app.get("/skills/directory")
+def list_skill_directory(q: str = "", kind: str = "", skill: str = "",
+                        user: models.User = Depends(current_user),
+                        db: Session = Depends(get_db)):
+    """Members with listed skills — search by skill name (q),
+    filter teach/learn, or match one exact skill. Removing all
+    of your skills removes you from this directory."""
+    k = (kind or "").strip().lower() or None
+    if k is not None and k not in SKILL_KINDS:
+        raise HTTPException(400, "kind must be teach or learn")
+    members = _skill_members(db, user.telegram_id, q=q, kind=k,
+                             skill=skill)
+    return {"members": [_skill_member_out(u, entries)
+                        for u, entries in members]}
+
+
+@app.get("/skills/matches")
+def my_skill_matches(user: models.User = Depends(current_user),
+                     db: Session = Depends(get_db)):
+    """Computed matches: members who teach what I want to learn,
+    or want to learn what I teach. Nothing is stored — the
+    overlap is computed from the two lists on every call."""
+    mine = _skills_for_user(db, user.telegram_id)
+    if not mine["teach"] and not mine["learn"]:
+        return {"matches": []}
+    members = _skill_members(db, user.telegram_id)
+    out = []
+    for u, entries in members:
+        if u.telegram_id == user.telegram_id:
+            continue
+        match = _skill_match(db, user.telegram_id, u.telegram_id)
+        if not match["teach_for_me"] and not match["learn_from_me"]:
+            continue
+        row = _skill_member_out(u, entries)
+        row["match"] = match
+        out.append(row)
+    return {"matches": out}
+
+
+@app.post("/skills/{user_id}/connect")
+async def connect_skill_member(user_id: int,
+                              user: models.User = Depends(current_user),
+                              db: Session = Depends(get_db)):
+    """Connect — the other member is notified and the client
+    opens a DM with them. No connect-requests table: the
+    notification + the DM IS the connection (Blood's respond
+    pattern). The swap itself (time, place, how) is arranged
+    in that DM, never in the app."""
+    _enforce_rate("skills", f"u{user.telegram_id}")
+    if user_id == user.telegram_id:
+        raise HTTPException(400, "You cannot connect with yourself")
+    target = db.get(models.User, user_id)
+    if target is None:
+        raise HTTPException(404, "User not found")
+    if _blocked_by(db, user_id, user.telegram_id) or _blocked_by(
+            db, user.telegram_id, user_id):
+        raise HTTPException(403, "This member is not available")
+    if not _can_see_posts(db, user.telegram_id, user_id):
+        raise HTTPException(403, "This member is not available")
+    if not db.query(models.SkillEntry).filter_by(
+            user_id=user_id).first():
+        raise HTTPException(400, "This member has no skills listed")
+    match = _skill_match(db, user.telegram_id, user_id)
+    parts = []
+    if match["teach_for_me"]:
+        parts.append("they teach " + ", ".join(match["teach_for_me"])
+                     + " — you want to learn it")
+    if match["learn_from_me"]:
+        parts.append("they want to learn " + ", ".join(match["learn_from_me"])
+                     + " — you teach it")
+    detail = (" (" + "; ".join(parts) + ")") if parts else ""
+    await notify.notify_user(
+        db, user_id, "skill_connect",
+        f"🤝 {user.first_name} wants to swap skills with you{detail}. "
+        f"Open your chat with them to arrange it.")
+    notify.record(db, user_id, "skill_connect",
+                  actor_id=user.telegram_id,
+                  text="wants to swap skills with you" + detail)
+    return {"ok": True, "user_id": user_id, "match": match}
+
 
 # Blocking (second-pass audit R5, security §5/§6): a member's
 # self-help control against harassment. Blocking hides both sides'
@@ -6520,6 +6779,8 @@ _BACKUP_TABLES = [
     ("banned_words", models.BannedWord),
     # Phase 151: blood requests.
     ("blood_requests", models.BloodRequest),
+    # Phase 158: skill swap entries.
+    ("skill_entries", models.SkillEntry),
 ]
 _BACKUP_MODELS = {name: m for name, m in _BACKUP_TABLES}
 _BACKUP_MAX_BYTES = 50 * 1024 * 1024

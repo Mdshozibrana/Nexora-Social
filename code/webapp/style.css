@@ -2887,3 +2887,27 @@ html[data-theme] .suggest-follow.on { background: var(--t-chip, #F3DCE7);
 #mascot-bubble { pointer-events: auto; position: absolute; right: 48px; bottom: 2px; width: 230px; max-width: calc(100vw - 76px); background: #FFFBFC; color: var(--ink); border: 1px solid rgba(62,143,208,.25); border-radius: 14px; padding: 10px 30px 10px 12px; font-size: 13px; line-height: 1.45; box-shadow: 0 10px 28px rgba(31,27,75,.25); }
 #mascot-bubble[hidden] { display: none; }
 #mascot-close { position: absolute; top: 2px; right: 4px; width: 22px; height: 22px; padding: 0; border: 0; background: transparent; color: var(--ink); font-size: 13px; cursor: pointer; }
+
+/* Phase 158: Skill Swap — directory + matches + my-skills rows.
+   Teach chips read green, learn chips read sky; the directory card
+   mirrors the Blood donor card (avatar + name + action). */
+.skill-tabs { display: flex; gap: 8px; margin: 10px 0; }
+.skill-tabs button { flex: 1; padding: 9px; border-radius: 999px; font-size: 14px; font-weight: 700; background: #FFFBFC; color: var(--ink); box-shadow: var(--clay-shadow-sm); }
+.skill-tabs button.active { background: linear-gradient(145deg, #8ED4F7, #3E8FD0); color: #fff; }
+.skill-search-row { display: flex; gap: 8px; margin: 10px 0; }
+.skill-search-row input { flex: 1; min-width: 0; }
+.skill-filters { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.skill-filters .chip.active { background: #2E7D32; color: #fff; }
+.skill-card { padding: 10px; margin-bottom: 10px; }
+.skill-top { display: flex; align-items: center; gap: 10px; }
+.skill-info { flex: 1; min-width: 0; }
+.skill-name { font-weight: 700; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.skill-lists { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.skill-chip { padding: 3px 9px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.skill-chip-teach { background: #E8F5E9; color: #2E7D32; }
+.skill-chip-learn { background: #E3F2FD; color: #1565C0; }
+.skill-connect { flex: none; padding: 7px 12px; font-size: 13px; }
+.skill-match-note { margin-top: 8px; font-size: 13px; }
+.skill-block { margin-top: 8px; }
+.skill-line { font-size: 14px; line-height: 1.5; }
+.settings-skill-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 6px 0; }

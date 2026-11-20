@@ -33,7 +33,7 @@ restores after routeStartParam and the start param wins;
 sidebar + footer open self; private-profile posts stay locked
 for a non-follower after restore (server-side, via the same
 openProfile path); backup still 42 tables (no schema change);
-?v=157 x5, no older shell version.
+?v=158 x5, no older shell version.
 """
 import hashlib, hmac, json, os, re, subprocess, sys, tempfile, time, urllib.parse
 
@@ -117,7 +117,7 @@ with TestClient(app) as c:
     # 3. Backup still 42 tables (no schema change).
     r = c.get("/admin/backup", headers=ALICE)
     assert r.status_code == 200, r.text
-    assert len(r.json()["tables"]) == 43, len(r.json()["tables"])
+    assert len(r.json()["tables"]) == 44, len(r.json()["tables"])
     print("backup: 42 tables OK")
 
 # 4. Client: the helpers exist and are wired exactly as designed.
@@ -223,7 +223,7 @@ print("node harness: remember/restore behaviour OK")
 
 # 8. Client markers + asset version.
 HTML = open("webapp/index.html").read()
-assert HTML.count("?v=157") == 10, HTML.count("?v=157")
+assert HTML.count("?v=158") == 10, HTML.count("?v=158")
 assert "?v=14" + "5" not in HTML
 for m in ("loadSettings", "renderLevelBlock", "openTipSheet",
           "loadProfilePosts", "openProfile", "loadMe",
@@ -232,6 +232,6 @@ for m in ("loadSettings", "renderLevelBlock", "openTipSheet",
           "loadFeed", "showView", "ptr-global", "Pull to refresh",
           "nx_profile", "restoreProfile", "rememberProfile"):
     assert m in JS, m
-print("client markers + ?v=157 OK")
+print("client markers + ?v=158 OK")
 
 print("PHASE-146 TESTS PASSED")

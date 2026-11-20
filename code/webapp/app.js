@@ -230,7 +230,7 @@ function showView(name, viaBack) {
                    games: "nav-games",
                    game: "nav-games", tasks: "nav-tasks",
                    leaderboard: "nav-ranks", profile: "nav-me" };
-  ["feed", "videos", "designs", "search", "tasks", "leaderboard", "profile", "saved", "shared", "games", "game", "admin", "notifications", "messages", "chat", "assistant", "nearby", "qr", "trending", "settings", "blood"].forEach(v => {
+  ["feed", "videos", "designs", "search", "tasks", "leaderboard", "profile", "saved", "shared", "games", "game", "admin", "notifications", "messages", "chat", "assistant", "nearby", "qr", "trending", "settings", "blood", "skills"].forEach(v => {
     $("view-" + v).hidden = v !== name;
   });
   // Phase 21: only tab views move the highlight. Views without a tab
@@ -256,6 +256,7 @@ function showView(name, viaBack) {
   if (name === "designs") loadDesigns(true);
   if (name === "trending") loadTrending();
   if (name === "blood") loadBlood();
+  if (name === "skills") loadSkills();
   if (name === "assistant") openAssistant();
   if (name !== "assistant") nexaStop();
   if (name === "nearby") openNearby();
@@ -1854,6 +1855,182 @@ async function loadBloodRequests() {
       empty.textContent = "No open requests right now.";
     }
   } catch (e) { box.innerHTML = ""; empty.hidden = false; empty.textContent = "Could not load requests."; }
+}
+
+// ---------- Phase 158: Skill Swap (দক্ষতা বিনিময়) ----------
+// Directory (search + teach/learn filter) and computed matches.
+// Connect notifies the member and opens a DM — the swap itself is
+// arranged there, never in the app. No points, no payments.
+let skillTab = "directory";
+let skillKindFilter = "";
+let skillQuery = "";
+
+async function loadSkills() {
+  const dTab = $("skill-tab-directory");
+  const mTab = $("skill-tab-matches");
+  if (!dTab) return;
+  dTab.onclick = () => { skillTab = "directory"; loadSkills(); };
+  mTab.onclick = () => { skillTab = "matches"; loadSkills(); };
+  const search = $("skill-search");
+  search.onkeydown = (e) => {
+    if (e.key === "Enter") {
+      skillQuery = search.value.trim();
+      loadSkillsDirectory();
+    }
+  };
+  $("skill-search-btn").onclick = () => {
+    skillQuery = search.value.trim();
+    loadSkillsDirectory();
+  };
+  const filters = $("skill-kind-filters");
+  filters.innerHTML = "";
+  const mkChip = (label, val) => {
+    const c = document.createElement("button");
+    c.className = "chip" + (skillKindFilter === val ? " active" : "");
+    c.textContent = label;
+    c.onclick = () => { skillKindFilter = val; loadSkillsDirectory(); };
+    filters.appendChild(c);
+  };
+  mkChip("All", "");
+  mkChip("🎓 Teach", "teach");
+  mkChip("📚 Learn", "learn");
+  dTab.classList.toggle("active", skillTab === "directory");
+  mTab.classList.toggle("active", skillTab === "matches");
+  $("skill-directory-pane").hidden = skillTab !== "directory";
+  $("skill-match-pane").hidden = skillTab !== "matches";
+  if (skillTab === "directory") loadSkillsDirectory();
+  else loadSkillsMatches();
+}
+
+function skillChip(text, kind) {
+  const c = document.createElement("span");
+  c.className = "skill-chip skill-chip-" + kind;
+  c.textContent = (kind === "teach" ? "🎓 " : "📚 ") + text;
+  return c;
+}
+
+function skillMemberCard(m) {
+  const card = document.createElement("div");
+  card.className = "card skill-card";
+  const top = document.createElement("div");
+  top.className = "skill-top";
+  const av = avatarEl(m.first_name, m.telegram_id, false, m.photo_file_id);
+  av.onclick = () => openProfile(m.telegram_id);
+  const info = document.createElement("div");
+  info.className = "skill-info";
+  const nm = document.createElement("div");
+  nm.className = "skill-name";
+  nm.textContent = m.first_name;
+  info.append(nm);
+  const lists = document.createElement("div");
+  lists.className = "skill-lists";
+  (m.teach || []).forEach(s => lists.appendChild(skillChip(s, "teach")));
+  (m.learn || []).forEach(s => lists.appendChild(skillChip(s, "learn")));
+  info.append(lists);
+  const go = document.createElement("button");
+  go.className = "btn skill-connect";
+  go.textContent = "🤝 Connect";
+  go.onclick = async () => {
+    try {
+      const res = await api("/skills/" + m.telegram_id + "/connect",
+                            { method: "POST" });
+      setStatus("🤝 " + m.first_name +
+        " has been notified — opening your chat to arrange the swap.");
+      openChat(res.user_id);
+    } catch (e) { setStatus("Could not connect."); }
+  };
+  top.append(av, info, go);
+  card.appendChild(top);
+  return card;
+}
+
+async function loadSkillsDirectory() {
+  const box = $("skill-directory-list");
+  const empty = $("skill-empty");
+  if (!box) return;
+  box.innerHTML = "Loading…";
+  empty.hidden = true;
+  try {
+    const params = new URLSearchParams();
+    if (skillQuery) params.set("q", skillQuery);
+    if (skillKindFilter) params.set("kind", skillKindFilter);
+    const qs = params.toString();
+    const d = await api("/skills/directory" + (qs ? "?" + qs : ""));
+    box.innerHTML = "";
+    (d.members || []).forEach(m => box.appendChild(skillMemberCard(m)));
+    if (!(d.members || []).length) {
+      empty.hidden = false;
+      empty.textContent = skillQuery
+        ? "Nobody lists “" + skillQuery +
+          "” yet — add it in Settings → Profile → My skills."
+        : "Nobody lists skills yet — be the first from Settings → Profile → My skills.";
+    }
+  } catch (e) { box.innerHTML = ""; empty.hidden = false; empty.textContent = "Could not load skills."; }
+}
+
+async function loadSkillsMatches() {
+  const box = $("skill-match-list");
+  const empty = $("skill-empty");
+  if (!box) return;
+  box.innerHTML = "Loading…";
+  empty.hidden = true;
+  try {
+    const d = await api("/skills/matches");
+    box.innerHTML = "";
+    (d.matches || []).forEach(m => {
+      const card = skillMemberCard(m);
+      const note = document.createElement("div");
+      note.className = "skill-match-note";
+      const bits = [];
+      if (m.match.teach_for_me.length)
+        bits.push("Teaches what you want to learn: " +
+                  m.match.teach_for_me.join(", "));
+      if (m.match.learn_from_me.length)
+        bits.push("Wants to learn what you teach: " +
+                  m.match.learn_from_me.join(", "));
+      note.textContent = "🤝 " + bits.join(" · ");
+      card.appendChild(note);
+      box.appendChild(card);
+    });
+    if (!(d.matches || []).length) {
+      empty.hidden = false;
+      empty.textContent = "No matches yet — list what you teach and want to learn in Settings → Profile → My skills.";
+    }
+  } catch (e) { box.innerHTML = ""; empty.hidden = false; empty.textContent = "Could not load matches."; }
+}
+
+async function loadMySkills() {
+  const box = $("settings-skill-list");
+  if (!box) return;
+  box.innerHTML = "Loading…";
+  try {
+    const d = await api("/me/skills");
+    box.innerHTML = "";
+    (d.skills || []).forEach(e => {
+      const row = document.createElement("div");
+      row.className = "settings-skill-row";
+      row.appendChild(skillChip(e.skill, e.kind));
+      if (e.note) {
+        const nt = document.createElement("span");
+        nt.className = "muted";
+        nt.textContent = e.note;
+        row.appendChild(nt);
+      }
+      const rm = document.createElement("button");
+      rm.className = "btn";
+      rm.textContent = "Remove";
+      rm.onclick = async () => {
+        try {
+          await api("/me/skills/" + e.id, { method: "DELETE" });
+          loadMySkills();
+        } catch (err) { setStatus("Could not remove the skill."); }
+      };
+      row.appendChild(rm);
+      box.appendChild(row);
+    });
+    if (!(d.skills || []).length)
+      box.textContent = "No skills listed yet.";
+  } catch (e) { box.innerHTML = ""; box.textContent = "Could not load your skills."; }
 }
 
 async function loadSuggestedInto(slot) {
@@ -3764,6 +3941,26 @@ async function openProfile(userId) {
       bb.textContent = "🩸 Blood donor · " + u.blood_group;
       hero.appendChild(bb);
     }
+    // Phase 158: skills the member teaches / wants to learn —
+    // the API sends them only when the viewer may see this
+    // profile (private strangers get empty lists).
+    if (u.skills && (u.skills.teach.length || u.skills.learn.length)) {
+      const sk = document.createElement("div");
+      sk.className = "skill-block";
+      if (u.skills.teach.length) {
+        const t = document.createElement("div");
+        t.className = "skill-line";
+        t.textContent = "🎓 Teaches: " + u.skills.teach.join(", ");
+        sk.appendChild(t);
+      }
+      if (u.skills.learn.length) {
+        const l = document.createElement("div");
+        l.className = "skill-line";
+        l.textContent = "📚 Wants to learn: " + u.skills.learn.join(", ");
+        sk.appendChild(l);
+      }
+      hero.appendChild(sk);
+    }
     // Phase 145 (owner): Stars-received line removed from the
     // profile hero — it already lives in Settings ("My tips").
     // Phase 145 (owner): level + badges removed from the profile
@@ -4703,6 +4900,7 @@ const NOTIF_PREF_META = [
   ["messages", "💬 Direct messages", "Someone sends you a DM"],
   ["system", "🛡️ System", "Payouts, verification decisions, your posts going live, admin announcements"],
   ["blood", "🩸 Blood requests", "A matching blood request needs your group, or a donor answers your request"],
+  ["skills", "🤝 Skill swap", "Someone wants to swap skills with you"],
 ];
 
 async function loadSettings() {
@@ -4811,6 +5009,54 @@ async function loadSettings() {
     bloodHint.className = "hint";
     bloodHint.textContent = "Your blood group is shown only while you opt in as a donor. Contact happens only by DM — no phone number is ever shown.";
     prof.append(bloodHead, bloodSel, bloodRow, bloodSave, bloodHint);
+    // Phase 158: Skill Swap — list what you teach / want to learn.
+    // No money, no scheduling: the swap is arranged in a DM after
+    // someone taps Connect on your card. Removing all skills
+    // removes you from the directory.
+    const skillHead = document.createElement("div");
+    skillHead.className = "settings-sub";
+    skillHead.textContent = "🤝 My skills";
+    const skillName = document.createElement("input");
+    skillName.id = "settings-skill-name";
+    skillName.type = "text";
+    skillName.maxLength = 80;
+    skillName.placeholder = "Skill — e.g. English, Guitar, Coding";
+    const skillKind = document.createElement("select");
+    skillKind.id = "settings-skill-kind";
+    ["teach", "learn"].forEach(k => {
+      const o = document.createElement("option");
+      o.value = k;
+      o.textContent = k === "teach" ? "🎓 I can teach this" : "📚 I want to learn this";
+      skillKind.appendChild(o);
+    });
+    const skillNote = document.createElement("input");
+    skillNote.id = "settings-skill-note";
+    skillNote.type = "text";
+    skillNote.maxLength = 200;
+    skillNote.placeholder = "Note (optional) — e.g. weekends, beginner level";
+    const skillAdd = document.createElement("button");
+    skillAdd.className = "btn";
+    skillAdd.id = "settings-skill-add";
+    skillAdd.textContent = "Add skill";
+    skillAdd.onclick = async () => {
+      try {
+        await api("/me/skills", { method: "POST",
+          body: JSON.stringify({ skill: skillName.value,
+                                 kind: skillKind.value,
+                                 note: skillNote.value }) });
+        skillName.value = "";
+        skillNote.value = "";
+        setStatus("Skill added — you now appear in the Skills directory. 🤝");
+        loadMySkills();
+      } catch (e) { setStatus("Could not add the skill."); }
+    };
+    const skillList = document.createElement("div");
+    skillList.id = "settings-skill-list";
+    const skillHint = document.createElement("p");
+    skillHint.className = "hint";
+    skillHint.textContent = "Teach what you know, learn what you don't — no money, just time. Your skills show on your profile and in the Skills directory.";
+    prof.append(skillHead, skillName, skillKind, skillNote, skillAdd, skillList, skillHint);
+    loadMySkills();
     // 2. Theme — the same picker as Me (themeCard is reused).
     box.appendChild(themeCard());
     // 3. Privacy — the same toggle as the profile edit form,
@@ -5879,7 +6125,8 @@ const NOTIF_ICONS = { like: "❤️", comment: "💬", follow: "👥",
                       share: "📤", post_live: "🎬", announcement: "📣",
                       verification: "🛡️", repost: "🔁", reply: "↩️",
                       tip: "⭐", blood_request: "🩸",
-                      blood_respond: "🩸" };
+                      blood_respond: "🩸",
+                      skill_connect: "🤝" };
 async function loadNotifications(reset) {
   const box = $("notif-list");
   if (reset) { box.innerHTML = ""; notifCursor = null; }
@@ -9417,7 +9664,7 @@ const MASCOT_TIPS_BY_VIEW = {
   ],
   notifications: [
     "Likes, comments, follows, tips and blood requests all land here.",
-    "Turn any kind off in Settings → Notification prefs — 8 switches.",
+    "Turn any kind off in Settings → Notification prefs — 9 switches.",
   ],
   messages: [
     "Tap the photo button in a chat to send a photo DM.",
@@ -9445,13 +9692,18 @@ const MASCOT_TIPS_BY_VIEW = {
   ],
   settings: [
     "Theme: pick one of 33 shades — the whole app follows it.",
-    "Notification prefs has 8 switches — likes, comments, follows, tips, messages, system, follow requests and blood.",
+    "Notification prefs has 9 switches — likes, comments, follows, tips, messages, system, follow requests, blood and skills.",
     "Payout wallet: save a TON, Gram or USDT address, then request a payout in points.",
   ],
   blood: [
     "Become a donor in Settings → Profile — pick your group and switch the donor toggle on.",
     "Tap “আমি দেবো” on a request — the requester gets notified and a DM opens.",
     "Requests ask for 1 to 10 units — filter donors by any of the 8 blood groups.",
+  ],
+  skills: [
+    "List what you can teach and what you want to learn — no money, just time.",
+    "Tap 🤝 Connect on a card — the member is notified and a DM opens to arrange the swap.",
+    "Use the search box to find someone who teaches the skill you want.",
   ],
 };
 let mascotTipIdx = 0;
