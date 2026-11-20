@@ -2855,3 +2855,19 @@ html[data-theme] .suggest-follow.on { background: var(--t-chip, #F3DCE7);
 .blood-loc-hint .btn { margin-top: 8px; }
 #blood-loc-hint[hidden] { display: none; }
 
+/* Phase 155: Nexora mascot helper — floating tips button.
+   Bottom-right above the floating pill bottom-nav: the nav is a pill at
+   bottom: 10px, ~56px tall, so its top edge sits ~66px up; bottom: 86px
+   clears it with room to spare. The in-flow composer lives at the top
+   of the feed, never in this corner. The wrap itself ignores taps
+   (pointer-events: none) — only the button and the bubble take them —
+   so content behind it stays tappable. The cream image background
+   blends with the Organic Clay theme; the button is a circle so the
+   square image never reads as a box. */
+#mascot-wrap { position: fixed; right: 12px; bottom: 86px; z-index: 70; pointer-events: none; }
+#mascot-btn { pointer-events: auto; width: 48px; height: 48px; padding: 0; border: 0; border-radius: 50%; overflow: hidden; cursor: pointer; background: #F6F1E7; box-shadow: 0 6px 18px rgba(31,27,75,.25); animation: mascot-bob 3s ease-in-out infinite; }
+#mascot-btn img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; display: block; }
+@keyframes mascot-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+#mascot-bubble { pointer-events: auto; position: absolute; right: 56px; bottom: 2px; width: 230px; max-width: calc(100vw - 84px); background: #FFFBFC; color: var(--ink); border: 1px solid rgba(62,143,208,.25); border-radius: 14px; padding: 10px 30px 10px 12px; font-size: 13px; line-height: 1.45; box-shadow: 0 10px 28px rgba(31,27,75,.25); }
+#mascot-bubble[hidden] { display: none; }
+#mascot-close { position: absolute; top: 2px; right: 4px; width: 22px; height: 22px; padding: 0; border: 0; background: transparent; color: var(--ink); font-size: 13px; cursor: pointer; }

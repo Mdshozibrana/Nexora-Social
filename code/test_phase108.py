@@ -63,8 +63,8 @@ with TestClient(app) as c:
     print("open/close wiring OK")
 
     html = c.get("/webapp/").text
-    for asset in ("style.css?v=154", "app.js?v=154", "games.js?v=154"):
+    for asset in ("style.css?v=155", "app.js?v=155", "games.js?v=155"):
         assert asset in html, asset
-    print("asset version ?v=154 OK")
+    print("asset version ?v=155 OK")
 
 print("PHASE 108 OK")

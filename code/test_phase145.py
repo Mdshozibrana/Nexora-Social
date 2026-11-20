@@ -139,13 +139,13 @@ with TestClient(app) as c:
 
     # 6. Client markers + asset version.
     HTML = open("webapp/index.html").read()
-    assert HTML.count("?v=154") == 9, HTML.count("?v=154")
+    assert HTML.count("?v=155") == 10, HTML.count("?v=155")
     assert "?v=14" + "4" not in HTML
     for m in ("loadSettings", "renderLevelBlock", "openTipSheet",
               "loadProfilePosts", "openProfile", "loadMe",
               "loadDrafts", "loadScheduled", "loadFollowRequests",
               "themeCard", "dataCard", "loadBlocked"):
         assert m in JS, m
-    print("client markers + ?v=154 OK")
+    print("client markers + ?v=155 OK")
 
 print("PHASE-145 TESTS PASSED")

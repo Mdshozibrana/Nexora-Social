@@ -10,7 +10,7 @@ Streak, created_at after 2026-12-01 -> Pioneer NOT earned;
 locked badges still listed with earned=false + hint; profile
 response and /auth response both carry level + badges; level
 via HTTP tracks seeded ledger amounts (4999 -> L5, +1 -> L6);
-backup still 39 tables; ?v=154 x5, no ?v=136; level/badge
+backup still 39 tables; ?v=155 x5, no ?v=136; level/badge
 client markers + Phase 123-136 markers intact.
 """
 import hashlib, hmac, json, os, time, urllib.parse
@@ -271,7 +271,7 @@ with TestClient(app) as c:
 
     # 12. Client markers + asset version.
     html = open("webapp/index.html").read()
-    assert html.count("?v=154") == 9, html.count("?v=154")
+    assert html.count("?v=155") == 10, html.count("?v=155")
     assert "?v=136" not in html
     js = open("webapp/app.js").read()
     for m in ("renderLevelBlock", "level-block", "level-bar",
@@ -295,6 +295,6 @@ with TestClient(app) as c:
     css = open("webapp/style.css").read()
     assert ".level-block" in css and ".level-bar" in css \
         and ".badge-chip" in css and ".badge-locked" in css
-    print("client markers + ?v=154 OK")
+    print("client markers + ?v=155 OK")
 
 print("PHASE-137 TESTS PASSED")

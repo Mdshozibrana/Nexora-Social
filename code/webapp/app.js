@@ -9336,3 +9336,34 @@ document.addEventListener("contextmenu", (e) => {
 document.addEventListener("dragstart", (e) => {
   if (e.target && e.target.tagName === "IMG") e.preventDefault();
 }, true);
+
+// ---------- Phase 155: Nexora mascot helper ----------
+// Floating plush-alien button; tap for a rotating tip. The bubble NEVER
+// opens on its own — only on tap. Every tip is true about a live
+// feature (numbers from config.py DAILY_TASKS / MONETIZATION).
+const MASCOT_TIPS = [
+  "Check in every day on the Tasks page — each check-in earns you 20 points.",
+  "Keep your check-in streak going — 30 days in a row is one of the keys to unlock monetisation.",
+  "You can become a blood donor from Settings \u2192 Profile — pick your group and turn the donor switch on.",
+  "To post a photo, send it to @NexoraSocial_bot in chat with a caption — it appears in your feed.",
+  "Nearby shows members within 500 m of you — turn sharing on to appear on the map.",
+  "Tap the \u2b50 on any post to tip its author with Stars — tips start at 10 Stars.",
+  "You can schedule a post from the composer — pick a time and it goes live by itself.",
+];
+let mascotTipIdx = 0;
+function mascotShowTip() {
+  const b = $("mascot-bubble"); if (!b) return;
+  $("mascot-tip").textContent =
+    MASCOT_TIPS[mascotTipIdx % MASCOT_TIPS.length];
+  mascotTipIdx++;
+  b.hidden = false;
+}
+function mascotHideTip() {
+  const b = $("mascot-bubble"); if (b) b.hidden = true;
+}
+$("mascot-btn").onclick = (e) => { e.stopPropagation(); mascotShowTip(); };
+$("mascot-close").onclick = (e) => { e.stopPropagation(); mascotHideTip(); };
+document.addEventListener("click", (e) => {
+  const w = $("mascot-wrap");
+  if (w && !w.contains(e.target)) mascotHideTip();
+});
