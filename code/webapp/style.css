@@ -26,8 +26,12 @@ body { font-family: system-ui, sans-serif; margin: 0; padding: 0 12px 84px;
    shrinks (JS fitVerifiedNames) and ellipsizes only at the
    12px floor; the tick never shrinks, wraps or hides. */
 .vname { display: inline-flex; align-items: center; min-width: 0; }
-.vname-text { flex: 1 1 auto; min-width: 0; white-space: nowrap;
+.vname-text { flex: 0 1 auto; min-width: 0; white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis; }
+/* Phase 162: .vname-text is shrink-only (flex: 0 1 auto) — it
+   never grows, so the tick hugs the name instead of being
+   pushed to the line's far edge. The shrink loop still fires:
+   a too-long name still truncates (scrollWidth > clientWidth). */
 .vname .verified { flex: none; }
 /* Phase 160: at these sites the line must take the remaining
    row width so the text has somewhere to shrink into. */

@@ -16,7 +16,7 @@ Members browse, admin detail, Nearby list, story author +
 viewers); the old text-" ✓" ticks are gone (blue badge
 everywhere); 360px geometry for the 6 main sites with the
 owner's long name; Trending reuses postCard; neighbours; backup
-44 tables; routes 163; ?v=161 x10, no old-version literals.
+44 tables; routes 163; ?v=162 x10, no old-version literals.
 """
 import hashlib, hmac, json, os, re, subprocess, time, urllib.parse
 
@@ -148,7 +148,10 @@ assert "align-items: center" in vname, vname
 assert "min-width: 0" in vname, vname
 assert "flex-wrap" not in vname, "line must never wrap"
 vtext = css_rule(".vname-text")
-assert "flex: 1 1 auto" in vtext, vtext
+# Phase 162: shrink-only — the text never grows, so the tick
+# hugs the name instead of being pushed to the line's far edge.
+assert "flex: 0 1 auto" in vtext, vtext
+assert "flex: 1 1 auto" not in vtext, "text must never grow"
 assert "white-space: nowrap" in vtext, vtext
 assert "text-overflow: ellipsis" in vtext, vtext
 assert "overflow: hidden" in vtext, vtext
@@ -295,10 +298,69 @@ assert len(paths) == 163, len(paths)
 print("routes: 163 OK (no new endpoints)")
 
 # 12. Version.
-assert HTML.count("?v=161") == 10, HTML.count("?v=161")
+assert HTML.count("?v=162") == 10, HTML.count("?v=162")
 assert "?v=15" + "9" not in HTML
-assert "app.js?v=161" in HTML and "games.js?v=161" in HTML
-assert 'menu_url.rstrip("/") + "/?v=161"' in BOT
+assert "app.js?v=162" in HTML and "games.js?v=162" in HTML
+assert 'menu_url.rstrip("/") + "/?v=162"' in BOT
 assert "Phase 160" in CSS and "Phase 160" in JS and "Phase 160" in HTML
-print("version OK (?v=161 x10, no old-version literals)")
+print("version OK (?v=162 x10, no old-version literals)")
+
+# 13. Phase 162: the tick HUGS the name (owner: "blu tick naam
+# theke dure keno?"). Phase 160's .vname-text had flex-grow 1,
+# so it stretched to the full line width and pushed the tick to
+# the line's FAR edge — worst for short names ("Crypto",
+# "Nexora Social"). Now the text is shrink-only (flex: 0 1
+# auto): its width is its fitted content (capped by the
+# budget), and the tick sits 5px after it — never the far edge.
+# The LINE itself may still stretch wide where a site needs it;
+# the children just sit at the line's start now.
+vtext = css_rule(".vname-text")
+assert "flex: 0 1 auto" in vtext, vtext
+assert "flex: 1 1 auto" not in vtext, "text must never grow"
+for sel in (".rank-title-line", ".user-row .vname",
+            "#story-author.vname"):
+    assert "flex: 1 1 auto" in css_rule(sel), (sel, "line may stretch")
+m = re.search(r"(?m)^\.verified \{([^}]*)\}", CSS)
+assert m, "standalone .verified rule missing"
+tick_rule = m.group(1)
+assert "margin-left: 5px" in tick_rule, "tick gap is 5px"
+assert "flex: none" in tick_rule, "tick never shrinks"
+
+
+def hug_tick_left(name, base, budget):
+    # Mirror of fitVerifiedNames + shrink-only flex: the text span
+    # is its fitted content (capped by the budget), the tick sits
+    # 5px after it. Returns (fitted size, tick left edge from the
+    # line start).
+    size = fit_size(em_width(name), base, budget)
+    text_w = min(em_width(name) * size, budget)
+    return size, text_w + 5
+
+
+SHORTS = ("Crypto", "Nexora Social", "MD Shozib Rana")
+for site, base, budget, _want in SITES_GEO:
+    for name in SHORTS:
+        size, tick_left = hug_tick_left(name, base, budget)
+        assert size == base, (site, name, "short name must not shrink")
+        assert tick_left < budget, (site, name, tick_left, budget,
+                                    "tick must hug the text, not sit at the far edge")
+        print("  %s: '%s' tick at %.1fpx (line width %d, gap 5px)"
+              % (site, name, tick_left, budget + 21))
+# Long name: still shrinks, still one line, tick still adjacent.
+for site, base, budget, _want in SITES_GEO:
+    size, tick_left = hug_tick_left(LONG, base, budget)
+    assert size > 12, (site, "long name must stop above the floor")
+    assert tick_left <= budget + 5, (site, tick_left)
+    assert abs(tick_left - min(em_width(LONG) * size, budget) - 5) < 0.01, site
+# 28-char name: floor + ellipsis, tick intact and adjacent.
+size, tick_left = hug_tick_left(LONG28, 16, 134)
+assert size == 12, size
+assert tick_left == 139, tick_left
+# Resize re-fit: a wider line re-grows the name to its base size.
+assert fit_size(em_width(LONG), 16, 300) == 16, "re-grow on resize"
+# Version: shell on ?v=162, no ?v=162 literal left anywhere.
+assert HTML.count("?v=162") == 10, HTML.count("?v=162")
+assert "?v=16" + "1" not in HTML
+print("Phase 162 hug OK (tick 5px after the name at all 6 sites)")
+
 print("PHASE 160 OK")
