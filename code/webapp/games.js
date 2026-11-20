@@ -1283,111 +1283,13 @@ registerGame({
   id: "archery", icon: "🏹", name: "Archery",
   title: "🏹 Archery — Aim Less, Shoot More",
   desc: "Level by level, sky by sky: thread the moving bars, hit SUCCESS, climb.",
-  help: "Drag to aim, or use the 🎮 remote in the board corner — the stick sets angle and power, SHOOT looses the arrow (and starts the level). The dotted line previews your shot. Solo is a level climb: score the quota in 10 arrows to advance. Bars speed up, multiply, the target shrinks, starts moving, and wind joins in. 2 Players: 6 arrows each on one phone. Invite: a challenge message to a friend.",
+  help: "Drag to aim — the dotted line previews your shot. Release to loose. Solo is a level climb: score the quota in 10 arrows to advance. Bars speed up, multiply, the target shrinks, starts moving, and wind joins in. 2 Players: 6 arrows each on one phone. Invite: a challenge message to a friend.",
   start(stage, setScore) {
     const W = 340, H = 460, GY = H - 44;
     const cv = document.createElement("canvas");
     cv.width = W; cv.height = H;
     cv.style.touchAction = "none";
-    // Phase 159: the board wrapper anchors the remote control in
-    // the bottom-right corner (owner: dragging on the board to aim
-    // is awkward on his phone). The remote drives the SAME aim
-    // state and the SAME release as dragging on the board, so
-    // physics, wind, scoring and the dotted preview are identical.
-    const board = document.createElement("div");
-    board.className = "arch-board";
-    board.appendChild(cv);
-    stage.appendChild(board);
-    // The mascot floats in this same corner — hide it while
-    // Archery is open; the cleanup below restores it.
-    const mw = document.getElementById("mascot-wrap");
-    if (mw) mw.hidden = true;
-    const remote = document.createElement("div");
-    remote.className = "arch-remote";
-    remote.setAttribute("aria-label", "Archery remote control");
-    const pad = document.createElement("div");
-    pad.className = "arch-joy";
-    const knob = document.createElement("div");
-    knob.className = "arch-knob";
-    pad.appendChild(knob);
-    const rcol = document.createElement("div");
-    rcol.className = "arch-col";
-    const shoot = document.createElement("button");
-    shoot.className = "arch-shoot";
-    shoot.textContent = "SHOOT";
-    const pwr = document.createElement("div");
-    pwr.className = "arch-pwr";
-    const pwrFill = document.createElement("div");
-    pwrFill.className = "arch-pwr-fill";
-    pwr.appendChild(pwrFill);
-    const pwrLab = document.createElement("div");
-    pwrLab.className = "arch-pwr-lab";
-    pwrLab.textContent = "POWER";
-    rcol.append(shoot, pwr, pwrLab);
-    remote.append(pad, rcol);
-    board.appendChild(remote);
-    const remoteMeter = () => {
-      const sp = aim ? aim.sp : 11;
-      pwrFill.style.width = Math.round(((sp - 11) / 16) * 100) + "%";
-    };
-    const remoteReset = () => {
-      knob.style.transform = "";
-      remoteMeter();
-    };
-    // Joystick: knob offset from the pad centre maps to the same
-    // aim the drag sets — angle clamped exactly like setAim,
-    // power 11..27 over the full throw. Lifting the stick does
-    // NOT fire: the aim stays set (preview + meter show it)
-    // until SHOOT looses it.
-    const JOY_R = 28;
-    let joyId = null;
-    const joySet = (e) => {
-      const r = pad.getBoundingClientRect();
-      const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
-      let dx = e.clientX - cx, dy = e.clientY - cy;
-      const d = Math.hypot(dx, dy) || 1;
-      const m = Math.min(d, JOY_R);
-      dx = dx / d * m; dy = dy / d * m;
-      knob.style.transform = "translate(" + dx + "px," + dy + "px)";
-      const mag = m / JOY_R;
-      if (mag >= 0.15) {
-        let ang = Math.atan2(dy, dx);
-        ang = Math.max(-1.35, Math.min(0.12, ang));
-        aim = { ang, sp: 11 + mag * 16 };
-      }
-      remoteMeter();
-    };
-    pad.addEventListener("pointerdown", (e) => {
-      e.preventDefault();
-      if (state !== "aim") return;
-      joyId = e.pointerId;
-      try { pad.setPointerCapture(e.pointerId); } catch (err) {}
-      if (!aim) aim = { ang: -0.72, sp: 16 };
-      joySet(e);
-    });
-    pad.addEventListener("pointermove", (e) => {
-      if (joyId !== e.pointerId || state !== "aim") return;
-      joySet(e);
-    });
-    const joyEnd = (e) => {
-      if (joyId !== e.pointerId) return;
-      joyId = null;
-      // knob stays where it was: it keeps showing the held aim.
-    };
-    pad.addEventListener("pointerup", joyEnd);
-    pad.addEventListener("pointercancel", joyEnd);
-    // SHOOT: the same release() the board pointerup calls — and
-    // the same start/advance taps the board handles, so the whole
-    // game is playable from the remote alone.
-    shoot.addEventListener("click", (e) => {
-      e.preventDefault();
-      if (state === "intro") { state = "aim"; resumed = false; return; }
-      if (state === "clear") { startLevel(level + 1, true); return; }
-      if (state === "fail") { startLevel(level, true); return; }
-      if (state === "over") { reset(); return; }
-      if (state !== "aim") return;
-      release();
-    });
+    stage.appendChild(cv);
     const ctx = cv.getContext("2d");
     const TGT = { x: 252, y: 96, r: 46 };
     const TGT_Y = 96;
@@ -1462,7 +1364,6 @@ registerGame({
       TGT.r = cfg.tgtR; TGT.y = TGT_Y;
       bars = cfg.bars.map(bb => ({ ...bb }));
       arrow = null; stuck = []; aim = null; parts = [];
-      remoteReset();
       scores = [0, 0]; shots = [0, 0]; turn = 0;
       state = mode === "solo" ? "intro" : "aim";
       note = ""; noteT = 0;
@@ -1831,10 +1732,10 @@ registerGame({
       arrow = { x: HAND.x, y: HAND.y, px: HAND.x, py: HAND.y,
                 vx: Math.cos(aim.ang) * aim.sp,
                 vy: Math.sin(aim.ang) * aim.sp };
-      aim = null; state = "fly"; remoteReset();
+      aim = null; state = "fly";
     };
     cv.addEventListener("pointerup", release);
-    cv.addEventListener("pointercancel", () => { aim = null; remoteReset(); });
+    cv.addEventListener("pointercancel", () => { aim = null; });
 
     // Solo entry: resume the saved run when there is one,
     // otherwise a fresh Level 1 (Phase 94).
@@ -1913,7 +1814,7 @@ registerGame({
 
     startSolo();
     raf = requestAnimationFrame(step);
-    return () => { dead = true; cancelAnimationFrame(raf); if (mw) mw.hidden = false; };
+    return () => { dead = true; cancelAnimationFrame(raf); };
   }
 });
 

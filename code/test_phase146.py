@@ -33,7 +33,7 @@ restores after routeStartParam and the start param wins;
 sidebar + footer open self; private-profile posts stay locked
 for a non-follower after restore (server-side, via the same
 openProfile path); backup still 42 tables (no schema change);
-?v=160 x5, no older shell version.
+?v=161 x5, no older shell version.
 """
 import hashlib, hmac, json, os, re, subprocess, sys, tempfile, time, urllib.parse
 
@@ -223,7 +223,7 @@ print("node harness: remember/restore behaviour OK")
 
 # 8. Client markers + asset version.
 HTML = open("webapp/index.html").read()
-assert HTML.count("?v=160") == 10, HTML.count("?v=160")
+assert HTML.count("?v=161") == 10, HTML.count("?v=161")
 assert "?v=14" + "5" not in HTML
 for m in ("loadSettings", "renderLevelBlock", "openTipSheet",
           "loadProfilePosts", "openProfile", "loadMe",
@@ -232,6 +232,6 @@ for m in ("loadSettings", "renderLevelBlock", "openTipSheet",
           "loadFeed", "showView", "ptr-global", "Pull to refresh",
           "nx_profile", "restoreProfile", "rememberProfile"):
     assert m in JS, m
-print("client markers + ?v=160 OK")
+print("client markers + ?v=161 OK")
 
 print("PHASE-146 TESTS PASSED")

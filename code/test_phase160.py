@@ -16,7 +16,7 @@ Members browse, admin detail, Nearby list, story author +
 viewers); the old text-" ✓" ticks are gone (blue badge
 everywhere); 360px geometry for the 6 main sites with the
 owner's long name; Trending reuses postCard; neighbours; backup
-44 tables; routes 163; ?v=160 x10, no old-version literals.
+44 tables; routes 163; ?v=161 x10, no old-version literals.
 """
 import hashlib, hmac, json, os, re, subprocess, time, urllib.parse
 
@@ -272,10 +272,10 @@ assert "skill-name" in JS and "vname-text" not in SKILL
 print("audit OK (skill cards carry no tick; 16 badge sites + Nearby "
       "HTML tick all converted; nothing skipped)")
 
-# 10. Neighbours intact (incl. Phase 159 Archery remote).
+# 10. Neighbours intact (Phase 161 removed the Archery remote).
 for bit in ("loadBloodDonors", "openNearby", "loadSkills", "sendNexa",
             "mascotOnView", "composer-post", "glassbar",
-            "MASCOT_TIPS_BY_VIEW", "arch-remote", "arch-shoot",
+            "MASCOT_TIPS_BY_VIEW",
             "loadRanks", "postCard", "commentRow", "openProfile",
             "loadMessages", "loadNotifications", "loadTrending",
             "nbPaintPeople", "paintStory", "openStoryViewers"):
@@ -295,10 +295,10 @@ assert len(paths) == 163, len(paths)
 print("routes: 163 OK (no new endpoints)")
 
 # 12. Version.
-assert HTML.count("?v=160") == 10, HTML.count("?v=160")
+assert HTML.count("?v=161") == 10, HTML.count("?v=161")
 assert "?v=15" + "9" not in HTML
-assert "app.js?v=160" in HTML and "games.js?v=160" in HTML
-assert 'menu_url.rstrip("/") + "/?v=160"' in BOT
+assert "app.js?v=161" in HTML and "games.js?v=161" in HTML
+assert 'menu_url.rstrip("/") + "/?v=161"' in BOT
 assert "Phase 160" in CSS and "Phase 160" in JS and "Phase 160" in HTML
-print("version OK (?v=160 x10, no old-version literals)")
+print("version OK (?v=161 x10, no old-version literals)")
 print("PHASE 160 OK")
