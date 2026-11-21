@@ -8114,7 +8114,10 @@ async function totpGateAdmin() {
   const view = $("view-admin");
   if (!view) return false;
   if ($("totp-gate")) return true;
-  [...view.children].forEach(el => { el.hidden = true; });
+  // Phase 165: the setup card stays visible next to the gate —
+  // a first-time admin must be able to reach "Show setup code"
+  // or enrolment is impossible (chicken-and-egg).
+  [...view.children].forEach(el => { if (el.id !== "totp-card") el.hidden = true; });
   const gate = document.createElement("div");
   gate.className = "card";
   gate.id = "totp-gate";
