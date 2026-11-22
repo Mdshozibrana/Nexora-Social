@@ -113,6 +113,13 @@ def _migrate():
         if "is_pinned" not in post_cols:
             conn.execute(text(
                 "ALTER TABLE posts ADD COLUMN is_pinned BOOLEAN DEFAULT FALSE"))
+    # Phase 167: inbox posts — text sent to the bot in chat
+    # (Postgres-legal DEFAULT FALSE; the Phase 126 lesson:
+    # never a 0 default on a boolean in raw SQL).
+    with engine.begin() as conn:
+        if "via_inbox" not in post_cols:
+            conn.execute(text(
+                "ALTER TABLE posts ADD COLUMN via_inbox BOOLEAN DEFAULT FALSE"))
     # Phase 127: crypto payout wallet columns on users (plain
     # VARCHAR, no default — the Phase 126 lesson: never a BOOLEAN
     # DEFAULT 0 in raw migration SQL; SQLite accepts it, Postgres
@@ -939,6 +946,40 @@ def hashtag_feed(cursor: int = 0,
     return {"posts": out, "next_cursor": next_cursor}
 
 
+@app.get("/inbox-posts")
+def inbox_posts(cursor: int = 0,
+                user: models.User = Depends(current_user),
+                db: Session = Depends(get_db)):
+    """Phase 167: posts that arrived by sending text to the bot in
+    chat (via_inbox) — newest first, cursor-paged like /feed.
+    Same visibility as the feed: blocked authors stay hidden,
+    private authors' posts reach only their followers (Phase 136).
+    Inbox posts are normal posts, so they also appear in /feed;
+    this endpoint is the Nexora Inbox page's own list."""
+    q = db.query(models.Post).filter_by(is_deleted=False).filter(
+        models.Post.via_inbox == True,
+        models.Post.type != "repost")
+    hidden = _block_related_ids(db, user.telegram_id)
+    if hidden:
+        q = q.filter(~models.Post.user_id.in_(hidden))
+    private_ids = _private_author_ids(db)
+    if private_ids:
+        followed = {f.following_id for f in
+                    db.query(models.Follow).filter_by(
+                        follower_id=user.telegram_id)}
+        blocked_private = private_ids - followed - {user.telegram_id}
+        if blocked_private:
+            q = q.filter(~models.Post.user_id.in_(blocked_private))
+    if cursor:
+        q = q.filter(models.Post.id < cursor)
+    rows = q.order_by(models.Post.id.desc()).limit(20).all()
+    next_cursor = rows[-1].id if len(rows) == 20 else None
+    counts = _post_view_counts(db, rows)
+    _warm_authors(db, rows)
+    out = _post_list(db, rows, user.telegram_id, counts=counts)
+    return {"posts": out, "next_cursor": next_cursor}
+
+
 # ---------------------------------------------------------------------------
 # Phase 122 — Trending: what is hot right now.
 #
@@ -1199,6 +1240,7 @@ def post_dict(db, p, liked=False, saved=False, views=None,
         "like_count": p.like_count, "comment_count": p.comment_count,
         "repost_count": p.repost_count or 0,
         "is_pinned": bool(getattr(p, "is_pinned", False)),
+        "via_inbox": bool(getattr(p, "via_inbox", False)),
         "poll": _poll_dict(db, p, viewer_id),
         "views": views,
         "liked": liked,

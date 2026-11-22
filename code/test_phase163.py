@@ -261,14 +261,14 @@ with TestClient(app) as c:
     assert len(r.json()["tables"]) == 44, len(r.json()["tables"])
     print("backup: 44 tables OK")
 paths = {rt.path for rt in app.routes}
-assert len(paths) == 166, len(paths)
+assert len(paths) == 167, len(paths)
 print("routes: 163 OK (no new endpoints)")
 
 # 10. Version.
-assert HTML.count("?v=166") == 10, HTML.count("?v=166")
+assert HTML.count("?v=167") == 10, HTML.count("?v=167")
 assert "?v=16" + "2" not in HTML
-assert 'menu_url.rstrip("/") + "/?v=166"' in BOT
+assert 'menu_url.rstrip("/") + "/?v=167"' in BOT
 assert "Phase 163" in CSS and "Phase 163" in JS and "Phase 163" in MAIN
-print("version OK (?v=166 x10, no old-version literals)")
+print("version OK (?v=167 x10, no old-version literals)")
 
 print("PHASE 163 OK")

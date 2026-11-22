@@ -92,6 +92,8 @@ class Post(Base):
     # Phase 123: creator tools — one pinned post per author.
     is_pinned = Column(Boolean, default=False)
     is_deleted = Column(Boolean, default=False)
+    # Phase 167: posted by sending text to the bot in chat.
+    via_inbox = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
 

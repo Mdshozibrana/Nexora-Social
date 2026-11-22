@@ -62,7 +62,7 @@ HB = H(882, "Bob")
 
 def test_client_markers():
     html = open("webapp/index.html").read()
-    assert html.count("?v=166") == 10, html.count("?v=166")
+    assert html.count("?v=167") == 10, html.count("?v=167")
     assert "?v=118" not in html
     for marker in ("cp-nav", "cp-sec-overview", "cp-sec-site",
                    "cp-sec-backup", "cp-sec-earnings", "cp-sec-reports",
@@ -86,7 +86,7 @@ def test_client_markers():
     # Phase 118 markers intact — repost + comment replies untouched.
     assert "repost-banner" in js and "Replying to" in js
     assert "comment-replies" in css or "comment-reply-btn" in css
-    print("client markers OK (?v=166, nav, site controls, audit, designs)")
+    print("client markers OK (?v=167, nav, site controls, audit, designs)")
 
 
 def test_stats_gains_counts():
