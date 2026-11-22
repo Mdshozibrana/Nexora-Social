@@ -8114,9 +8114,9 @@ async function totpGateAdmin() {
   const view = $("view-admin");
   if (!view) return false;
   if ($("totp-gate")) return true;
-  // Phase 165: the setup card stays visible next to the gate —
-  // a first-time admin must be able to reach "Show setup code"
-  // or enrolment is impossible (chicken-and-egg).
+  // Phase 165: the setup card stays visible next to the gate.
+  // Phase 166: the card carries no setup button any more — the
+  // secret must never be visible on this screen, in any form.
   [...view.children].forEach(el => { if (el.id !== "totp-card") el.hidden = true; });
   const gate = document.createElement("div");
   gate.className = "card";
@@ -8169,24 +8169,6 @@ function wireTotpCard(ts) {
     ? "Authenticator verification is ON for admins."
     : "Authenticator verification is OFF — set ADMIN_TOTP_SECRET in Render to turn it on.";
   card.append(title, st);
-  if (ts && ts.configured) {
-    const btn = document.createElement("button");
-    btn.className = "btn";
-    btn.textContent = "Show setup code";
-    const out = document.createElement("p");
-    out.className = "hint";
-    btn.onclick = async () => {
-      out.textContent = "Loading…";
-      try {
-        const s = await api("/admin/totp/setup");
-        out.textContent = "Secret: " + s.secret +
-          " — add it to your authenticator app, then enter a code above.";
-      } catch (e) {
-        out.textContent = e.message || "Could not load the setup code.";
-      }
-    };
-    card.append(btn, out);
-  }
   view.prepend(card);
 }
 

@@ -13,7 +13,7 @@ GET /posts/{id} (403), visible to a follower and to self; going
 private keeps existing followers; trending excludes private
 posts; hashtag search hides private posts but user search still
 finds the account; public accounts unaffected; backup 39 tables
-incl. follow_requests rows; ?v=165 x5, no ?v=135; private-account
+incl. follow_requests rows; ?v=166 x5, no ?v=135; private-account
 client markers + Phase 123-135 markers intact.
 """
 import hashlib, hmac, json, os, time, urllib.parse
@@ -278,7 +278,7 @@ with TestClient(app) as c:
 
     # 13. Client markers + asset version.
     html = open("webapp/index.html").read()
-    assert html.count("?v=165") == 10, html.count("?v=165")
+    assert html.count("?v=166") == 10, html.count("?v=166")
     assert "?v=135" not in html
     js = open("webapp/app.js").read()
     for m in ("loadFollowRequests", "Follow requests", "Private account",
@@ -300,6 +300,6 @@ with TestClient(app) as c:
         assert m in js, m
     css = open("webapp/style.css").read()
     assert ".private-lock" in css and ".privacy-row" in css
-    print("client markers + ?v=165 OK")
+    print("client markers + ?v=166 OK")
 
 print("PHASE-136 TESTS PASSED")

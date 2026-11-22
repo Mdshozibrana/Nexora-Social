@@ -7,6 +7,12 @@ so the gate and the setup card are visible together. Server side is
 unchanged (status/setup/verify were already correct); the new suite
 re-asserts the setup path end to end plus a real node harness that
 executes the extracted gate functions against a DOM stub.
+
+Phase 166 (Nov 22, 09:22 Dhaka): the owner ordered the setup display
+removed entirely — no secret text, no QR, no setup button. This suite
+was converted to REMOVAL GUARDS: the harness asserts the client never
+calls /admin/totp/setup and the secret never appears in the admin
+view. The server-side setup tests below stay (endpoint intact).
 """
 import hashlib
 import hmac
@@ -71,6 +77,12 @@ def _extract_gate_src():
     src = js[start:end]
     assert 'if (el.id !== "totp-card") el.hidden = true' in src, \
         "Phase 165 fix missing from extracted gate source"
+    assert "Show setup code" not in src, \
+        "Phase 166: setup button must be gone from gate source"
+    assert "totp/setup" not in src, \
+        "Phase 166: client must never call the setup endpoint"
+    assert "s.secret" not in src, \
+        "Phase 166: secret must never be rendered by the gate"
     return src
 
 
@@ -121,7 +133,7 @@ HARNESS_MAIN = r'''
   view.append(c1, c2);
   apiImpl = async (path) => {
     if (path === "/admin/totp/status") return { configured: true, verified: false };
-    if (path === "/admin/totp/setup") return { secret: "JBSWY3DPEHPK3PXP", otpauth_url: "otpauth://totp/Nexora%20Admin" };
+    if (path === "/admin/totp/setup") throw new Error("Phase 166: client must not call setup");
     if (path === "/admin/totp/verify") return { verified: true };
     throw new Error("unexpected api " + path);
   };
@@ -131,26 +143,25 @@ HARNESS_MAIN = r'''
   assert(gate && !gate.hidden, "gate exists and visible");
   const card = $("totp-card");
   assert(card && !card.hidden, "setup card visible next to gate (Phase 165)");
-  const setupBtn = findBtn(card, "Show setup code");
-  assert(setupBtn, "Show setup code button present in gated state");
+  assert(!findBtn(card, "Show setup code"),
+         "Phase 166: no setup button in gated state");
+  assert(card.children.length === 2,
+         "setup card is title + status only, got " + card.children.length);
   assert(view.children[0] === gate, "gate first, card right below it");
   assert(view.children[1] === card, "setup card second");
   assert(c1.hidden && c2.hidden, "other admin cards hidden");
-  // --- Scenario 2: setup click, fresh initData ---
-  await setupBtn.onclick();
-  const out = card.children[card.children.length - 1];
-  assert(out.textContent.includes("Secret: JBSWY3DPEHPK3PXP"),
-         "setup shows secret, got: " + out.textContent);
-  // --- Scenario 3: setup click, stale initData ---
-  apiImpl = async (path) => {
-    if (path === "/admin/totp/setup") throw new Error("Please reopen the app, then try again");
-    if (path === "/admin/totp/status") return { configured: true, verified: false };
-    if (path === "/admin/totp/verify") return { verified: true };
-    throw new Error("unexpected api " + path);
-  };
-  await setupBtn.onclick();
-  assert(out.textContent.includes("reopen the app"),
-         "stale setup failure surfaced, got: " + out.textContent);
+  // --- Scenarios 2-3 (Phase 166 removal guards) ---
+  // No setup button exists, so nothing can be clicked; the secret
+  // must appear nowhere in the admin view's visible text.
+  function visibleText(el) {
+    let t = el.textContent || "";
+    for (const ch of el.children) t += " " + visibleText(ch);
+    return t;
+  }
+  assert(!visibleText(view).includes("Secret:"),
+         "Phase 166: no secret label in the admin view");
+  assert(!visibleText(view).includes("JBSWY3DPEHPK3PXP"),
+         "Phase 166: secret must never appear in the admin view");
   // --- Scenario 4: verify success ---
   apiImpl = async (path) => {
     if (path === "/admin/totp/verify") return { verified: true };
@@ -192,7 +203,7 @@ HARNESS_MAIN = r'''
   assert(!findBtn(card3, "Show setup code"), "no setup button when unconfigured");
   assert(card3.children.some(ch => ch.tag === "p" && ch.textContent.includes("OFF")),
          "card says verification is OFF");
-  console.log("HARNESS OK (gate+setup visible, setup fresh/stale, verify, verified, unconfigured)");
+  console.log("HARNESS OK (gate+card together, no setup button, verify, verified, unconfigured)");
 })().catch(e => { console.error(e.stack || e); process.exit(1); });
 '''
 
@@ -259,15 +270,18 @@ with TestClient(app) as c:
 
     # 4. Neighbours + version + routes.
     html = c.get("/webapp/").text
-    assert html.count("?v=165") == 10, html.count("?v=165")
+    assert html.count("?v=166") == 10, html.count("?v=166")
     assert "?v=16" + "4" not in html
-    assert "app.js?v=165" in html and "style.css?v=165" in html
+    assert "app.js?v=166" in html and "style.css?v=166" in html
     js = c.get("/webapp/app.js").text
     for marker in ("vname-text", "fitVerifiedNames", "totpGateAdmin",
                    "refreshMediaToken", "bloodDistance", "photo_file_id",
-                   "MASCOT_TIPS_BY_VIEW", "loadSkills", "totp-card",
-                   "Show setup code"):
+                   "MASCOT_TIPS_BY_VIEW", "loadSkills", "totp-card"):
         assert marker in js, marker
+    assert "Show setup code" not in js, \
+        "Phase 166: setup button must be gone from served app.js"
+    assert "s.secret" not in js, \
+        "Phase 166: secret must never be rendered by the client"
     assert 'if (el.id !== "totp-card") el.hidden = true' in js, \
         "Phase 165 fix marker missing from served app.js"
     main_src = open(os.path.join(ROOT, "code/app/main.py")).read()
@@ -286,10 +300,10 @@ with TestClient(app) as c:
               "/admin/totp/verify"):
         assert p in paths, p
     h = c.get("/admin/health", headers=ADMIN).json()
-    assert h["version"] == 165, h
+    assert h["version"] == 166, h
     r = c.get("/admin/backup", headers=ADMIN)
     assert r.status_code == 200, r.text
     assert len(r.json()["tables"]) == 44, len(r.json()["tables"])
-    print("neighbours + version + routes OK (166 routes, 44 tables, ?v=165)")
+    print("neighbours + version + routes OK (166 routes, 44 tables, ?v=166)")
 
 print("PHASE 165 OK")
