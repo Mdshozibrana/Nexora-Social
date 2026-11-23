@@ -19,9 +19,8 @@ import tempfile
 
 from . import moderation
 from . import notify
-from . import ratelimit
 from . import models
-from .config import RATE_LIMITS, settings
+from .config import settings
 from .db import SessionLocal
 from .services import (BANNED_WORD_MESSAGE, banned_word_in,
                       register_post)
@@ -80,10 +79,8 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Welcome to {settings.APP_NAME}! \U0001F44B\n"
         "Post photos and videos, follow people, earn points.\n"
         "Tip: send me a photo or video with a caption and I will post it "
-        "for you — or just send me a text and I will post that too, on "
-        "Nexora Inbox and in your feed. Send a photo with the caption "
-        "#profile to set it as your profile picture. Or tap below to "
-        "open the app."
+        "for you. Send a photo with the caption #profile to set it as "
+        "your profile picture. Or tap below to open the app."
     )
     buttons = []
     if settings.WEBAPP_URL:
@@ -239,59 +236,6 @@ async def video_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                            thumb_file_id=thumb, context=context)
 
 
-async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Phase 167: a plain text message to the bot becomes a post —
-    the same shared service as the Mini App composer, so it earns
-    +10 points, passes the banned-word check and carries the
-    author's hashtags. It shows on the Nexora Inbox page AND in
-    the main feed. Commands never reach here (filters.COMMAND
-    excludes them); empty text is ignored, over-long text is
-    refused with a plain message, never posted."""
-    tg_user = update.effective_user
-    text = (update.message.text or "").strip()
-    db = SessionLocal()
-    try:
-        user, _ = get_or_create_user(
-            db,
-            {"id": tg_user.id, "username": tg_user.username,
-             "first_name": tg_user.first_name})
-        if user.is_banned:
-            await update.message.reply_text("This account is suspended.")
-            return
-        if not text:
-            return
-        if len(text) > 2000:
-            await update.message.reply_text(
-                "That message is too long to post — please keep it "
-                "under 2000 characters.")
-            return
-        limit, window = RATE_LIMITS["inbox_post"]
-        if not ratelimit.hit("inbox_post", f"u{tg_user.id}",
-                            limit, window):
-            await update.message.reply_text(
-                "You're posting a bit fast — please wait a while "
-                "and try again.")
-            return
-        if banned_word_in(db, text):
-            await update.message.reply_text(BANNED_WORD_MESSAGE)
-            return
-        post, is_first, _ = register_post(
-            db, user, "text", None, text, via_inbox=True)
-        note = " \U0001F389 First post bonus earned!" if is_first else ""
-        buttons = []
-        if settings.BOT_USERNAME:
-            app_link = (f"https://t.me/{settings.BOT_USERNAME}/"
-                        f"{MINI_APP_SHORT_NAME}?startapp=inbox")
-            buttons.append([InlineKeyboardButton(
-                "\U0001F4E5 See it on Nexora Inbox", url=app_link)])
-        await update.message.reply_text(
-            f"✅ Posted to {settings.APP_NAME}!{note}",
-            reply_markup=InlineKeyboardMarkup(buttons)
-            if buttons else None)
-    finally:
-        db.close()
-
-
 def _parse_tip_payload(payload):
     """Phase 133: tip:<from>:<to>:<post>:<amount> — post 0 means
     the tip was on a profile, not a post. None when the payload
@@ -368,10 +312,6 @@ def build_bot_app() -> Application:
                                    successful_payment_handler))
     app.add_handler(MessageHandler(filters.PHOTO, photo_handler))
     app.add_handler(MessageHandler(filters.VIDEO, video_handler))
-    # Phase 167: plain text to the bot becomes a Nexora Inbox post
-    # (commands excluded — /start etc. keep their own handlers).
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND,
-                                   text_handler))
     return app
 
 
@@ -394,7 +334,7 @@ async def start_bot(app: Application):
             # shell version.
             menu_url = settings.WEBAPP_URL
             if "?" not in menu_url:
-                menu_url = menu_url.rstrip("/") + "/?v=167"
+                menu_url = menu_url.rstrip("/") + "/?v=168"
             await app.bot.set_chat_menu_button(
                 menu_button=MenuButtonWebApp(
                     text="Open App",

@@ -1,22 +1,16 @@
-"""Phase-167 tests: Nexora Inbox (owner, Nov 22, 23:54 Dhaka — page
-named "Nexora Inbox" Nov 22, 23:58 Dhaka).
+"""Phase-167 tests CONVERTED to removal guards (Phase 168).
 
-A plain-text message sent to @NexoraSocial_bot in chat becomes a post
-authored by the sender — on the new Nexora Inbox page AND in the main
-feed. It goes through the SAME shared post path as the composer
-(register_post): +10 points, banned-word check, hashtag extraction,
-first-post referral qualification. via_inbox flags the origin.
-
-Covers: bot text->post + flag + points + hashtags; post in /feed and
-/inbox-posts; composer posts NOT in /inbox-posts; empty/over-long
-text refused; banned-word text refused (plain reply, word never
-echoed); rate limit 30/hour; commands excluded by the handler filter
-(source-level: filters.TEXT & ~filters.COMMAND); private-account +
-block visibility on /inbox-posts; client markers (page, sidebar,
-loadInbox, startapp=inbox, mascot tips); version + routes (167) +
-backup 44 tables; source guard (no BOOLEAN DEFAULT 0).
+Phase 167 built a bot-chat text->post route on a misunderstood
+brief. The owner corrected it Nov 23, 08:52 Dhaka ("you didn't
+actually understand the feature") and ordered the bot route
+REMOVED — only the Nexora Inbox page's own writing box stays
+(Phase 168). This file now guards that removal: no text_handler,
+no TEXT handler registration, no inbox_post rate bucket, the
+/start welcome text back to its pre-167 wording, and plain-text
+messages to the bot do nothing. What Phase 167 built correctly
+stays and is guarded too: via_inbox flag, GET /inbox-posts, the
+Nexora Inbox page + sidebar, feed inclusion.
 """
-import asyncio
 import hashlib
 import hmac
 import json
@@ -44,10 +38,7 @@ bot_mod.start_bot = _no_poll
 from fastapi.testclient import TestClient  # noqa: E402
 from app.main import app  # noqa: E402
 from app import models  # noqa: E402
-from app.config import settings  # noqa: E402
-from app.db import SessionLocal  # noqa: E402
-from app import ratelimit  # noqa: E402
-from app.services import BANNED_WORD_MESSAGE  # noqa: E402
+from app.config import RATE_LIMITS, settings  # noqa: E402
 
 
 def make_init_data(user, auth_date=None):
@@ -73,48 +64,7 @@ HTML = open(os.path.join(ROOT, "code/webapp/index.html")).read()
 JS = open(os.path.join(ROOT, "code/webapp/app.js")).read()
 BOT = open(os.path.join(ROOT, "code/app/bot.py")).read()
 MAIN_SRC = open(os.path.join(ROOT, "code/app/main.py")).read()
-
-
-class FakeMsg:
-    def __init__(self, text):
-        self.text = text
-        self.caption = ""
-        self.sent = []
-        self.markup = None
-
-    async def reply_text(self, text, reply_markup=None):
-        self.sent.append(text)
-        self.markup = reply_markup
-        return None
-
-
-class FakeUser:
-    def __init__(self, uid, name):
-        self.id = uid
-        self.username = name.lower()
-        self.first_name = name
-
-
-class FakeUpdate:
-    def __init__(self, uid, name, text):
-        self.effective_user = FakeUser(uid, name)
-        self.message = FakeMsg(text)
-
-
-class FakeCtx:
-    pass
-
-
-def posts_by(uid, caption=None):
-    db = SessionLocal()
-    try:
-        q = db.query(models.Post).filter_by(user_id=uid)
-        if caption is not None:
-            q = q.filter_by(caption=caption)
-        return q.all()
-    finally:
-        db.close()
-
+CONFIG_SRC = open(os.path.join(ROOT, "code/app/config.py")).read()
 
 with TestClient(app) as c:
     # 1. JS parses (node).
@@ -124,10 +74,40 @@ with TestClient(app) as c:
         assert r.returncode == 0, (f, r.stderr)
     print("node --check OK (games.js + app.js parse)")
 
-    # 2. Client markers: Nexora Inbox page + sidebar + loader.
-    assert HTML.count("?v=167") == 10, HTML.count("?v=167")
-    assert "?v=16" + "6" not in HTML
-    assert "app.js?v=167" in HTML and "style.css?v=167" in HTML
+    # 2. REMOVAL GUARDS — the bot text->post route is gone.
+    assert "text_handler" not in BOT, "Phase 168: text_handler must be gone"
+    assert "filters.TEXT" not in BOT, "Phase 168: no TEXT handler must remain"
+    assert "See it on Nexora Inbox" not in BOT, \
+        "Phase 168: bot confirmation button must be gone"
+    assert "✅ Posted to " in BOT, \
+        "media-route confirmation must survive (only the inbox button goes)"
+    assert "or just send me a text" not in BOT, \
+        "Phase 168: /start must not promise bot text posting"
+    assert "Send a photo with the caption #profile" in BOT, \
+        "pre-167 /start welcome text must be restored"
+    assert "inbox_post" not in BOT and "inbox_post" not in CONFIG_SRC, \
+        "Phase 168: bot-only inbox_post bucket must be gone"
+    assert "inbox_post" not in RATE_LIMITS, RATE_LIMITS
+    assert "ratelimit" not in BOT and "RATE_LIMITS" not in BOT, \
+        "Phase 168: bot.py must not import the removed rate code"
+    # Functional: the built bot app registers no text handler at all.
+    bot_app = bot_mod.build_bot_app()
+    callbacks = [getattr(h.callback, "__name__", "?")
+                 for group in bot_app.handlers.values() for h in group]
+    assert "text_handler" not in callbacks, callbacks
+    assert "photo_handler" in callbacks and "video_handler" in callbacks, \
+        "bot media route must stay registered"
+    print("bot route removal OK (no text handler, no bucket, welcome restored)")
+
+    # 3. What stays: via_inbox flag, /inbox-posts, page + sidebar.
+    assert "via_inbox BOOLEAN DEFAULT FALSE" in MAIN_SRC
+    assert "BOOLEAN DEFAULT 0" not in MAIN_SRC, \
+        "boolean DEFAULT 0 present"
+    assert 'via_inbox = Column(Boolean, default=False)' in \
+        open(os.path.join(ROOT, "code/app/models.py")).read()
+    assert HTML.count("?v=168") == 10, HTML.count("?v=168")
+    assert "?v=16" + "7" not in HTML
+    assert "app.js?v=168" in HTML and "style.css?v=168" in HTML
     assert "Nexora Inbox" in HTML, "page name must read Nexora Inbox"
     assert 'data-go="inbox"' in HTML
     assert ">Nexora Inbox</span>" in HTML, "sidebar label is Nexora Inbox"
@@ -141,147 +121,11 @@ with TestClient(app) as c:
                    "  inbox: [",
                    '$("inbox-more").onclick'):
         assert marker in JS, marker
-    for marker in ("text_handler", "filters.TEXT & ~filters.COMMAND",
-                   "startapp=inbox", "See it on Nexora Inbox",
-                   "via_inbox=True", '"inbox_post"',
-                   'menu_url.rstrip("/") + "/?v=167"'):
-        assert marker in BOT, marker
-    assert "BOOLEAN DEFAULT 0" not in MAIN_SRC, \
-        "boolean DEFAULT 0 present"
-    assert "via_inbox BOOLEAN DEFAULT FALSE" in MAIN_SRC
-    print("client + bot markers OK (Nexora Inbox, ?v=167)")
+    assert "Send the bot a text message" not in JS, \
+        "Phase 168: mascot tip must not mention bot text posting"
+    print("kept parts OK (via_inbox, /inbox-posts, page, ?v=168)")
 
-    # 3. Composer post is a normal post: via_inbox False.
-    r = c.post("/posts", headers=H(111, "Alice"),
-               json={"type": "text", "caption": "Composer post #plain"})
-    assert r.status_code == 200, r.text
-    comp = r.json()
-    assert comp["via_inbox"] is False, comp
-    assert comp["hashtags"] == "plain", comp
-    print("composer post OK (via_inbox False)")
-
-    # 4. Bot text -> post: flag, points, hashtags, feed + inbox, button.
-    upd = FakeUpdate(115, "Dana", "Hello from the bot #nexora")
-    asyncio.run(bot_mod.text_handler(upd, FakeCtx()))
-    assert len(upd.message.sent) == 1, upd.message.sent
-    assert upd.message.sent[0].startswith("✅ Posted to "), upd.message.sent
-    assert "First post bonus" in upd.message.sent[0], upd.message.sent
-    rows = posts_by(115, "Hello from the bot #nexora")
-    assert len(rows) == 1, len(rows)
-    p = rows[0]
-    assert p.type == "text" and p.via_inbox is True, (p.type, p.via_inbox)
-    assert p.hashtags == "nexora", p.hashtags
-    assert p.media_file_id is None
-    db = SessionLocal()
-    try:
-        led = db.query(models.PointsLedger).filter_by(
-            user_id=115, reason="post", ref_id=p.id).all()
-        assert len(led) == 1 and led[0].amount == 10, led
-    finally:
-        db.close()
-    btn = upd.message.markup.inline_keyboard[0][0]
-    assert "startapp=inbox" in btn.url, btn.url
-    assert btn.url.startswith("https://t.me/NexoraSocial_bot/nexorasocial"), btn.url
-    assert "See it on Nexora Inbox" in btn.text, btn.text
-    feed_ids = [x["id"] for x in c.get("/feed", headers=H(115, "Dana")).json()["posts"]]
-    assert p.id in feed_ids, "inbox post must appear in the main feed"
-    inbox_ids = [x["id"] for x in c.get("/inbox-posts", headers=H(115, "Dana")).json()["posts"]]
-    assert p.id in inbox_ids, "inbox post must appear on Nexora Inbox"
-    assert comp["id"] not in inbox_ids, "composer post must NOT be on Nexora Inbox"
-    print("bot text->post OK (flag, +10, hashtags, feed + inbox, button)")
-
-    # 5. Empty / whitespace-only text is ignored, silently.
-    n0 = len(posts_by(115))
-    upd = FakeUpdate(115, "Dana", "   \n  ")
-    asyncio.run(bot_mod.text_handler(upd, FakeCtx()))
-    assert upd.message.sent == [], upd.message.sent
-    assert len(posts_by(115)) == n0
-    print("empty text OK (ignored, no reply, no post)")
-
-    # 6. Over-long text (composer limit is 2000) is refused.
-    upd = FakeUpdate(115, "Dana", "x" * 2001)
-    asyncio.run(bot_mod.text_handler(upd, FakeCtx()))
-    assert any("too long" in t for t in upd.message.sent), upd.message.sent
-    assert len(posts_by(115)) == n0
-    print("over-long text OK (refused, no post)")
-
-    # 7. Banned-word text is refused, word never echoed.
-    db = SessionLocal()
-    try:
-        db.add(models.BannedWord(word="zqxwv", added_by=999))
-        db.commit()
-    finally:
-        db.close()
-    try:
-        upd = FakeUpdate(115, "Dana", "this has ZQXWV inside")
-        asyncio.run(bot_mod.text_handler(upd, FakeCtx()))
-        assert upd.message.sent == [BANNED_WORD_MESSAGE], upd.message.sent
-        assert "zqxwv" not in upd.message.sent[0].lower()
-        assert len(posts_by(115)) == n0
-    finally:
-        db = SessionLocal()
-        try:
-            db.query(models.BannedWord).filter_by(word="zqxwv").delete()
-            db.commit()
-        finally:
-            db.close()
-    print("banned-word text OK (refused, word never echoed)")
-
-    # 8. Rate limit: 30/hour per user, the 31st is refused.
-    ratelimit.reset()
-    for i in range(30):
-        upd = FakeUpdate(4242, "Rater", f"rate post {i}")
-        asyncio.run(bot_mod.text_handler(upd, FakeCtx()))
-        assert upd.message.sent[0].startswith("✅ Posted"), (i, upd.message.sent)
-    assert len(posts_by(4242)) == 30
-    upd = FakeUpdate(4242, "Rater", "rate post 30")
-    asyncio.run(bot_mod.text_handler(upd, FakeCtx()))
-    assert any("posting a bit fast" in t for t in upd.message.sent), upd.message.sent
-    assert len(posts_by(4242)) == 30
-    print("rate limit OK (30/hour, 31st refused)")
-
-    # 9. Commands never reach the handler: the filter excludes them.
-    assert "MessageHandler(filters.TEXT & ~filters.COMMAND," in BOT
-    assert 'CommandHandler("start", start_handler)' in BOT
-    assert "MessageHandler(filters.TEXT & ~filters.COMMAND,\n" \
-           "                                   text_handler)" in BOT
-    print("command exclusion OK (filters.TEXT & ~filters.COMMAND)")
-
-    # 10. Privacy + blocks on /inbox-posts.
-    upd = FakeUpdate(222, "Bob", "Bob's private inbox post")
-    asyncio.run(bot_mod.text_handler(upd, FakeCtx()))
-    bob_post = posts_by(222, "Bob's private inbox post")[0]
-    db = SessionLocal()
-    try:
-        db.get(models.User, 222).is_private = True
-        db.commit()
-    finally:
-        db.close()
-    ids = [x["id"] for x in c.get("/inbox-posts", headers=H(111, "Alice")).json()["posts"]]
-    assert bob_post.id not in ids, "private author's post must hide from strangers"
-    db = SessionLocal()
-    try:
-        db.add(models.Follow(follower_id=111, following_id=222))
-        db.commit()
-    finally:
-        db.close()
-    ids = [x["id"] for x in c.get("/inbox-posts", headers=H(111, "Alice")).json()["posts"]]
-    assert bob_post.id in ids, "follower must see a private author's inbox post"
-    db = SessionLocal()
-    try:
-        db.add(models.UserBlock(blocker_id=111, blocked_id=222))
-        db.commit()
-    finally:
-        db.close()
-    ids = [x["id"] for x in c.get("/inbox-posts", headers=H(111, "Alice")).json()["posts"]]
-    assert bob_post.id not in ids, "blocked author's post must hide"
-    ids = [x["id"] for x in c.get("/inbox-posts", headers=H(333, "Carol")).json()["posts"]]
-    assert bob_post.id not in ids, "private author's post must hide from Carol too"
-    ids = [x["id"] for x in c.get("/inbox-posts", headers=H(222, "Bob")).json()["posts"]]
-    assert bob_post.id in ids, "author always sees their own inbox post"
-    print("privacy + block OK (private hidden, follower sees, blocked hidden)")
-
-    # 11. Neighbours + version + routes.
+    # 4. Neighbours + version + routes.
     js = c.get("/webapp/app.js").text
     for marker in ("vname-text", "fitVerifiedNames", "totpGateAdmin",
                    "refreshMediaToken", "bloodDistance", "photo_file_id",
@@ -289,16 +133,14 @@ with TestClient(app) as c:
                    "loadInbox", "loadBlood", "loadTrending", "postCard"):
         assert marker in js, marker
     assert "Show setup code" not in js, "Phase 166 removal guard"
-    assert "photo_handler" in BOT and "video_handler" in BOT, \
-        "bot media route must stay registered"
     paths = {rt.path for rt in app.routes}
     assert len(paths) == 167, len(paths)
     assert "/inbox-posts" in paths, paths
     h = c.get("/admin/health", headers=ADMIN).json()
-    assert h["version"] == 167, h
+    assert h["version"] == 168, h
     r = c.get("/admin/backup", headers=ADMIN)
     assert r.status_code == 200, r.text
     assert len(r.json()["tables"]) == 44, len(r.json()["tables"])
-    print("neighbours + version + routes OK (167 routes, 44 tables, ?v=167)")
+    print("neighbours + version + routes OK (167 routes, 44 tables, ?v=168)")
 
-print("PHASE 167 OK")
+print("PHASE 167 REMOVAL GUARDS OK")

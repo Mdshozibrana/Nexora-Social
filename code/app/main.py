@@ -950,8 +950,8 @@ def hashtag_feed(cursor: int = 0,
 def inbox_posts(cursor: int = 0,
                 user: models.User = Depends(current_user),
                 db: Session = Depends(get_db)):
-    """Phase 167: posts that arrived by sending text to the bot in
-    chat (via_inbox) — newest first, cursor-paged like /feed.
+    """Phase 167/168: posts written in the Nexora Inbox page's own
+    box (via_inbox) — newest first, cursor-paged like /feed.
     Same visibility as the feed: blocked authors stay hidden,
     private authors' posts reach only their followers (Phase 136).
     Inbox posts are normal posts, so they also appear in /feed;
@@ -1445,6 +1445,7 @@ class PostIn(BaseModel):
     media_file_id: Optional[str] = Field(default=None, max_length=256)
     caption: str = Field(default="", max_length=2000)
     poll: Optional[PollIn] = None
+    via_inbox: bool = Field(default=False)
 
 
 def _validate_poll(poll):
@@ -1485,7 +1486,8 @@ def create_post(body: PostIn, user: models.User = Depends(current_user),
             raise HTTPException(
                 400, moderation.block_message(body.type, verdict))
     post, _, _ = register_post(db, user, body.type, body.media_file_id,
-                               body.caption)
+                               body.caption,
+                               via_inbox=body.via_inbox)
     if poll:
         q, opts = poll
         db.add(models.Poll(post_id=post.id, question=q))

@@ -265,9 +265,9 @@ with TestClient(app) as c:
 
     # 4. Neighbours + version + routes.
     html = c.get("/webapp/").text
-    assert html.count("?v=167") == 10, html.count("?v=167")
+    assert html.count("?v=168") == 10, html.count("?v=168")
     assert "?v=16" + "6" not in html
-    assert "app.js?v=167" in html and "style.css?v=167" in html
+    assert "app.js?v=168" in html and "style.css?v=168" in html
     assert "qrcode" not in html, "no QR library must be referenced"
     js = c.get("/webapp/app.js").text
     for marker in ("vname-text", "fitVerifiedNames", "totpGateAdmin",
@@ -297,10 +297,10 @@ with TestClient(app) as c:
               "/admin/totp/verify"):
         assert p in paths, p
     h = c.get("/admin/health", headers=ADMIN).json()
-    assert h["version"] == 167, h
+    assert h["version"] == 168, h
     r = c.get("/admin/backup", headers=ADMIN)
     assert r.status_code == 200, r.text
     assert len(r.json()["tables"]) == 44, len(r.json()["tables"])
-    print("neighbours + version + routes OK (167 routes, 44 tables, ?v=167)")
+    print("neighbours + version + routes OK (167 routes, 44 tables, ?v=168)")
 
 print("PHASE 166 OK")

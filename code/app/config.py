@@ -133,8 +133,6 @@ RATE_LIMITS = {
     "blood": (120, 3600),
     # Phase 158: skill swap — add/remove/connect.
     "skills": (120, 3600),
-    # Phase 167: bot-inbox text posts — same budget as a post.
-    "inbox_post": (30, 3600),
     "payout_admin": (120, 3600),
 }
 

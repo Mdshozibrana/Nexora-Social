@@ -1640,10 +1640,11 @@ async function loadFeed(reset) {
 }
 
 // -------------------------------------------------------------- inbox ---
-// Phase 167: Nexora Inbox — posts sent to the bot in chat.
-// Newest first, cursor-paged like loadFeed(), and each card is
-// the normal postCard() so likes, comments, repost and tips
-// work exactly as in the feed.
+// Phase 167/168: Nexora Inbox — posts written in the page's own
+// box (Phase 168; the Phase 167 bot-chat route was removed —
+// the owner never ordered it). Newest first, cursor-paged like
+// loadFeed(), and each card is the normal postCard() so likes,
+// comments, repost and tips work exactly as in the feed.
 let inboxCursor = null;
 
 async function loadInbox(reset) {
@@ -1661,6 +1662,42 @@ async function loadInbox(reset) {
     empty.hidden = data.posts.length > 0 || !reset;
     fitVerifiedNames(box);
   } catch (e) { setStatus("Could not load Nexora Inbox."); }
+}
+
+// Phase 168: the Nexora Inbox page's own writing box — the
+// user writes HERE and it posts as them, on this page and in
+// the feed. Same POST /posts path as the composer (with
+// via_inbox), so it earns +10 points, passes the banned-word
+// check and carries hashtags. Empty and over-long text are
+// refused here with a plain message, never posted silently.
+async function submitInboxPost() {
+  const ta = $("inbox-text");
+  const status = $("inbox-status");
+  const btn = $("inbox-post");
+  const text = (ta.value || "").trim();
+  if (!text) {
+    status.textContent = "Write something first ✍️";
+    return;
+  }
+  if (text.length > 2000) {
+    status.textContent = "Too long — please keep it under 2000 characters.";
+    return;
+  }
+  btn.disabled = true;
+  status.textContent = "";
+  try {
+    await api("/posts", { method: "POST",
+      body: JSON.stringify({ type: "text", caption: text,
+                             via_inbox: true }) });
+    ta.value = "";
+    status.textContent = "Posted ✓ — it is on Nexora Inbox and in your feed.";
+    setStatus("Posted to Nexora Inbox.");
+    loadInbox(true);
+  } catch (e) {
+    status.textContent = e.message || "Could not post.";
+    setStatus(e.message || "Could not post.");
+  }
+  btn.disabled = false;
 }
 
 // ------------------------------------------------------------- trending ---
@@ -5899,6 +5936,7 @@ $("tab-following").onclick = () => setTab("following");
 $("tab-hashtags").onclick = () => setTab("hashtags");
 $("feed-more").onclick = () => loadFeed(false);
 $("inbox-more").onclick = () => loadInbox(false);
+$("inbox-post").onclick = submitInboxPost;
 $("profile-more").onclick = () => loadProfilePosts(false);
 $("search-go").onclick = () => runSearch($("search-input").value.trim());
 // Phase 63 (owner): pressing Enter in the search bar must search
@@ -5953,8 +5991,8 @@ function routeStartParam() {
     const id = parseInt(p.slice(8), 10);
     if (id) { openProfile(id); return true; }
   }
-  // Phase 167: the bot's confirmation button opens the app
-  // straight onto Nexora Inbox (startapp=inbox).
+  // Phase 167: a startapp=inbox deep link opens the app
+  // straight onto Nexora Inbox.
   if (p === "inbox") { showView("inbox"); return true; }
   return false;
 }
@@ -10009,7 +10047,7 @@ const MASCOT_TIPS_BY_VIEW = {
     "Use the search box to find someone who teaches the skill you want.",
   ],
   inbox: [
-    "Send the bot a text message in chat — it posts on Nexora Inbox and in your feed.",
+    "Write in the box at the top — it posts on Nexora Inbox and in your feed.",
     "Nexora Inbox posts earn 10 points each, just like posts from the composer.",
     "The newest Nexora Inbox posts are at the top — tap one to like or comment.",
   ],
