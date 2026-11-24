@@ -18,11 +18,11 @@ assert "museum" not in BOT.lower(), "museum in bot.py"
 # Specifically: no section, no sidebar button, no showView entry.
 assert 'data-go="museum"' not in HTML
 assert '<section id="view-museum"' not in HTML
-assert '"nearby", "qr", "trending", "settings", "blood", "skills", "inbox"]' in JS
+assert '"nearby", "qr", "trending", "settings", "blood", "skills"]' in JS
 assert "openMuseum" not in JS and "loadMuseum" not in JS
 # Neighbours that shared the Museum's space are intact.
 assert 'data-go="blood"' in HTML and 'id="view-blood"' in HTML
 assert 'data-go="designs"' in HTML and 'id="view-designs"' in HTML
 assert "loadDesigns" in JS and "design-grid" in HTML
-assert "app.js?v=168" in HTML and "style.css?v=168" in HTML
+assert "app.js?v=169" in HTML and "style.css?v=169" in HTML
 print("PHASE 86 REMOVAL GUARD OK (Museum gone, neighbours intact)")

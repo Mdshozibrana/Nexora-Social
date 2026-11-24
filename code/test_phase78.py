@@ -33,19 +33,19 @@ MAIN = open("app/main.py").read()
 
 # --- client + wiring contract ------------------------------------
 for bit in ('data-go="nearby"', 'id="view-nearby"', 'id="nearby-map"',
-            'id="nearby-toggle"', "vendor/leaflet/leaflet.js?v=168",
-            "vendor/leaflet/leaflet.css?v=168"):
+            'id="nearby-toggle"', "vendor/leaflet/leaflet.js?v=169",
+            "vendor/leaflet/leaflet.css?v=169"):
     assert bit in HTML, bit
 for bit in ("function openNearby()", "function stopNearby()",
             '"nearby") openNearby()', "nbLocate", "LocationManager",
             "routing.openstreetmap.de", "data-nb-profile",
             "data-nb-route", "tile.openstreetmap.org",
-            '"assistant", "nearby", "qr", "trending", "settings", "blood", "skills", "inbox"]'):
+            '"assistant", "nearby", "qr", "trending", "settings", "blood", "skills"]'):
     assert bit in JS, bit
 assert "routing.openstreetmap.de" in MAIN  # CSP connect-src
 assert "share_location" in open("app/models.py").read()
 assert '"location": (300, 3600)' in open("app/config.py").read()
-assert "app.js?v=168" in HTML and "style.css?v=168" in HTML
+assert "app.js?v=169" in HTML and "style.css?v=169" in HTML
 import os.path
 assert os.path.getsize("webapp/vendor/leaflet/leaflet.js") > 100000
 print("client + wiring contract OK")

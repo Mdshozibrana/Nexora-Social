@@ -13,8 +13,8 @@ my-skills list/remove round-trip; directory (members only, search q,
 kind filter, exact skill, no phone keys, private + block visibility);
 matches (computed overlap); connect (notifies, 400/403/404 guards,
 pref gates delivery); profile exposure (skills hidden from private
-strangers); backup 44 tables; routes 167 (5 new paths, 6 route
-entries); ?v=168 x10, no old-version literals.
+strangers); backup 44 tables; routes 166 (5 new paths, 6 route
+entries); ?v=169 x10, no old-version literals.
 """
 import hashlib, hmac, json, os, re, time, urllib.parse
 
@@ -86,9 +86,9 @@ def add_skill(c, h, skill, kind, note=""):
 
 
 # 1. Client markers: Skills page + sidebar + Settings + profile + toggle.
-assert HTML.count("?v=168") == 10, HTML.count("?v=168")
+assert HTML.count("?v=169") == 10, HTML.count("?v=169")
 assert "?v=15" + "7" not in HTML
-assert 'menu_url.rstrip("/") + "/?v=168"' in BOT
+assert 'menu_url.rstrip("/") + "/?v=169"' in BOT
 assert 'data-go="skills"' in HTML
 assert 'id="view-skills"' in HTML
 assert "🤝 Skills" in HTML
@@ -97,7 +97,7 @@ for cid in ("skill-tab-directory", "skill-tab-matches",
             "skill-search", "skill-search-btn", "skill-kind-filters",
             "skill-directory-list", "skill-match-list", "skill-empty"):
     assert f'id="{cid}"' in HTML, cid
-assert '"settings", "blood", "skills", "inbox"].forEach(v => {' in JS
+assert '"settings", "blood", "skills"].forEach(v => {' in JS
 assert 'if (name === "skills") loadSkills();' in JS
 assert "loadSkills" in JS and "loadSkillsDirectory" in JS
 assert "loadSkillsMatches" in JS and "loadMySkills" in JS
@@ -116,7 +116,7 @@ for rule in (".skill-tabs", ".skill-card", ".skill-chip-teach",
              ".settings-skill-row"):
     assert rule in CSS, rule
 assert "Phase 158" in CSS
-print("client markers OK (?v=168 x10, Skills page, Settings, profile, toggle)")
+print("client markers OK (?v=169 x10, Skills page, Settings, profile, toggle)")
 
 # 2. Server markers: model, backup, notify map, rate bucket.
 assert "class SkillEntry(Base):" in MODELS
@@ -344,14 +344,14 @@ with TestClient(app) as c:
     assert r.status_code == 400, r.text
     print("cap OK (20 skills max)")
 
-    # 14. Backup 44 tables; routes 167 (5 new paths, 6 entries).
+    # 14. Backup 44 tables; routes 166 (5 new paths, 6 entries).
     r = c.get("/admin/backup", headers=ALICE)
     assert r.status_code == 200, r.text
     assert len(r.json()["tables"]) == 44, len(r.json()["tables"])
     assert "skill_entries" in r.json()["tables"], r.json().keys()
     print("backup: 44 tables incl. skill_entries OK")
     paths = {rt.path for rt in app.routes}
-    assert len(paths) == 167, len(paths)
+    assert len(paths) == 166, len(paths)
     expected = {"/me/skills", "/me/skills/{entry_id}",
                 "/skills/directory", "/skills/matches",
                 "/skills/{user_id}/connect"}
@@ -360,8 +360,8 @@ with TestClient(app) as c:
     print("routes: 163 OK (5 new skill paths, nothing else)")
 
 # 15. Version.
-assert HTML.count("?v=168") == 10, HTML.count("?v=168")
+assert HTML.count("?v=169") == 10, HTML.count("?v=169")
 assert "?v=15" + "7" not in HTML
-assert 'menu_url.rstrip("/") + "/?v=168"' in BOT
+assert 'menu_url.rstrip("/") + "/?v=169"' in BOT
 assert "Phase 158" in CSS and "Phase 158" in HTML
 print("PHASE 158 OK")

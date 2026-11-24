@@ -1,23 +1,17 @@
-"""Phase-168 tests: Nexora Inbox's own writing box (owner correction,
-Nov 23, 08:52-08:53 Dhaka — Phase 167 built a bot-chat text->post
-route on a misunderstood brief; the owner ordered the bot route
-REMOVED and the page's box built instead).
+"""Phase-168 tests CONVERTED to removal guards (Phase 169).
 
-The Nexora Inbox page has a textarea + Post button at the top. The
-user writes THERE and it posts as them — on the page AND in the
-main feed — through the SAME POST /posts path as the composer
-(with via_inbox=true): +10 points, banned-word check, hashtag
-extraction, 2000-char limit, composer's own "post" rate bucket
-(30/hour, no new bucket). Empty/over-long text is refused in the
-box with a plain message, never posted silently.
-
-Covers: compose-box markers + a Node harness driving the real
-submitInboxPost() (empty / over-long / valid / api-error);
-POST /posts via_inbox=true (flag, +10, hashtags, feed + inbox);
-composer post excluded from Inbox; banned-word 400; over-long 422;
-"post" bucket 30/hour; private-account + block visibility on
-/inbox-posts; version + routes (167) + backup 44 tables; source
-guard (no BOOLEAN DEFAULT 0).
+Phase 168 built the Nexora Inbox page's own writing box (owner
+correction, Nov 23, 08:52-08:53 Dhaka — the Phase 167 bot-chat
+text->post route was removed and the page's box built instead).
+On Nov 24, 20:28 Dhaka the owner confirmed the scope —
+"পুরো Nexora Inbox পেজটাই সরিয়ে দাও" (remove the WHOLE page)
+— and Phase 169 removed the entire feature. This file now
+guards that removal: no compose box, no loadInbox /
+submitInboxPost, no GET /inbox-posts, no via_inbox posting
+path. What Phase 168 proved about the NORMAL composer stays
+guarded as neighbours: banned-word 400, 2000-char 422, the
+"post" bucket 30/hour. The via_inbox DB column is RETAINED
+but unused (data safety — old posts keep their flag).
 """
 import hashlib
 import hmac
@@ -74,97 +68,6 @@ ROOT = os.path.expanduser("~/workspace/friendline_tg_project")
 HTML = open(os.path.join(ROOT, "code/webapp/index.html")).read()
 JS = open(os.path.join(ROOT, "code/webapp/app.js")).read()
 MAIN_SRC = open(os.path.join(ROOT, "code/app/main.py")).read()
-APP_JS_PATH = os.path.join(ROOT, "code/webapp/app.js")
-
-
-def _extract_submit_src():
-    js = open(APP_JS_PATH).read()
-    start = js.index("async function submitInboxPost() {")
-    end = js.index("// ------------------------------------------------------------- trending")
-    assert 0 <= start < end, (start, end)
-    src = js[start:end]
-    assert "via_inbox: true" in src, "box must post with via_inbox"
-    assert '$("inbox-text")' in src and '$("inbox-status")' in src
-    return src
-
-
-HARNESS_PRELUDE = r'''
-"use strict";
-const els = {};
-function makeEl(id) {
-  const el = { id, value: "", textContent: "", disabled: false };
-  els[id] = el;
-  return el;
-}
-["inbox-text", "inbox-status", "inbox-post"].forEach(makeEl);
-function $(id) { return els[id]; }
-let apiCalls = [];
-let apiFail = null;
-async function api(path, opts) {
-  apiCalls.push({ path, opts });
-  if (apiFail) throw new Error(apiFail);
-  return { id: 101 };
-}
-let loadInboxCalls = [];
-function loadInbox(reset) { loadInboxCalls.push(reset); }
-let statuses = [];
-function setStatus(m) { statuses.push(m); }
-function assert(c, msg) { if (!c) throw new Error("ASSERT FAILED: " + msg); }
-'''
-
-HARNESS_MAIN = r'''
-(async () => {
-  const ta = $("inbox-text"), st = $("inbox-status"), btn = $("inbox-post");
-  // A: empty / whitespace-only — no api call, plain message.
-  ta.value = "   \n  "; apiCalls = []; loadInboxCalls = [];
-  await submitInboxPost();
-  assert(apiCalls.length === 0, "empty must not call api");
-  assert(st.textContent.indexOf("Write something first") === 0,
-         "empty status, got " + st.textContent);
-  assert(btn.disabled === false, "button enabled after empty");
-  // B: over-long (>2000) — no api call, plain message.
-  ta.value = "x".repeat(2001); apiCalls = [];
-  await submitInboxPost();
-  assert(apiCalls.length === 0, "over-long must not call api");
-  assert(st.textContent.indexOf("Too long") === 0,
-         "over-long status, got " + st.textContent);
-  // C: valid — one POST with via_inbox, cleared, list reloaded.
-  ta.value = "Hello inbox #test"; apiCalls = []; loadInboxCalls = []; statuses = [];
-  await submitInboxPost();
-  assert(apiCalls.length === 1, "valid must call api once");
-  assert(apiCalls[0].path === "/posts", "path must be /posts");
-  const body = JSON.parse(apiCalls[0].opts.body);
-  assert(body.type === "text" && body.caption === "Hello inbox #test" &&
-         body.via_inbox === true, "body: " + apiCalls[0].opts.body);
-  assert(ta.value === "", "textarea cleared after post");
-  assert(st.textContent.indexOf("Posted") === 0,
-         "posted status, got " + st.textContent);
-  assert(loadInboxCalls.length === 1 && loadInboxCalls[0] === true,
-         "loadInbox(true) after post");
-  assert(btn.disabled === false, "button re-enabled after post");
-  // D: api throws — error shown, button re-enabled, no crash.
-  ta.value = "boom test"; apiCalls = []; apiFail = "Server down";
-  await submitInboxPost();
-  assert(apiCalls.length === 1, "failed post still calls api");
-  assert(st.textContent === "Server down",
-         "error status, got " + st.textContent);
-  assert(btn.disabled === false, "button re-enabled after error");
-  console.log("HARNESS OK (empty, over-long, valid, error)");
-})().catch(e => { console.error(e.stack || e); process.exit(1); });
-'''
-
-
-def _run_node_harness():
-    src = _extract_submit_src()
-    harness = HARNESS_PRELUDE + src + HARNESS_MAIN
-    path = "/tmp/t168_harness.js"
-    open(path, "w").write(harness)
-    r = subprocess.run(["node", "--check", path], capture_output=True, text=True)
-    assert r.returncode == 0, r.stderr
-    r = subprocess.run(["node", path], capture_output=True, text=True, timeout=30)
-    assert r.returncode == 0, (r.stdout, r.stderr)
-    assert "HARNESS OK" in r.stdout, (r.stdout, r.stderr)
-    print("node harness OK (submitInboxPost: empty, over-long, valid, error)")
 
 
 def posts_by(uid, caption=None):
@@ -186,39 +89,40 @@ with TestClient(app) as c:
         assert r.returncode == 0, (f, r.stderr)
     print("node --check OK (games.js + app.js parse)")
 
-    # 2. Node harness: the real submitInboxPost() against DOM stubs.
-    _run_node_harness()
-
-    # 3. Compose-box markers in the served shell + client source.
-    assert HTML.count("?v=168") == 10, HTML.count("?v=168")
-    assert "?v=16" + "7" not in HTML
-    assert "app.js?v=168" in HTML and "style.css?v=168" in HTML
-    assert '<textarea id="inbox-text" rows="3" maxlength="2000"' in HTML
-    assert 'placeholder="Write something for Nexora Inbox' in HTML
-    assert '<button id="inbox-post" class="btn">Post</button>' in HTML
-    assert 'id="inbox-status"' in HTML
-    assert "Write in the box below" in HTML, "hint must describe the box"
-    assert "send the bot a text message" not in HTML.lower(), \
-        "page must not mention bot text posting any more"
-    for marker in ("submitInboxPost", "via_inbox: true",
-                   '$("inbox-post").onclick = submitInboxPost;',
-                   "Write in the box at the top"):
-        assert marker in JS, marker
-    assert "Send the bot a text message" not in JS
-    assert "See it on Nexora Inbox" not in JS
+    # 2. REMOVAL GUARDS — the compose box and its code are gone.
+    assert "Nexora Inbox" not in HTML and "Nexora Inbox" not in JS
+    assert "inbox" not in HTML.lower() and "inbox" not in JS.lower()
+    for bit in ('<textarea id="inbox-text"', 'id="inbox-post"',
+                'id="inbox-status"', 'id="view-inbox"',
+                'data-go="inbox"'):
+        assert bit not in HTML, bit
+    for marker in ("submitInboxPost", "loadInbox", "inboxCursor",
+                   "/inbox-posts", 'if (p === "inbox")',
+                   "Write in the box at the top",
+                   "Write something for Nexora Inbox"):
+        assert marker not in JS and marker not in HTML, marker
+    assert HTML.count("?v=169") == 10, HTML.count("?v=169")
+    assert "?v=16" + "8" not in HTML
+    assert "app.js?v=169" in HTML and "style.css?v=169" in HTML
+    assert "/inbox-posts" not in MAIN_SRC
+    assert "via_inbox: bool = Field" not in MAIN_SRC
+    assert '"via_inbox": bool(getattr' not in MAIN_SRC
+    assert "via_inbox BOOLEAN DEFAULT FALSE" in MAIN_SRC, \
+        "column DDL must be retained (data safety)"
     assert "BOOLEAN DEFAULT 0" not in MAIN_SRC
-    print("compose-box markers OK (?v=168, box + button + status)")
+    print("box removal OK (?v=169, no box/code/endpoint, column retained)")
 
-    # 4. POST /posts with via_inbox=true: flag, +10, hashtags, feed + inbox.
+    # 3. Functional: /inbox-posts 404; via_inbox ignored on POST /posts.
+    r = c.get("/inbox-posts", headers=H(115, "Dana"))
+    assert r.status_code == 404, r.status_code
     ratelimit.reset()
     r = c.post("/posts", headers=H(115, "Dana"),
-               json={"type": "text", "caption": "Hello from the box #nexora",
+               json={"type": "text", "caption": "Hello from Dana #nexora",
                      "via_inbox": True})
     assert r.status_code == 200, r.text
     p = r.json()
-    assert p["via_inbox"] is True, p
+    assert "via_inbox" not in p, p
     assert p["hashtags"] == "nexora", p
-    assert p["type"] == "text" and p["media_file_id"] is None
     db = SessionLocal()
     try:
         led = db.query(models.PointsLedger).filter_by(
@@ -227,22 +131,23 @@ with TestClient(app) as c:
     finally:
         db.close()
     feed_ids = [x["id"] for x in c.get("/feed", headers=H(115, "Dana")).json()["posts"]]
-    assert p["id"] in feed_ids, "inbox post must appear in the main feed"
-    inbox_ids = [x["id"] for x in c.get("/inbox-posts", headers=H(115, "Dana")).json()["posts"]]
-    assert p["id"] in inbox_ids, "inbox post must appear on Nexora Inbox"
-    print("inbox post OK (flag, +10, hashtags, feed + inbox)")
+    assert p["id"] in feed_ids, "post must appear in the main feed"
+    print("via_inbox ignored OK (200, no flag, +10, in feed)")
 
-    # 5. Composer post (no via_inbox) is a normal post, NOT on Inbox.
-    r = c.post("/posts", headers=H(111, "Alice"),
-               json={"type": "text", "caption": "Composer post #plain"})
-    assert r.status_code == 200, r.text
-    comp = r.json()
-    assert comp["via_inbox"] is False, comp
-    inbox_ids = [x["id"] for x in c.get("/inbox-posts", headers=H(111, "Alice")).json()["posts"]]
-    assert comp["id"] not in inbox_ids, "composer post must NOT be on Nexora Inbox"
-    print("composer post OK (via_inbox False, excluded from Inbox)")
+    # 4. DATA SAFETY: an old via_inbox=true post still renders in the feed.
+    db = SessionLocal()
+    try:
+        row = db.get(models.Post, p["id"])
+        row.via_inbox = True
+        db.commit()
+    finally:
+        db.close()
+    feed = c.get("/feed", headers=H(115, "Dana")).json()["posts"]
+    assert p["id"] in [x["id"] for x in feed]
+    assert all("via_inbox" not in x for x in feed)
+    print("data safety OK (old inbox post still in feed)")
 
-    # 6. Banned-word text via the box is refused, word never echoed.
+    # 5. Neighbours: banned-word 400, over-long 422, post bucket 30/hour.
     db = SessionLocal()
     try:
         db.add(models.BannedWord(word="zqxwv", added_by=999))
@@ -252,8 +157,7 @@ with TestClient(app) as c:
     try:
         n0 = len(posts_by(115))
         r = c.post("/posts", headers=H(115, "Dana"),
-                   json={"type": "text", "caption": "this has ZQXWV inside",
-                         "via_inbox": True})
+                   json={"type": "text", "caption": "this has ZQXWV inside"})
         assert r.status_code == 400, r.text
         assert r.json()["detail"] == BANNED_WORD_MESSAGE, r.json()
         assert "zqxwv" not in r.json()["detail"].lower()
@@ -266,84 +170,39 @@ with TestClient(app) as c:
         finally:
             db.close()
     print("banned-word OK (400, word never echoed, no post)")
-
-    # 7. Over-long caption is refused by the server (422, max 2000).
     r = c.post("/posts", headers=H(115, "Dana"),
-               json={"type": "text", "caption": "x" * 2001,
-                     "via_inbox": True})
+               json={"type": "text", "caption": "x" * 2001})
     assert r.status_code == 422, r.text
     print("over-long OK (422)")
-
-    # 8. Rate limit: the composer's own "post" bucket, 30/hour.
     ratelimit.reset()
     for i in range(30):
         r = c.post("/posts", headers=H(4242, "Rater"),
-                   json={"type": "text", "caption": f"rate post {i}",
-                         "via_inbox": True})
+                   json={"type": "text", "caption": f"rate post {i}"})
         assert r.status_code == 200, (i, r.text)
     assert len(posts_by(4242)) == 30
     r = c.post("/posts", headers=H(4242, "Rater"),
-               json={"type": "text", "caption": "rate post 30",
-                     "via_inbox": True})
+               json={"type": "text", "caption": "rate post 30"})
     assert r.status_code == 429, r.text
     assert len(posts_by(4242)) == 30
-    print("rate limit OK (composers post bucket, 30/hour, 31st 429)")
+    print("rate limit OK (post bucket, 30/hour, 31st 429)")
 
-    # 9. Privacy + blocks on /inbox-posts.
-    ratelimit.reset()
-    r = c.post("/posts", headers=H(222, "Bob"),
-               json={"type": "text", "caption": "Bob's private inbox post",
-                     "via_inbox": True})
-    assert r.status_code == 200, r.text
-    bob_post = r.json()
-    db = SessionLocal()
-    try:
-        db.get(models.User, 222).is_private = True
-        db.commit()
-    finally:
-        db.close()
-    ids = [x["id"] for x in c.get("/inbox-posts", headers=H(111, "Alice")).json()["posts"]]
-    assert bob_post["id"] not in ids, "private author's post must hide from strangers"
-    db = SessionLocal()
-    try:
-        db.add(models.Follow(follower_id=111, following_id=222))
-        db.commit()
-    finally:
-        db.close()
-    ids = [x["id"] for x in c.get("/inbox-posts", headers=H(111, "Alice")).json()["posts"]]
-    assert bob_post["id"] in ids, "follower must see a private author's inbox post"
-    db = SessionLocal()
-    try:
-        db.add(models.UserBlock(blocker_id=111, blocked_id=222))
-        db.commit()
-    finally:
-        db.close()
-    ids = [x["id"] for x in c.get("/inbox-posts", headers=H(111, "Alice")).json()["posts"]]
-    assert bob_post["id"] not in ids, "blocked author's post must hide"
-    ids = [x["id"] for x in c.get("/inbox-posts", headers=H(333, "Carol")).json()["posts"]]
-    assert bob_post["id"] not in ids, "private author's post must hide from Carol too"
-    ids = [x["id"] for x in c.get("/inbox-posts", headers=H(222, "Bob")).json()["posts"]]
-    assert bob_post["id"] in ids, "author always sees their own inbox post"
-    print("privacy + block OK (private hidden, follower sees, blocked hidden)")
-
-    # 10. Neighbours + version + routes.
+    # 6. Neighbours + version + routes.
     js = c.get("/webapp/app.js").text
     for marker in ("vname-text", "fitVerifiedNames", "totpGateAdmin",
                    "refreshMediaToken", "bloodDistance", "photo_file_id",
                    "MASCOT_TIPS_BY_VIEW", "loadSkills", "totp-card",
-                   "loadInbox", "submitInboxPost", "loadBlood",
-                   "loadTrending", "postCard"):
+                   "loadBlood", "loadTrending", "postCard"):
         assert marker in js, marker
     assert "Show setup code" not in js, "Phase 166 removal guard"
     assert "text_handler" not in open(os.path.join(ROOT, "code/app/bot.py")).read()
     paths = {rt.path for rt in app.routes}
-    assert len(paths) == 167, len(paths)
-    assert "/inbox-posts" in paths and "/posts" in paths, paths
+    assert len(paths) == 166, len(paths)
+    assert "/inbox-posts" not in paths and "/posts" in paths, paths
     h = c.get("/admin/health", headers=ADMIN).json()
-    assert h["version"] == 168, h
+    assert h["version"] == 169, h
     r = c.get("/admin/backup", headers=ADMIN)
     assert r.status_code == 200, r.text
     assert len(r.json()["tables"]) == 44, len(r.json()["tables"])
-    print("neighbours + version + routes OK (167 routes, 44 tables, ?v=168)")
+    print("neighbours + version + routes OK (166 routes, 44 tables, ?v=169)")
 
-print("PHASE 168 OK")
+print("PHASE 168 REMOVAL GUARDS OK")

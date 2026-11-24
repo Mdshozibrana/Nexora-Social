@@ -1,15 +1,18 @@
-"""Phase-167 tests CONVERTED to removal guards (Phase 168).
+"""Phase-167 tests CONVERTED to removal guards (Phase 169).
 
 Phase 167 built a bot-chat text->post route on a misunderstood
-brief. The owner corrected it Nov 23, 08:52 Dhaka ("you didn't
-actually understand the feature") and ordered the bot route
-REMOVED — only the Nexora Inbox page's own writing box stays
-(Phase 168). This file now guards that removal: no text_handler,
+brief. The owner corrected it Nov 23, 08:52 Dhaka and ordered
+the bot route REMOVED (Phase 168). Phase 168 kept the Nexora
+Inbox page + in-page box. On Nov 24, 20:28 Dhaka the owner
+confirmed the scope — "পুরো Nexora Inbox পেজটাই সরিয়ে দাও"
+(remove the WHOLE page) — and Phase 169 removed the entire
+feature. This file now guards BOTH removals: no text_handler,
 no TEXT handler registration, no inbox_post rate bucket, the
-/start welcome text back to its pre-167 wording, and plain-text
-messages to the bot do nothing. What Phase 167 built correctly
-stays and is guarded too: via_inbox flag, GET /inbox-posts, the
-Nexora Inbox page + sidebar, feed inclusion.
+/start welcome text back to its pre-167 wording, plain-text
+messages to the bot do nothing — AND no Nexora Inbox page,
+box, endpoint or via_inbox posting path remains. The via_inbox
+DB column is RETAINED but unused (data safety — old posts keep
+their flag, no migration drops it).
 """
 import hashlib
 import hmac
@@ -74,7 +77,7 @@ with TestClient(app) as c:
         assert r.returncode == 0, (f, r.stderr)
     print("node --check OK (games.js + app.js parse)")
 
-    # 2. REMOVAL GUARDS — the bot text->post route is gone.
+    # 2. REMOVAL GUARDS — the bot text->post route is gone (Phase 168).
     assert "text_handler" not in BOT, "Phase 168: text_handler must be gone"
     assert "filters.TEXT" not in BOT, "Phase 168: no TEXT handler must remain"
     assert "See it on Nexora Inbox" not in BOT, \
@@ -99,48 +102,48 @@ with TestClient(app) as c:
         "bot media route must stay registered"
     print("bot route removal OK (no text handler, no bucket, welcome restored)")
 
-    # 3. What stays: via_inbox flag, /inbox-posts, page + sidebar.
+    # 3. REMOVAL GUARDS — the Nexora Inbox page is gone too (Phase 169).
+    assert "Nexora Inbox" not in HTML and "Nexora Inbox" not in JS, \
+        "Phase 169: page name must be gone"
+    assert "inbox" not in HTML.lower() and "inbox" not in JS.lower(), \
+        "Phase 169: no inbox string may remain in the client"
+    for bit in ('id="view-inbox"', 'data-go="inbox"',
+                'id="inbox-text"', 'id="inbox-post"'):
+        assert bit not in HTML, bit
+    for marker in ("loadInbox", "submitInboxPost", "/inbox-posts",
+                   'if (p === "inbox")', "  inbox: ["):
+        assert marker not in JS, marker
+    assert '"settings", "blood", "skills"].forEach(v => {' in JS
+    assert "/inbox-posts" not in MAIN_SRC, "Phase 169: endpoint gone"
+    assert "via_inbox: bool = Field" not in MAIN_SRC
+    assert '"via_inbox": bool(getattr' not in MAIN_SRC
+    # Column RETAINED but unused (data safety).
     assert "via_inbox BOOLEAN DEFAULT FALSE" in MAIN_SRC
     assert "BOOLEAN DEFAULT 0" not in MAIN_SRC, \
         "boolean DEFAULT 0 present"
     assert 'via_inbox = Column(Boolean, default=False)' in \
         open(os.path.join(ROOT, "code/app/models.py")).read()
-    assert HTML.count("?v=168") == 10, HTML.count("?v=168")
-    assert "?v=16" + "7" not in HTML
-    assert "app.js?v=168" in HTML and "style.css?v=168" in HTML
-    assert "Nexora Inbox" in HTML, "page name must read Nexora Inbox"
-    assert 'data-go="inbox"' in HTML
-    assert ">Nexora Inbox</span>" in HTML, "sidebar label is Nexora Inbox"
-    assert '<h2 class="view-title">📥 Nexora Inbox</h2>' in HTML
-    for bit in ('id="view-inbox"', 'id="inbox-list"',
-                'id="inbox-more"', 'id="inbox-empty"'):
-        assert bit in HTML, bit
-    for marker in ("loadInbox", "/inbox-posts", "inboxCursor",
-                   'if (p === "inbox")', '"skills", "inbox"]',
-                   'if (name === "inbox") loadInbox();',
-                   "  inbox: [",
-                   '$("inbox-more").onclick'):
-        assert marker in JS, marker
-    assert "Send the bot a text message" not in JS, \
-        "Phase 168: mascot tip must not mention bot text posting"
-    print("kept parts OK (via_inbox, /inbox-posts, page, ?v=168)")
+    assert HTML.count("?v=169") == 10, HTML.count("?v=169")
+    assert "?v=16" + "8" not in HTML
+    assert "app.js?v=169" in HTML and "style.css?v=169" in HTML
+    print("page removal OK (no Inbox page/box/endpoint, column retained)")
 
     # 4. Neighbours + version + routes.
     js = c.get("/webapp/app.js").text
     for marker in ("vname-text", "fitVerifiedNames", "totpGateAdmin",
                    "refreshMediaToken", "bloodDistance", "photo_file_id",
                    "MASCOT_TIPS_BY_VIEW", "loadSkills", "totp-card",
-                   "loadInbox", "loadBlood", "loadTrending", "postCard"):
+                   "loadBlood", "loadTrending", "postCard"):
         assert marker in js, marker
     assert "Show setup code" not in js, "Phase 166 removal guard"
     paths = {rt.path for rt in app.routes}
-    assert len(paths) == 167, len(paths)
-    assert "/inbox-posts" in paths, paths
+    assert len(paths) == 166, len(paths)
+    assert "/inbox-posts" not in paths, paths
     h = c.get("/admin/health", headers=ADMIN).json()
-    assert h["version"] == 168, h
+    assert h["version"] == 169, h
     r = c.get("/admin/backup", headers=ADMIN)
     assert r.status_code == 200, r.text
     assert len(r.json()["tables"]) == 44, len(r.json()["tables"])
-    print("neighbours + version + routes OK (167 routes, 44 tables, ?v=168)")
+    print("neighbours + version + routes OK (166 routes, 44 tables, ?v=169)")
 
 print("PHASE 167 REMOVAL GUARDS OK")

@@ -71,7 +71,7 @@ assert "Rain Effect card" in MAIN
 print("nexa manual OK")
 
 # --- asset version -------------------------------------------------------
-assert "app.js?v=168" in HTML and "style.css?v=168" in HTML
+assert "app.js?v=169" in HTML and "style.css?v=169" in HTML
 print("asset version OK")
 
 print("PHASE 101 OK")

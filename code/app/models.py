@@ -92,7 +92,9 @@ class Post(Base):
     # Phase 123: creator tools — one pinned post per author.
     is_pinned = Column(Boolean, default=False)
     is_deleted = Column(Boolean, default=False)
-    # Phase 168: written in the Nexora Inbox page's own box.
+    # Phase 167/168: written in the Nexora Inbox page's own box.
+    # Phase 169 removed the page; the column is retained (unused)
+    # so old posts keep their flag — never drop it.
     via_inbox = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 

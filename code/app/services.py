@@ -48,12 +48,9 @@ def award_points(db, user_id, amount, reason, ref_id=None):
 
 
 def register_post(db, author, ptype, media_file_id, caption,
-                  thumb_file_id=None, via_inbox=False):
+                  thumb_file_id=None):
     """Create a post for author (a models.User). Returns
-    (post, is_first_post, referral_qualified_now). via_inbox
-    marks posts written in the Nexora Inbox page's own box
-    (Phase 168) — they are normal posts, so they show in
-    the feed and on the Nexora Inbox page.
+    (post, is_first_post, referral_qualified_now).
     Every post earns post points (Phase 113); on the author's FIRST
     post ever a pending referral qualifies, paying the referrer
     (PRD section 5). Soft-deleted posts still count toward
@@ -64,8 +61,7 @@ def register_post(db, author, ptype, media_file_id, caption,
                        media_file_id=media_file_id,
                        thumb_file_id=thumb_file_id,
                        caption=caption or "",
-                       hashtags=extract_hashtags(caption or ""),
-                       via_inbox=via_inbox)
+                       hashtags=extract_hashtags(caption or ""))
     db.add(post)
     db.commit()
     db.refresh(post)
