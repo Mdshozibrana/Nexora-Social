@@ -326,4 +326,47 @@ assert "mentions" in r.json()["tables"]
 assert len(_BACKUP_TABLES) == 46, len(_BACKUP_TABLES)
 print("client + version + routes + backup OK (166 routes, 45 tables, ?v=171)")
 
+# 13. Phase 170 rider: stale /media token recovery.
+# (a) Foreground return refreshes the token (the 45-min tick
+# never fires while the WebView is backgrounded).
+hb = js[js.index("function startHeartbeat()"):
+        js.index("async function refreshMediaToken()")]
+assert ("if (!document.hidden) { sendHeartbeat(); refreshMediaToken(); }"
+        in hb), hb
+assert "setInterval(refreshMediaToken, 2700000)" in js
+# (b) The img error handler re-issues the token before rebuilding.
+assert 'document.addEventListener("error", async (e) => {' in js
+eh = js[js.index('document.addEventListener("error", async (e) => {'):]
+eh = eh[:eh.index("// ---------------------------------------------------- entry")]
+assert "await refreshMediaToken();" in eh, eh
+assert "!t.dataset.mtok" in eh, eh
+assert eh.index("await refreshMediaToken();") < eh.index(
+    "t.src = mediaUrl(decodeURIComponent(m[1]));"), eh
+assert "mediaTokenRefresh" in js
+# (c) Server-side: an expired token 401s; a fresh /auth token is
+# accepted again (the fake file_id then 404s at Telegram — the
+# point is the token, not the file).
+r = c.post("/posts", headers=ALICE,
+           json={"type": "photo", "caption": "rider",
+                 "media_file_id": "rider1"})
+assert r.status_code == 200, r.text
+import base64  # noqa: E402
+iat = int(time.time()) - 7200
+exp = iat + 3600
+sig = hmac.new(os.environ["BOT_TOKEN"].encode(),
+               f"nexora-media:1701:{iat}:{exp}".encode(),
+               hashlib.sha256).hexdigest()
+stale = base64.urlsafe_b64encode(
+    f"1701.{iat}.{exp}.{sig}".encode()).decode()
+r = c.get("/media/rider1?mt=" + stale)
+assert r.status_code == 401, r.status_code
+r = c.post("/auth", json={"initData": make_init_data(
+    {"id": 1701, "first_name": "Alice", "username": "alice"})})
+assert r.status_code == 200, r.text
+fresh = r.json()["media_token"]
+assert fresh and fresh != stale
+r = c.get("/media/rider1?mt=" + fresh)
+assert r.status_code == 404, r.status_code
+print("rider: stale-token recovery OK")
+
 print("PHASE 170 OK")

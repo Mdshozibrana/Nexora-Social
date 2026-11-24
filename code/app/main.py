@@ -7528,7 +7528,11 @@ async def media_proxy(file_id: str, request: Request,
         raise HTTPException(404, "File not found")
     api = f"https://api.telegram.org/bot{settings.BOT_TOKEN}"
     async with httpx.AsyncClient(timeout=30) as client:
-        info = await client.get(f"{api}/getFile", params={"file_id": file_id})
+        try:
+            info = await client.get(f"{api}/getFile",
+                                    params={"file_id": file_id})
+        except httpx.HTTPError:
+            raise HTTPException(404, "File not found")
         if info.status_code != 200:
             raise HTTPException(404, "File not found")
         file_path = info.json()["result"]["file_path"]

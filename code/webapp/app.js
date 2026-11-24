@@ -5731,20 +5731,31 @@ function startHeartbeat() {
   // Phase 164: the media token lives 1 hour — refresh it while the
   // app stays open so long sessions keep their images.
   if (!mediaTimer) mediaTimer = setInterval(refreshMediaToken, 2700000);
+  // Phase 170 rider: Telegram's WebView suspends timers in
+  // background, so the 45-min token refresh never fires there —
+  // refresh the 1-hour media token the moment the app comes back
+  // to the foreground, or every image 401s until the next tick.
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) sendHeartbeat();
+    if (!document.hidden) { sendHeartbeat(); refreshMediaToken(); }
   });
 }
 
 // Phase 164: re-issue the media token (1-hour, user-bound) without
 // disturbing the open app — /auth answers with the act-as identity
 // when the admin is acting as a managed user, same as loadMe.
+let mediaTokenRefresh = null;
 async function refreshMediaToken() {
-  try {
-    const r = await api("/auth", { method: "POST",
-      body: JSON.stringify({ initData }) });
-    if (r && r.media_token) mediaToken = r.media_token;
-  } catch (e) { /* next refresh retries; images retry meanwhile */ }
+  // Phase 170 rider: a gallery of stale images can fire many
+  // refreshes at once — share one in-flight /auth call.
+  if (mediaTokenRefresh) return mediaTokenRefresh;
+  mediaTokenRefresh = (async () => {
+    try {
+      const r = await api("/auth", { method: "POST",
+        body: JSON.stringify({ initData }) });
+      if (r && r.media_token) mediaToken = r.media_token;
+    } catch (e) { /* next refresh retries; images retry meanwhile */ }
+  })();
+  try { await mediaTokenRefresh; } finally { mediaTokenRefresh = null; }
 }
 
 async function loadMe() {
@@ -6182,20 +6193,24 @@ loadMe().then(bootOk).catch(() => {
 // hiccup left the whole gallery broken until a manual reload.
 // Any /media image or video that fails now retries itself with
 // a short pause and a cache-buster, up to three times.
-document.addEventListener("error", (e) => {
+document.addEventListener("error", async (e) => {
   const t = e.target;
   if (!t || (t.tagName !== "IMG" && t.tagName !== "VIDEO")) return;
   const src = t.getAttribute("src") || "";
   if (!src.includes("/media/")) return;
-  // Phase 164: the media token lives 1 hour — a long-open app may
-  // hold a stale token in old URLs; rebuild once with the current
-  // token before falling back to the cache-buster retry.
+  // Phase 170 rider: the URL's token may be the STALE one the app
+  // itself still holds (background >1h suspends the refresh timer)
+  // — re-issue first, then rebuild only if the fresh token differs
+  // from the one in the URL; otherwise fall through to the
+  // cache-buster retries below. The mtok guard keeps it once-only.
   const m = src.match(/\/media\/([^?]+)/);
-  if (m && mediaToken && !src.includes(encodeURIComponent(mediaToken))
-      && !t.dataset.mtok) {
+  if (m && !t.dataset.mtok) {
     t.dataset.mtok = "1";
-    t.src = mediaUrl(decodeURIComponent(m[1]));
-    return;
+    await refreshMediaToken();
+    if (mediaToken && !src.includes(encodeURIComponent(mediaToken))) {
+      t.src = mediaUrl(decodeURIComponent(m[1]));
+      return;
+    }
   }
   const tries = Number(t.dataset.mr || 0);
   if (tries >= 3) return;
