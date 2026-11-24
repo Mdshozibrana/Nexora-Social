@@ -430,6 +430,21 @@ class UserBlock(Base):
     __table_args__ = (UniqueConstraint("blocker_id", "blocked_id"),)
 
 
+class Mute(Base):
+    """Phase 174: a member muting another member. One direction
+    only (unlike block): the muted member keeps seeing the
+    muter's posts and can still follow them — the muter just
+    stops seeing the muted member in feed, Trending, hashtag
+    feed, comments and stories. DMs are unchanged."""
+    __tablename__ = "mutes"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    muter_id = Column(BigInteger, ForeignKey("users.telegram_id"),
+                      index=True)
+    muted_id = Column(BigInteger, ForeignKey("users.telegram_id"))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    __table_args__ = (UniqueConstraint("muter_id", "muted_id"),)
+
+
 class PostView(Base):
     """Phase 31 (owner request): UNIQUE views of a post — one row
     per (post, viewer), so a member rewatching a video never

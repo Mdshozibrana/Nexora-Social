@@ -254,20 +254,20 @@ for m in JS_MARKS:
     assert m in JS, f"missing JS marker: {m}"
 assert ".bubble-voice" in CSS and ".voice-track" in CSS
 assert 'id="chat-mic"' in HTML
-assert HTML.count("?v=173") == 10, HTML.count("?v=173")
+assert HTML.count("?v=174") == 10, HTML.count("?v=174")
 assert "?v=17" + "2" not in HTML
 BOT = open(os.path.join(ROOT, "code/app/bot.py")).read()
-assert "/?v=173" in BOT and "/?v=17" + "2" not in BOT
+assert "/?v=174" in BOT and "/?v=17" + "2" not in BOT
 paths = set()
 for route in app.routes:
     paths.add(route.path)
-assert len(paths) == 175, len(paths)
+assert len(paths) == 177, len(paths)
 assert "/messages/{uid}/upload-voice" in paths
 r = c.get("/admin/backup", headers=ADMIN)
 assert r.status_code == 200, r.text
 b = r.json()
-assert len(b["tables"]) == 48, len(b["tables"])
-assert len(_BACKUP_TABLES) == 48, len(_BACKUP_TABLES)
+assert len(b["tables"]) == 49, len(b["tables"])
+assert len(_BACKUP_TABLES) == 49, len(_BACKUP_TABLES)
 print("6. client + version + routes + backup OK")
 
 print("PHASE 173 OK")

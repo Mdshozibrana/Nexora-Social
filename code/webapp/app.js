@@ -4327,6 +4327,29 @@ async function openProfile(userId) {
         } catch (e) { setStatus("Could not update block."); }
       };
       box.appendChild(bBtn);
+      // Phase 174: Mute/Unmute — hides their posts, comments
+      // and stories from YOUR feed only; DMs and follows are
+      // untouched, and they can still see your posts.
+      const muBtn = document.createElement("button");
+      muBtn.className = "wide";
+      const paintMute = () => {
+        muBtn.textContent = u.muted_by_me
+          ? "🔇 Muted — tap to unmute" : "🔇 Mute this member";
+      };
+      paintMute();
+      muBtn.onclick = async () => {
+        try {
+          const r = await api("/users/" + userId + "/mute",
+                              { method: "POST" });
+          u.muted_by_me = r.muted;
+          paintMute();
+          setStatus(r.muted
+            ? "Member muted — their posts, comments and stories "
+              + "won't show in your feed."
+            : "Member unmuted.");
+        } catch (e) { setStatus("Could not update mute."); }
+      };
+      box.appendChild(muBtn);
     }
 
     if (me && userId === me.telegram_id) {
@@ -5389,6 +5412,46 @@ async function loadSettings() {
       } catch (e) { blkBox.textContent = "Could not load blocked members."; }
     };
     loadBlocked();
+    // Phase 174: Muted members — same list shape as blocked,
+    // Unmute toggles the mute off (POST /users/{id}/mute).
+    const mutHead = document.createElement("div");
+    mutHead.className = "settings-sub";
+    mutHead.textContent = "🔇 Muted members";
+    priv.appendChild(mutHead);
+    const mutBox = document.createElement("div");
+    mutBox.className = "settings-blocked";
+    priv.appendChild(mutBox);
+    const loadMuted = async () => {
+      mutBox.innerHTML = "Loading…";
+      try {
+        const d = await api("/me/muted");
+        mutBox.innerHTML = "";
+        if (!d.muted.length) {
+          mutBox.textContent = "Nobody muted.";
+          return;
+        }
+        d.muted.forEach(b => {
+          const row = document.createElement("div");
+          row.className = "settings-blocked-row";
+          const nm = document.createElement("span");
+          nm.textContent = (b.first_name || "?") +
+            (b.username ? " (@" + b.username + ")" : "");
+          const un = document.createElement("button");
+          un.textContent = "Unmute";
+          un.onclick = async () => {
+            try {
+              await api("/users/" + b.telegram_id + "/mute",
+                        { method: "POST" });
+              setStatus("Member unmuted.");
+              loadMuted();
+            } catch (e) { setStatus("Could not unmute."); }
+          };
+          row.append(nm, un);
+          mutBox.appendChild(row);
+        });
+      } catch (e) { mutBox.textContent = "Could not load muted members."; }
+    };
+    loadMuted();
     // 4. Notifications — per-type toggles, all ON by default.
     // Every change posts the full prefs object, so toggling one
     // type never resets the others.

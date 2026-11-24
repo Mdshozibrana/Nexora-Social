@@ -147,7 +147,7 @@ def test_source_guards():
 
 
 def test_client_markers():
-    assert HTML.count("?v=173") == 10, HTML.count("?v=173")
+    assert HTML.count("?v=174") == 10, HTML.count("?v=174")
     assert "?v=128" not in HTML
     for marker in ("admin-browse", "admin-browse-sort",
                    "admin-browse-chips", "admin-browse-more",
@@ -167,7 +167,7 @@ def test_client_markers():
                    "decidePayout", "markPayoutPaid",
                    "loadVerifications", "repost-banner"):
         assert marker in JS, marker
-    print("client markers OK (?v=173, browse controls, 123-128 intact)")
+    print("client markers OK (?v=174, browse controls, 123-128 intact)")
 
 
 def test_browse_points(c):

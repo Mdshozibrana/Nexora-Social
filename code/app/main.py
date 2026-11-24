@@ -873,6 +873,12 @@ def feed(tab: str = "explore", type: str = "", cursor: int = 0,
     hidden = _block_related_ids(db, user.telegram_id)
     if hidden:
         q = q.filter(~models.Post.user_id.in_(hidden))
+    # Phase 174: a muted member's posts never reach the muter's
+    # feed — Explore, Following and (via the same filter) the
+    # hashtag feed below.
+    muted = _muted_ids(db, user.telegram_id)
+    if muted:
+        q = q.filter(~models.Post.user_id.in_(muted))
     # Phase 136: a private account's posts reach only its
     # followers (and itself) — everyone else never sees them.
     blocked_private = set()
@@ -915,6 +921,10 @@ def feed(tab: str = "explore", type: str = "", cursor: int = 0,
             continue
         # Phase 136: a repost must not leak a private author's post.
         if orig.user_id in blocked_private:
+            continue
+        # Phase 174: nor a muted author's post, reposted by
+        # someone else.
+        if orig.user_id in muted:
             continue
         if type in ("photo", "video", "text"):
             if orig.type == type:
@@ -965,6 +975,10 @@ def hashtag_feed(cursor: int = 0,
               for t in sorted(tags)]))
     if hidden:
         q = q.filter(~models.Post.user_id.in_(hidden))
+    # Phase 174: muted authors stay out of the hashtag feed too.
+    muted = _muted_ids(db, user.telegram_id)
+    if muted:
+        q = q.filter(~models.Post.user_id.in_(muted))
     if blocked_private:
         q = q.filter(~models.Post.user_id.in_(blocked_private))
     if cursor:
@@ -1020,6 +1034,10 @@ def _trending_ranked(db, user, limit=20):
         models.Post.type != "repost")
     if hidden:
         q = q.filter(~models.Post.user_id.in_(hidden))
+    # Phase 174: muted authors never trend for the muter.
+    muted = _muted_ids(db, user.telegram_id)
+    if muted:
+        q = q.filter(~models.Post.user_id.in_(muted))
     # Phase 136: private accounts' posts never trend — Trending
     # is a public surface.
     private_ids = _private_author_ids(db)
@@ -1437,6 +1455,13 @@ def _block_related_ids(db, user_id):
     return out
 
 
+def _muted_ids(db, user_id):
+    """Phase 174: ids user_id has muted (one direction —
+    unlike block, mute is not mutual)."""
+    return {r[0] for r in db.query(models.Mute.muted_id).filter_by(
+        muter_id=user_id).all()}
+
+
 # ---------------------------------------------------------------------------
 # Phase 136: private accounts — who may see whose posts.
 # ---------------------------------------------------------------------------
@@ -1463,6 +1488,12 @@ def _blocked_by(db, blocker_id, user_id):
     """True when blocker_id has blocked user_id."""
     return db.query(models.UserBlock).filter_by(
         blocker_id=blocker_id, blocked_id=user_id).first() is not None
+
+
+def _muted_by(db, muter_id, user_id):
+    """Phase 174: True when muter_id has muted user_id."""
+    return db.query(models.Mute).filter_by(
+        muter_id=muter_id, muted_id=user_id).first() is not None
 
 
 class PollIn(BaseModel):
@@ -2744,6 +2775,13 @@ def list_comments(post_id: int, user: models.User = Depends(current_user),
     replies = db.query(models.Comment).filter_by(post_id=p.id) \
         .filter(models.Comment.parent_id.isnot(None)) \
         .order_by(models.Comment.id.asc()).limit(2000).all()
+    # Phase 174: a muted member's comments (and their replies)
+    # do not show for the muter. A muted parent takes its
+    # replies with it — they are attached to that comment.
+    muted = _muted_ids(db, user.telegram_id)
+    if muted:
+        tops = [cm for cm in tops if cm.user_id not in muted]
+        replies = [r for r in replies if r.user_id not in muted]
     by_parent = {}
     for r in replies:
         by_parent.setdefault(r.parent_id, []).append(r)
@@ -2933,6 +2971,8 @@ def public_profile(telegram_id: int, user: models.User = Depends(current_user),
         # R5: whether the viewer has blocked this member (the
         # profile offers Block/Unblock from this flag).
         "blocked_by_me": _blocked_by(db, user.telegram_id, telegram_id),
+        # Phase 174: whether the viewer has muted this member.
+        "muted_by_me": _muted_by(db, user.telegram_id, telegram_id),
         "name_locked_days": name_locked_days,
         # Phase 137: level (from lifetime points) + badges.
         "level": level_badges["level"],
@@ -3826,6 +3866,51 @@ def my_blocked(user: models.User = Depends(current_user),
             "photo_file_id": bu.photo_file_id if bu else None,
         })
     return {"blocked": out}
+
+
+@app.post("/users/{telegram_id}/mute")
+def toggle_mute(telegram_id: int,
+                user: models.User = Depends(current_user),
+                db: Session = Depends(get_db)):
+    """Phase 174: mute is a one-way, silent hide. No notification
+    is sent, follows stay as they are, DMs are untouched, and a
+    blocked member stays hidden even if unmuted (block is checked
+    separately everywhere mute is). The official account cannot
+    be muted, mirroring the block rule."""
+    if telegram_id == user.telegram_id:
+        raise HTTPException(400, "You cannot mute yourself")
+    if telegram_id == OFFICIAL_ID:
+        raise HTTPException(
+            400, "The official Nexora Social account cannot be muted")
+    if db.get(models.User, telegram_id) is None:
+        raise HTTPException(404, "User not found")
+    existing = db.query(models.Mute).filter_by(
+        muter_id=user.telegram_id, muted_id=telegram_id).first()
+    if existing:
+        db.delete(existing)
+        db.commit()
+        return {"muted": False}
+    db.add(models.Mute(muter_id=user.telegram_id, muted_id=telegram_id))
+    db.commit()
+    return {"muted": True}
+
+
+@app.get("/me/muted")
+def my_muted(user: models.User = Depends(current_user),
+             db: Session = Depends(get_db)):
+    rows = db.query(models.Mute).filter_by(
+        muter_id=user.telegram_id) \
+        .order_by(models.Mute.id.desc()).limit(200).all()
+    out = []
+    for r in rows:
+        mu = db.get(models.User, r.muted_id)
+        out.append({
+            "telegram_id": r.muted_id,
+            "first_name": mu.first_name if mu else "",
+            "username": mu.username if mu else None,
+            "photo_file_id": mu.photo_file_id if mu else None,
+        })
+    return {"muted": out}
 
 
 # ---------------------------------------------------------------------------
@@ -7176,6 +7261,7 @@ _BACKUP_TABLES = [
     ("design_likes", models.DesignLike),
     ("admin_audit_logs", models.AdminAuditLog),
     ("user_blocks", models.UserBlock),
+    ("mutes", models.Mute),
     ("post_views", models.PostView),
     ("design_views", models.DesignView),
     ("design_saves", models.DesignSave),
@@ -8102,6 +8188,8 @@ def list_stories(user: models.User = Depends(current_user),
                       db.query(models.Follow).filter_by(
                           follower_id=me).all())
     author_ids -= _block_related_ids(db, me)
+    # Phase 174: muted members' stories do not show either.
+    author_ids -= _muted_ids(db, me)
     rows = db.query(models.Story).filter(
         models.Story.created_at > cutoff,
         models.Story.user_id.in_(author_ids)

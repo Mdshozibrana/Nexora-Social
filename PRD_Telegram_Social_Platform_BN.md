@@ -1788,3 +1788,27 @@ rename/delete। ফুল রিগ্রেশন 166/166 সবুজ।
   non-audio, >5 MB, self/404/blocked), real WAV->OGG transcode,
   JSON voice path, photo path untouched, visibility, client markers.
   Routes 174 -> 175, backup tables stay 48.
+
+## Phase 174 — Mute (?v=174)
+- New `mutes` table (muter_id, muted_id, created_at; unique pair).
+  POST /users/{id}/mute toggles, GET /me/muted lists. Mute is
+  one-way and silent: no notification is sent, follows stay as
+  they are, DMs are unchanged, and the muted member can still see
+  the muter's posts and follow them. The official account cannot
+  be muted (mirrors the block rule); self-mute is refused.
+- Effect: the muted member's posts (Explore/Following/Hashtags),
+  comments (top-level and replies), stories and Trending entries
+  disappear from the muter's views — including reposts of the
+  muted author's posts by someone else. Block stays stronger: a
+  blocked member stays hidden even if unmuted.
+- Client: Mute/Unmute button on other members' profiles (next to
+  Block), and a "Muted members" list with Unmute in Settings ->
+  Privacy, mirroring the blocked list.
+- Known pre-existing behaviour, NOT changed here: a repost of a
+  BLOCKED author's post by a third party still leaks through the
+  feed's repost loop (the loop only checks private/muted
+  originals, not blocked ones).
+- Tests: test_phase174.py — toggle/list/guards, feed hide,
+  repost-of-muted, comments, Trending, hashtag feed, stories,
+  DMs unchanged, mute+block interplay, client markers.
+  Routes 175 -> 177, backup tables 48 -> 49.

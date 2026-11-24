@@ -16,7 +16,7 @@ Tests: (a) source asserts the buggy pattern is gone and the ALTER
 carries DEFAULT FALSE; (b) functional — import app.main on a fresh
 sqlite file (create_all + _migrate run at import), assert the posts
 table has is_pinned, drop the column, re-run _migrate() directly
-and assert the patched ALTER re-adds it; (c) asset version ?v=173
+and assert the patched ALTER re-adds it; (c) asset version ?v=174
 (x5), ?v=125 gone; (d) Phase 123-125 client markers intact.
 No auth, no make_init_data — none needed here.
 """
@@ -75,14 +75,14 @@ main_mod._migrate()
 cols = {c["name"] for c in inspect(engine).get_columns("posts")}
 assert "is_pinned" in cols
 
-# (c) Asset version bumped to ?v=173 (x5), ?v=125 gone from the shell.
-assert HTML.count("?v=173") == 10, HTML.count("?v=173")
+# (c) Asset version bumped to ?v=174 (x5), ?v=125 gone from the shell.
+assert HTML.count("?v=174") == 10, HTML.count("?v=174")
 assert "?v=125" not in HTML
-assert "app.js?v=173" in HTML and "style.css?v=173" in HTML
+assert "app.js?v=174" in HTML and "style.css?v=174" in HTML
 
 # (d) Phase 123-125 client markers intact in the served files.
 for marker in ("topScroller", "pollBlock", "loadDrafts",
                "renderPh", "goFeedTo", "loadTrending"):
     assert marker in JS, marker
 
-print("phase126: source + migration + ?v=173 + markers OK")
+print("phase126: source + migration + ?v=174 + markers OK")
