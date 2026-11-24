@@ -109,3 +109,42 @@ async def upload_media(chat_id: int, filename: str, data: bytes,
         except Exception:
             pass
     return kind, file_id, thumb_id
+
+
+async def upload_voice(chat_id: int, filename: str, data: bytes):
+    """Phase 173: send an OGG Opus voice note with sendVoice;
+    returns ("voice", file_id, None). Mirrors upload_media,
+    including the best-effort cleanup of the bot-chat copy."""
+    if not settings.BOT_TOKEN:
+        raise TelegramUploadError("failed")
+    api = f"https://api.telegram.org/bot{settings.BOT_TOKEN}"
+    async with httpx.AsyncClient(timeout=120) as client:
+        try:
+            resp = await client.post(
+                f"{api}/sendVoice",
+                data={"chat_id": str(chat_id),
+                      "disable_notification": "true"},
+                files={"voice": (filename or "voice.ogg", data,
+                                "audio/ogg")})
+        except httpx.HTTPError:
+            raise TelegramUploadError("failed")
+        try:
+            payload = resp.json()
+        except ValueError:
+            payload = {}
+        if resp.status_code != 200 or not payload.get("ok"):
+            desc = (payload.get("description") or "").lower()
+            if resp.status_code == 403 or "blocked" in desc \
+                    or "chat not found" in desc:
+                raise TelegramUploadError("not_started")
+            raise TelegramUploadError("failed")
+        msg = payload["result"]
+        file_id = msg["voice"]["file_id"]
+        # Best-effort cleanup: remove the copy from the member's bot chat.
+        try:
+            await client.post(f"{api}/deleteMessage", data={
+                "chat_id": str(chat_id),
+                "message_id": str(msg["message_id"])})
+        except Exception:
+            pass
+    return "voice", file_id, None

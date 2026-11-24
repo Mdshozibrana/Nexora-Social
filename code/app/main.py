@@ -9,6 +9,7 @@ import logging
 import os
 import random
 import re
+import subprocess
 import tempfile
 import threading
 import time
@@ -161,6 +162,9 @@ def _migrate():
         if "media_type" not in msg_cols:
             conn.execute(text(
                 "ALTER TABLE messages ADD COLUMN media_type VARCHAR(16)"))
+        if "media_duration" not in msg_cols:
+            conn.execute(text(
+                "ALTER TABLE messages ADD COLUMN media_duration INTEGER"))
     # Phase 139: story replies — story_id on messages (plain
     # INTEGER, nullable, no FK: a reply outlives its story, and
     # deleting the story must never fail on the reference).
@@ -1610,6 +1614,64 @@ async def _send_to_telegram(user, filename, data, content_type):
         kind, file_id, _thumb = await tgupload.upload_media(
             _send_chat_id(user), filename, data, content_type)
         return kind, file_id
+    except tgupload.TelegramUploadError as e:
+        if e.kind == "not_started":
+            raise HTTPException(
+                400, "Open @NexoraSocial_bot once and press Start, "
+                     "then try uploading again")
+        raise HTTPException(502, "Upload failed — please try again")
+
+
+async def _send_voice_to_telegram(user, data, content_type, filename):
+    """Phase 173: transcode a recorded voice note to OGG Opus and
+    send it with Telegram sendVoice; returns the file_id. An OGG
+    upload goes straight through; anything else needs ffmpeg
+    (bundled via imageio-ffmpeg on Render — the same source as
+    video transcoding). Audio is NOT Gemini-screened."""
+    ogg = data
+    is_ogg = (content_type or "").lower() == "audio/ogg" or \
+        (filename or "").lower().endswith(".ogg")
+    if is_ogg:
+        if not data.startswith(b"OggS"):
+            raise HTTPException(
+                400, "That recording is not a valid OGG file")
+    else:
+        ffmpeg = videoutil.find_ffmpeg()
+        if not ffmpeg:
+            raise HTTPException(
+                502, "Voice upload is unavailable right now")
+
+        def _transcode():
+            with tempfile.NamedTemporaryFile(
+                    delete=False, suffix=".src") as f:
+                f.write(data)
+                src = f.name
+            dst = src + ".ogg"
+            try:
+                r = subprocess.run(
+                    [ffmpeg, "-y", "-i", src, "-vn", "-c:a", "libopus",
+                     "-b:a", "32k", dst],
+                    capture_output=True, timeout=60)
+                if r.returncode != 0 or not os.path.exists(dst):
+                    raise RuntimeError("transcode failed")
+                with open(dst, "rb") as fh:
+                    return fh.read()
+            finally:
+                for p in (src, dst):
+                    try:
+                        os.unlink(p)
+                    except OSError:
+                        pass
+
+        try:
+            ogg = await asyncio.to_thread(_transcode)
+        except Exception:
+            raise HTTPException(
+                502, "That recording could not be processed")
+    try:
+        kind, file_id, _thumb = await tgupload.upload_voice(
+            _send_chat_id(user), "voice.ogg", ogg)
+        return file_id
     except tgupload.TelegramUploadError as e:
         if e.kind == "not_started":
             raise HTTPException(
@@ -7644,6 +7706,7 @@ def _message_dict(m, me_id, reactions=None, stories=None):
     d = {"id": m.id, "mine": m.sender_id == me_id, "text": m.text,
          "media_file_id": m.media_file_id,
          "media_type": m.media_type,
+         "media_duration": m.media_duration,
          "story_id": m.story_id,
          "created_at": m.created_at.isoformat() if m.created_at
          else None,
@@ -7744,6 +7807,7 @@ class MessageIn(BaseModel):
     text: str = Field(default="", max_length=2000)
     media_file_id: Optional[str] = None
     media_type: Optional[str] = None
+    media_duration: Optional[int] = None
 
 
 @app.post("/messages/{uid}")
@@ -7763,28 +7827,43 @@ def send_message(uid: int, body: MessageIn,
     media_type = (body.media_type or "").strip() or None
     if not text and not media_file_id:
         raise HTTPException(400, "Message is empty")
+    secs = None
     if media_file_id:
-        # DMs carry photos only — a video file_id is refused
-        # before anything is fetched or screened.
-        if media_type is not None and media_type != "photo":
-            raise HTTPException(400, "DMs support photos only")
-        if moderation.active():
-            verdict = _screen_file_id("photo", media_file_id)
-            if verdict != "clean":
-                log_security_event(db, "screen_reject",
-                                   actor_id=me, detail=
-                                   f"DM photo screened out ({verdict})")
+        # Phase 173: DMs carry photos and voice notes. A video
+        # file_id is refused before anything is fetched or
+        # screened. Audio is NOT Gemini-screened (Vision cannot
+        # hear it) — report + block are the backstop.
+        if media_type is None:
+            media_type = "photo"
+        if media_type == "voice":
+            secs = body.media_duration or 0
+            if secs < 1 or secs > 120:
                 raise HTTPException(
-                    400, moderation.block_message("photo", verdict))
+                    400, "Voice messages are 1–120 seconds")
+        elif media_type == "photo":
+            if moderation.active():
+                verdict = _screen_file_id("photo", media_file_id)
+                if verdict != "clean":
+                    log_security_event(db, "screen_reject",
+                                       actor_id=me, detail=
+                                       f"DM photo screened out ({verdict})")
+                    raise HTTPException(
+                        400, moderation.block_message("photo", verdict))
+        else:
+            raise HTTPException(
+                400, "DMs support photos and voice only")
     _enforce_rate("message", f"u{me}")
     m = models.Message(sender_id=me, recipient_id=uid, text=text,
                        media_file_id=media_file_id,
-                       media_type="photo" if media_file_id else None)
+                       media_type=media_type if media_file_id else None,
+                       media_duration=secs)
     db.add(m)
     db.commit()
     db.refresh(m)
     notify.record(db, uid, "message", actor_id=me,
-                  text=(f"{user.first_name} sent you a photo"
+                  text=(f"{user.first_name} sent you a voice message"
+                        if media_type == "voice" and media_file_id else
+                        f"{user.first_name} sent you a photo"
                         if media_file_id else
                         f"{user.first_name} sent you a message"))
     return _message_dict(m, me, {"reactions": {}, "my_reaction": None})
@@ -7829,6 +7908,67 @@ async def upload_dm_photo(uid: int, request: Request,
     db.refresh(m)
     notify.record(db, uid, "message", actor_id=me,
                   text=f"{user.first_name} sent you a photo")
+    body = _message_dict(m, me, {"reactions": {}, "my_reaction": None})
+    _dedupe_put(user.telegram_id, x_upload_id, 200, body)
+    return body
+
+
+@app.post("/messages/{uid}/upload-voice")
+async def upload_dm_voice(uid: int, request: Request,
+                          file: UploadFile = File(...),
+                          duration: str = Form(""),
+                          x_upload_id: Optional[str] = Header(None),
+                          user: models.User = Depends(current_user),
+                          db: Session = Depends(get_db)):
+    """Phase 173: a voice note in a DM. The recording is transcoded
+    to OGG Opus and sent with sendVoice, so the file lives on
+    Telegram like every other DM media. The 120 s / 5 MB caps keep
+    a single note cheap; the client enforces 120 s too."""
+    hit = _dedupe_get(user.telegram_id, x_upload_id)
+    if hit:
+        return JSONResponse(status_code=hit[0], content=hit[1])
+    me = user.telegram_id
+    if uid == me:
+        raise HTTPException(400, "You can't message yourself")
+    other = db.get(models.User, uid)
+    if other is None:
+        raise HTTPException(404, "User not found")
+    if uid in _block_related_ids(db, me):
+        raise HTTPException(403, "You can't message this user")
+    try:
+        secs = int((duration or "").strip())
+    except (TypeError, ValueError):
+        raise HTTPException(400, "Voice duration is missing")
+    if secs < 1 or secs > 120:
+        raise HTTPException(400, "Voice messages are 1–120 seconds")
+    ctype = (file.content_type or "").lower()
+    name = (file.filename or "").lower()
+    if not (ctype.startswith("audio/") or name.endswith(
+            (".webm", ".ogg", ".m4a", ".mp3", ".wav"))):
+        raise HTTPException(400, "That is not an audio recording")
+    _enforce_rate("upload", f"u{me}")
+    chunks, total = [], 0
+    while True:
+        chunk = await file.read(256 * 1024)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > 5 * 1024 * 1024:
+            raise HTTPException(
+                400, "Voice message is too large (max 5 MB)")
+        chunks.append(chunk)
+    data = b"".join(chunks)
+    if not data:
+        raise HTTPException(400, "Empty recording")
+    file_id = await _send_voice_to_telegram(user, data, ctype, name)
+    m = models.Message(sender_id=me, recipient_id=uid, text="",
+                       media_file_id=file_id, media_type="voice",
+                       media_duration=secs)
+    db.add(m)
+    db.commit()
+    db.refresh(m)
+    notify.record(db, uid, "message", actor_id=me,
+                  text=f"{user.first_name} sent you a voice message")
     body = _message_dict(m, me, {"reactions": {}, "my_reaction": None})
     _dedupe_put(user.telegram_id, x_upload_id, 200, body)
     return body

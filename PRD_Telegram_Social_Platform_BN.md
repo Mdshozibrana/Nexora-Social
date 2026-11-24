@@ -1762,3 +1762,29 @@ GET /highlights/{hid}, rename, DELETE, add-stories, remove-story);
 রেট বাকেট highlights 120/h। পিকার: নিজের প্রোফাইলে "+ New" বৃত্ত
 → টাইটেল + স্টোরি বাছাই (expired ট্যাগ সহ) → Create; একই শিটে
 rename/delete। ফুল রিগ্রেশন 166/166 সবুজ।
+
+## Phase 173 — DM voice messages (?v=173)
+- DMs accept voice notes. Client: 🎤 mic button in the DM input;
+  tap to start, tap again to stop (MediaRecorder; auto-stop at 120 s;
+  timer + red pulse while recording; graceful inline message when the
+  mic is unavailable or denied). The recording uploads to
+  POST /messages/{uid}/upload-voice (multipart file + duration seconds;
+  X-Upload-Id dedupe, same as photo DMs).
+- Server: OGG uploads go straight to Telegram sendVoice; any other
+  audio (webm/mp4/wav) is transcoded to OGG Opus with ffmpeg
+  (bundled imageio-ffmpeg binary) first. Caps: 120 s, 5 MB. The
+  message stores media_type='voice' + media_duration (new INTEGER
+  column on messages); the JSON POST /messages/{uid} also accepts a
+  voice file_id with a duration. Voice file visibility reuses the DM
+  participants-only rule in _media_visible.
+- Bubble: play/pause button + progress bar + duration (m:ss); only one
+  note plays at a time; the 8 s thread poll skips a rebuild while a
+  note is playing, so playback is never cut off. Conversation list
+  preview shows "🎤 Voice message".
+- HONEST LIMIT: audio cannot go through Gemini Vision screening —
+  voice DMs rely on report + block as the backstop (same as DMs
+  before). Nexa stays TEXT-ONLY — this is DM voice only.
+- Tests: test_phase173.py — OGG upload, validation (duration 0/121,
+  non-audio, >5 MB, self/404/blocked), real WAV->OGG transcode,
+  JSON voice path, photo path untouched, visibility, client markers.
+  Routes 174 -> 175, backup tables stay 48.

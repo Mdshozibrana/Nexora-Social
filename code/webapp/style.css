@@ -1401,6 +1401,19 @@ button.liked { animation: heartPop .32s cubic-bezier(.22,.9,.3,1); }
    ================================================================ */
 .bubble-photo { display: block; max-width: 100%; border-radius: 12px;
   margin-bottom: 4px; cursor: pointer; }
+.bubble-voice { display: flex; align-items: center; gap: 8px;
+  min-width: 180px; max-width: 100%; margin-bottom: 4px; }
+.voice-play { flex: 0 0 auto; width: 32px; height: 32px;
+  border-radius: 50%; border: none; background: #3E8FD0;
+  color: #fff; font-size: 13px; cursor: pointer; }
+.voice-track { flex: 1 1 auto; height: 6px; border-radius: 3px;
+  background: rgba(0,0,0,.15); overflow: hidden; }
+.voice-fill { height: 100%; width: 0; background: #3E8FD0;
+  border-radius: 3px; }
+.voice-dur { flex: 0 0 auto; font-size: 12px; opacity: .8; }
+#chat-mic.recording { background: #D64545; color: #fff;
+  animation: micpulse 1s infinite; }
+@keyframes micpulse { 50% { opacity: .6; } }
 .bubble-reactions { display: flex; flex-wrap: wrap; gap: 4px;
   margin-top: 6px; }
 .react-chip { border: 1px solid rgba(0,0,0,.12);

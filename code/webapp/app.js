@@ -9472,7 +9472,8 @@ async function loadConversations() {
       const row = personRow(cv.user,
         (cv.last.mine ? "You: " : "") +
           (cv.last.text ||
-            (cv.last.media_file_id ? "📷 Photo" : "")),
+            (cv.last.media_type === "voice" ? "🎤 Voice message"
+              : cv.last.media_file_id ? "📷 Photo" : "")),
         () => openChat(cv.user.telegram_id));
       const right = document.createElement("div");
       right.className = "conv-right";
@@ -9508,6 +9509,7 @@ async function loadPeople() {
 
 // ------------------------------------------------------------- chat thread --
 let chatWith = null;
+let voicePlaying = null; // Phase 173: the audio now playing
 let chatTimer = null;
 function stopChatPoll() {
   if (chatTimer) { clearInterval(chatTimer); chatTimer = null; }
@@ -9519,7 +9521,7 @@ async function openChat(uid) {
   await loadThread(true);
   stopChatPoll();
   chatTimer = setInterval(() => {
-    if (chatWith === uid) loadThread(false);
+    if (chatWith === uid && !voicePlaying) loadThread(false);
   }, 8000);
 }
 async function loadThread(scroll) {
@@ -9545,7 +9547,9 @@ async function loadThread(scroll) {
     r.messages.forEach(m => {
       const b = document.createElement("div");
       b.className = "bubble " + (m.mine ? "mine" : "theirs");
-      if (m.media_file_id) {
+      if (m.media_file_id && m.media_type === "voice") {
+        b.appendChild(voiceBubble(m));
+      } else if (m.media_file_id) {
         const img = document.createElement("img");
         img.className = "bubble-photo";
         img.src = mediaUrl(m.media_file_id);
@@ -9674,6 +9678,160 @@ $("chat-file").addEventListener("change", async () => {
       : "Photo could not be sent — check your connection and try again.");
   }
 });
+// Phase 173: DM voice notes — MediaRecorder, tap to start/stop.
+// The 8 s poll skips a rebuild while a voice note is playing, so
+// playback is never cut off by a refresh.
+function fmtDur(sec) {
+  sec = Math.max(0, Math.round(sec || 0));
+  return Math.floor(sec / 60) + ":" +
+    String(sec % 60).padStart(2, "0");
+}
+function voiceBubble(m) {
+  const wrap = document.createElement("div");
+  wrap.className = "bubble-voice";
+  const btn = document.createElement("button");
+  btn.className = "voice-play";
+  btn.type = "button";
+  btn.textContent = "▶";
+  btn.title = "Play voice message";
+  const audio = document.createElement("audio");
+  audio.src = mediaUrl(m.media_file_id);
+  audio.preload = "metadata";
+  const track = document.createElement("div");
+  track.className = "voice-track";
+  const fill = document.createElement("div");
+  fill.className = "voice-fill";
+  track.appendChild(fill);
+  const dur = document.createElement("span");
+  dur.className = "voice-dur";
+  dur.textContent = fmtDur(m.media_duration);
+  btn.onclick = e => {
+    e.stopPropagation();
+    if (audio.paused) {
+      document.querySelectorAll("#chat-thread audio").forEach(a => {
+        if (a !== audio) a.pause();
+      });
+      audio.play().catch(() =>
+        setStatus("Could not play this voice message."));
+    } else audio.pause();
+  };
+  audio.addEventListener("play", () => {
+    btn.textContent = "⏸"; voicePlaying = audio;
+  });
+  audio.addEventListener("pause", () => {
+    btn.textContent = "▶";
+    if (voicePlaying === audio) voicePlaying = null;
+  });
+  audio.addEventListener("ended", () => {
+    btn.textContent = "▶"; voicePlaying = null;
+  });
+  audio.addEventListener("timeupdate", () => {
+    if (audio.duration)
+      fill.style.width =
+        (audio.currentTime / audio.duration * 100) + "%";
+  });
+  audio.addEventListener("loadedmetadata", () => {
+    if (audio.duration && !m.media_duration)
+      dur.textContent = fmtDur(audio.duration);
+  });
+  wrap.append(btn, track, dur);
+  return wrap;
+}
+let voiceRec = null;
+let voiceRecTimer = null;
+function setVoiceRecUI(on, secs) {
+  const btn = $("chat-mic");
+  if (!btn) return;
+  btn.classList.toggle("recording", !!on);
+  btn.textContent = on ? "⏺" : "🎤";
+  if (on) setStatus("● Recording " + fmtDur(secs) +
+    " — tap 🎤 again to stop (max 2:00).");
+}
+async function toggleVoiceRec() {
+  if (voiceRec) { stopVoiceRec(); return; }
+  if (!chatWith) return;
+  if (!navigator.mediaDevices || !window.MediaRecorder) {
+    setStatus("Voice recording isn't available on this device — " +
+      "type your message instead.");
+    return;
+  }
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (e) {
+    setStatus("Microphone access was denied — allow it to record " +
+      "voice messages.");
+    return;
+  }
+  const mime = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4",
+    "audio/ogg"].find(t => {
+      try { return MediaRecorder.isTypeSupported(t); }
+      catch (e) { return false; }
+    }) || "";
+  let rec;
+  try {
+    rec = mime ? new MediaRecorder(stream, { mimeType: mime })
+      : new MediaRecorder(stream);
+  } catch (e) {
+    stream.getTracks().forEach(t => t.stop());
+    setStatus("Voice recording isn't available on this device — " +
+      "type your message instead.");
+    return;
+  }
+  const chunks = [];
+  const startedAt = Date.now();
+  rec.ondataavailable = e => {
+    if (e.data && e.data.size) chunks.push(e.data);
+  };
+  rec.onstop = () => {
+    stream.getTracks().forEach(t => t.stop());
+    clearInterval(voiceRecTimer);
+    voiceRec = null;
+    setVoiceRecUI(false, 0);
+    setStatus("");
+    const secs = Math.round((Date.now() - startedAt) / 1000);
+    if (!chunks.length || secs < 1) {
+      setStatus("That recording was too short.");
+      return;
+    }
+    sendVoiceNote(chunks, rec.mimeType || mime, Math.min(secs, 120));
+  };
+  rec.start(250);
+  voiceRec = { rec, chunks, startedAt };
+  setVoiceRecUI(true, 0);
+  voiceRecTimer = setInterval(() => {
+    const secs = Math.floor((Date.now() - startedAt) / 1000);
+    setVoiceRecUI(true, secs);
+    if (secs >= 120) stopVoiceRec();
+  }, 1000);
+}
+function stopVoiceRec() {
+  if (voiceRec && voiceRec.rec.state !== "inactive")
+    voiceRec.rec.stop();
+}
+async function sendVoiceNote(chunks, mime, secs) {
+  if (!chatWith) return;
+  setStatus("Sending voice message…");
+  const ext = mime.includes("ogg") ? "ogg"
+    : mime.includes("mp4") ? "m4a" : "webm";
+  const file = new Blob(chunks, { type: mime || "audio/webm" });
+  try {
+    const form = new FormData();
+    form.append("file", file, "voice." + ext);
+    form.append("duration", String(secs));
+    await apiFormProgress("/messages/" + chatWith + "/upload-voice", form,
+      pct => { setStatus(pct === null ? "Sending voice message… finishing"
+        : "Sending voice message… " + pct + "%"); }, newUploadId());
+    setStatus("");
+    loadThread(true);
+  } catch (e) {
+    setStatus(e && e.message ? e.message
+      : "Voice message could not be sent — check your connection " +
+        "and try again.");
+  }
+}
+$("chat-mic").onclick = toggleVoiceRec;
+
 $("chat-back").onclick = () => showView("messages");
 
 // ----------------------------------------------------------------- stories --

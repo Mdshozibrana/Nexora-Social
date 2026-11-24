@@ -231,7 +231,7 @@ assert tick_left < DONOR_LINE, (LONG, tick_left)
 # 28-char name: floor + ellipsis, tick intact and adjacent.
 size, tick_left = hug_tick_left(LONG28, DONOR_BASE, DONOR_BUDGET)
 assert size == 12, size
-assert tick_left == 172.16 or abs(tick_left - 172.16) < 0.01, tick_left
+assert tick_left == 173.16 or abs(tick_left - 172.16) < 0.01, tick_left
 assert tick_left <= DONOR_LINE, tick_left
 # Resize re-fit: a wider line re-grows the name to its base size.
 assert fit_size(em_width(LONG), DONOR_BASE, 300) == DONOR_BASE, \
@@ -261,14 +261,14 @@ with TestClient(app) as c:
     assert len(r.json()["tables"]) == 48, len(r.json()["tables"])
     print("backup: 44 tables OK")
 paths = {rt.path for rt in app.routes}
-assert len(paths) == 174, len(paths)
+assert len(paths) == 175, len(paths)
 print("routes: 163 OK (no new endpoints)")
 
 # 10. Version.
-assert HTML.count("?v=172") == 10, HTML.count("?v=172")
+assert HTML.count("?v=173") == 10, HTML.count("?v=173")
 assert "?v=16" + "2" not in HTML
-assert 'menu_url.rstrip("/") + "/?v=172"' in BOT
+assert 'menu_url.rstrip("/") + "/?v=173"' in BOT
 assert "Phase 163" in CSS and "Phase 163" in JS and "Phase 163" in MAIN
-print("version OK (?v=172 x10, no old-version literals)")
+print("version OK (?v=173 x10, no old-version literals)")
 
 print("PHASE 163 OK")
