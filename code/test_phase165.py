@@ -270,9 +270,9 @@ with TestClient(app) as c:
 
     # 4. Neighbours + version + routes.
     html = c.get("/webapp/").text
-    assert html.count("?v=175") == 10, html.count("?v=175")
+    assert html.count("?v=176") == 10, html.count("?v=176")
     assert "?v=16" + "4" not in html
-    assert "app.js?v=175" in html and "style.css?v=175" in html
+    assert "app.js?v=176" in html and "style.css?v=176" in html
     js = c.get("/webapp/app.js").text
     for marker in ("vname-text", "fitVerifiedNames", "totpGateAdmin",
                    "refreshMediaToken", "bloodDistance", "photo_file_id",
@@ -295,15 +295,15 @@ with TestClient(app) as c:
     css = c.get("/webapp/style.css").text
     assert "composer-row" in css
     paths = {rt.path for rt in app.routes}
-    assert len(paths) == 181, len(paths)
+    assert len(paths) == 183, len(paths)
     for p in ("/admin/totp/status", "/admin/totp/setup",
               "/admin/totp/verify"):
         assert p in paths, p
     h = c.get("/admin/health", headers=ADMIN).json()
-    assert h["version"] == 175, h
+    assert h["version"] == 176, h
     r = c.get("/admin/backup", headers=ADMIN)
     assert r.status_code == 200, r.text
     assert len(r.json()["tables"]) == 51, len(r.json()["tables"])
-    print("neighbours + version + routes OK (174 routes, 48 tables, ?v=175)")
+    print("neighbours + version + routes OK (174 routes, 48 tables, ?v=176)")
 
 print("PHASE 165 OK")

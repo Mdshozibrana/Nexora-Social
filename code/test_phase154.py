@@ -132,7 +132,7 @@ with TestClient(app) as c:
     assert r.status_code == 200, r.text
     assert len(r.json()["tables"]) == 51, len(r.json()["tables"])
     paths = {rt.path for rt in app.routes}
-    assert len(paths) == 181, len(paths)
+    assert len(paths) == 183, len(paths)
     assert len([p for p in paths if "blood" in p]) == 6, paths
     print("routes 158 + backup 43 tables OK (no new endpoints, no schema change)")
 
@@ -148,7 +148,7 @@ assert "museum" not in JS.lower() and "museum" not in HTML.lower()
 print("neighbours OK (Blood flows, distance, Nearby, feed photos, no museum)")
 
 # 7. Version.
-assert HTML.count("?v=175") == 10, HTML.count("?v=175")
+assert HTML.count("?v=176") == 10, HTML.count("?v=176")
 assert "?v=15" + "3" not in HTML
-assert 'menu_url.rstrip("/") + "/?v=175"' in BOT
+assert 'menu_url.rstrip("/") + "/?v=176"' in BOT
 print("PHASE 154 OK")

@@ -2839,6 +2839,14 @@ async function openReelMenu(p, reelEl) {
       setStatus("Link copied.");
     } catch (e) { setStatus(link); }
   });
+  // Phase 176: the public link opens the post outside Telegram.
+  row("🔗", "Copy public link", async () => {
+    try {
+      const r = await api("/posts/" + p.id + "/share-link");
+      await navigator.clipboard.writeText(r.share_link);
+      setStatus("Public link copied.");
+    } catch (e) { setStatus("Could not get the public link."); }
+  });
   if (p.media_file_id) row("⬇️", "Download", () => {
     const a = document.createElement("a");
     a.href = mediaUrl(p.media_file_id);

@@ -101,16 +101,16 @@ with TestClient(app) as c:
                    "Write in the box at the top",
                    "Write something for Nexora Inbox"):
         assert marker not in JS and marker not in HTML, marker
-    assert HTML.count("?v=175") == 10, HTML.count("?v=175")
+    assert HTML.count("?v=176") == 10, HTML.count("?v=176")
     assert "?v=16" + "8" not in HTML
-    assert "app.js?v=175" in HTML and "style.css?v=175" in HTML
+    assert "app.js?v=176" in HTML and "style.css?v=176" in HTML
     assert "/inbox-posts" not in MAIN_SRC
     assert "via_inbox: bool = Field" not in MAIN_SRC
     assert '"via_inbox": bool(getattr' not in MAIN_SRC
     assert "via_inbox BOOLEAN DEFAULT FALSE" in MAIN_SRC, \
         "column DDL must be retained (data safety)"
     assert "BOOLEAN DEFAULT 0" not in MAIN_SRC
-    print("box removal OK (?v=175, no box/code/endpoint, column retained)")
+    print("box removal OK (?v=176, no box/code/endpoint, column retained)")
 
     # 3. Functional: /inbox-posts 404; via_inbox ignored on POST /posts.
     r = c.get("/inbox-posts", headers=H(115, "Dana"))
@@ -196,13 +196,13 @@ with TestClient(app) as c:
     assert "Show setup code" not in js, "Phase 166 removal guard"
     assert "text_handler" not in open(os.path.join(ROOT, "code/app/bot.py")).read()
     paths = {rt.path for rt in app.routes}
-    assert len(paths) == 181, len(paths)
+    assert len(paths) == 183, len(paths)
     assert "/inbox-posts" not in paths and "/posts" in paths, paths
     h = c.get("/admin/health", headers=ADMIN).json()
-    assert h["version"] == 175, h
+    assert h["version"] == 176, h
     r = c.get("/admin/backup", headers=ADMIN)
     assert r.status_code == 200, r.text
     assert len(r.json()["tables"]) == 51, len(r.json()["tables"])
-    print("neighbours + version + routes OK (174 routes, 48 tables, ?v=175)")
+    print("neighbours + version + routes OK (174 routes, 48 tables, ?v=176)")
 
 print("PHASE 168 REMOVAL GUARDS OK")

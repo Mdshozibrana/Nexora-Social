@@ -4,6 +4,7 @@ Only the PRD section-8 admin endpoints remain for a later phase."""
 import asyncio
 import contextvars
 from decimal import Decimal, InvalidOperation
+import html
 import json
 import logging
 import os
@@ -19,8 +20,8 @@ from typing import Optional
 import httpx
 from fastapi import (Depends, FastAPI, File, Form, Header, HTTPException,
                      Query, Request, UploadFile)
-from fastapi.responses import JSONResponse, RedirectResponse, Response, \
-    StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, \
+    RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy import func, inspect, or_, text
@@ -5030,6 +5031,145 @@ def get_post(post_id: int,
     return out[0]
 
 
+
+
+# ---------------------------------------------------------------------------
+# Phase 176 — Public post link: a shareable page outside Telegram.
+#
+# GET /p/{post_id} serves a lightweight public HTML page (no auth)
+# with Open Graph meta + the post content + an "Open in Nexora"
+# button. Privacy is the point: deleted posts 404; private-account
+# posts show only a generic notice; and when the opener is
+# identified (a valid Telegram X-Init-Data header — the page opened
+# from inside the app), a post by an author who blocked that viewer
+# also shows only the notice. An anonymous browser carries no
+# identity, so no block can be checked for it — the page never
+# exposes media (post photos live behind the authenticated,
+# user-bound /media token) or any API data beyond the single post:
+# no counts, no comments, no usernames.
+# ---------------------------------------------------------------------------
+
+
+def _public_base_url():
+    """Phase 176: the app origin for public links (WEBAPP_URL is
+    the /webapp/ URL; /p/ lives at the origin)."""
+    base = (settings.WEBAPP_URL or "").rstrip("/")
+    if base.endswith("/webapp"):
+        base = base[: -len("/webapp")]
+    return base
+
+
+def _public_page_html(*, title, description, body, post_url, image_url):
+    """Phase 176: one tiny page shell for /p/{id} — everything
+    user-supplied arrives already escaped."""
+    return ("<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\">"
+            "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+            f"<title>{title}</title>"
+            f"<meta name=\"description\" content=\"{description}\">"
+            "<meta property=\"og:type\" content=\"website\">"
+            f"<meta property=\"og:title\" content=\"{title}\">"
+            f"<meta property=\"og:description\" content=\"{description}\">"
+            f"<meta property=\"og:image\" content=\"{image_url}\">"
+            f"<meta property=\"og:url\" content=\"{post_url}\">"
+            "<style>body{font-family:system-ui,sans-serif;margin:0;"
+            "background:#F6F1E7;color:#3A2E33;padding:24px 16px;}"
+            ".card{max-width:560px;margin:0 auto;background:#fff;"
+            "border-radius:16px;padding:20px;box-shadow:0 2px 12px rgba(0,0,0,.08);}"
+            "h1{font-size:18px;margin:0 0 4px}.meta{color:#888;font-size:13px;"
+            "margin-bottom:12px}p{white-space:pre-wrap;line-height:1.5;}"
+            ".btn{display:inline-block;margin-top:16px;background:#3E8FD0;"
+            "color:#fff;padding:10px 18px;border-radius:999px;"
+            "text-decoration:none;font-weight:700}</style></head><body>"
+            f"<div class=\"card\">{body}</div></body></html>")
+
+
+def _open_in_nexora_button(post_id):
+    bot = settings.BOT_USERNAME or "NexoraSocial_bot"
+    href = f"https://t.me/{bot}?start=post_{post_id}"
+    return f"<a class=\"btn\" href=\"{href}\">Open in Nexora</a>"
+
+
+def _public_not_found(post_id, post_url, image_url):
+    return HTMLResponse(
+        content=_public_page_html(
+            title="Nexora Social", description="Post not found.",
+            body=("<h1>Post not found.</h1><p>This post may have "
+                  "been deleted.</p>"
+                  + _open_in_nexora_button(post_id)),
+            post_url=post_url, image_url=image_url),
+        status_code=404)
+
+
+def _public_notice(post_id, post_url, image_url):
+    return HTMLResponse(content=_public_page_html(
+        title="Nexora Social", description="This post isn't public.",
+        body=("<h1>This post isn't public.</h1>"
+              "<p>The post may have been deleted, or its author "
+              "keeps it private.</p>"
+              + _open_in_nexora_button(post_id)),
+        post_url=post_url, image_url=image_url))
+
+
+@app.get("/p/{post_id}")
+def public_post_page(post_id: int, request: Request,
+                     x_init_data: str = Header(default=""),
+                     db: Session = Depends(get_db)):
+    """Phase 176: the public post page (see the block comment above)."""
+    base = _public_base_url()
+    post_url = (base + f"/p/{post_id}") if base else f"/p/{post_id}"
+    image_url = (base + "/webapp/og-image.png") if base \
+        else "/webapp/og-image.png"
+    p = db.get(models.Post, post_id)
+    if p is None or p.is_deleted:
+        return _public_not_found(post_id, post_url, image_url)
+    eff = db.get(models.Post, p.repost_of_id) \
+        if getattr(p, "repost_of_id", None) else p
+    if eff is None or eff.is_deleted:
+        return _public_not_found(post_id, post_url, image_url)
+    author = db.get(models.User, eff.user_id)
+    if author is None:
+        return _public_not_found(post_id, post_url, image_url)
+    viewer_id = None
+    if x_init_data:
+        tg = validate_init_data(x_init_data, settings.BOT_TOKEN)
+        if tg:
+            viewer_id = tg.get("id")
+    if not _can_see_posts(db, viewer_id or -1, author.telegram_id):
+        return _public_notice(post_id, post_url, image_url)
+    if viewer_id and _blocked_by(db, author.telegram_id, viewer_id):
+        return _public_notice(post_id, post_url, image_url)
+    name = html.escape(author.first_name or "Nexora member")
+    caption = html.escape(eff.caption or "")
+    desc = (caption[:197] + "…") if len(caption) > 200 else caption
+    if not desc:
+        desc = "A post on Nexora Social"
+    body = (f"<h1>{name} on Nexora Social</h1>"
+            "<p class=\"meta\">Nexora Social</p>"
+            f"<p>{caption.replace(chr(10), '<br>')}</p>"
+            + _open_in_nexora_button(post_id))
+    return HTMLResponse(content=_public_page_html(
+        title=f"{name} on Nexora Social", description=desc,
+        body=body, post_url=post_url, image_url=image_url))
+
+
+@app.get("/posts/{post_id}/share-link")
+def post_share_link(post_id: int,
+                    user: models.User = Depends(current_user),
+                    db: Session = Depends(get_db)):
+    """Phase 176: the public URL for a post the caller may see
+    (same visibility as GET /posts/{id}: deleted 404, private 403)."""
+    p = db.get(models.Post, post_id)
+    if p is None or p.is_deleted:
+        raise HTTPException(404, "Post not found")
+    eff_id = p.repost_of_id or p.id
+    eff = db.get(models.Post, eff_id) if eff_id != p.id else p
+    if eff is None or eff.is_deleted:
+        raise HTTPException(404, "Post not found")
+    if not _can_see_posts(db, user.telegram_id, eff.user_id):
+        raise HTTPException(403, "This account is private")
+    base = _public_base_url()
+    url = (base + f"/p/{p.id}") if base else f"/p/{p.id}"
+    return {"share_link": url}
 
 
 # ---------------------------------------------------------------------------

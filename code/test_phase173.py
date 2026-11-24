@@ -254,14 +254,14 @@ for m in JS_MARKS:
     assert m in JS, f"missing JS marker: {m}"
 assert ".bubble-voice" in CSS and ".voice-track" in CSS
 assert 'id="chat-mic"' in HTML
-assert HTML.count("?v=175") == 10, HTML.count("?v=175")
+assert HTML.count("?v=176") == 10, HTML.count("?v=176")
 assert "?v=17" + "2" not in HTML
 BOT = open(os.path.join(ROOT, "code/app/bot.py")).read()
-assert "/?v=175" in BOT and "/?v=17" + "2" not in BOT
+assert "/?v=176" in BOT and "/?v=17" + "2" not in BOT
 paths = set()
 for route in app.routes:
     paths.add(route.path)
-assert len(paths) == 181, len(paths)
+assert len(paths) == 183, len(paths)
 assert "/messages/{uid}/upload-voice" in paths
 r = c.get("/admin/backup", headers=ADMIN)
 assert r.status_code == 200, r.text

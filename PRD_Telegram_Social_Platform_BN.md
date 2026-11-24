@@ -1839,3 +1839,38 @@ rename/delete। ফুল রিগ্রেশন 166/166 সবুজ।
   cap rules, add/move/remove, unsave cascade, delete-keeps-posts,
   isolation, client markers. Routes 177 -> 181 (7 endpoints, 4
   new unique paths), backup tables 49 -> 51.
+
+## Phase 176 — Public Post Link (LIVE, ?v=176)
+
+Shareable URL that opens a post OUTSIDE Telegram. GET /p/{post_id}
+serves a lightweight public HTML page (no auth) with Open Graph
+meta (title, description, og:image = the public og-image.png) +
+the post content (first name attribution + caption, HTML-escaped)
++ an "Open in Nexora" button (t.me deep link). GET
+/posts/{id}/share-link returns {"share_link": "<origin>/p/{id}"}
+for a post the caller may see (same visibility as GET
+/posts/{id}: deleted 404, private 403, no auth 401). The video
+options menu gains "Copy public link".
+
+Privacy is the point. Deleted posts 404 ("Post not found").
+Private-account posts show only a generic "This post isn't
+public." notice — never the caption or the author name — except
+to the author and their followers. When the opener is identified
+(a valid Telegram X-Init-Data header, i.e. the page opened from
+inside the app), a post by an author who blocked that viewer
+also shows only the notice. Repost links resolve to the
+original post, and the privacy checks run on the original's
+author. The page never exposes media (post photos live behind
+the authenticated, user-bound /media token, so no image is
+embedded), and exposes no API data beyond the single post: no
+counts, no comments, no usernames.
+
+Honest limit, recorded here: an anonymous browser carries no
+identity, so the blocked-viewer check cannot run for it — the
+notice for a blocked viewer applies only when the viewer is
+identified via initData. The link itself is only minted by
+someone who can see the post, and the in-app deep link still
+enforces full visibility rules.
+
+No new tables. Routes 181 -> 183. Backup tables stay 51.
+Test: test_phase176.py (8 sections, green standalone).
