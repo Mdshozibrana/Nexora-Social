@@ -1812,3 +1812,30 @@ rename/delete। ফুল রিগ্রেশন 166/166 সবুজ।
   repost-of-muted, comments, Trending, hashtag feed, stories,
   DMs unchanged, mute+block interplay, client markers.
   Routes 175 -> 177, backup tables 48 -> 49.
+
+## Phase 175 — Saved collections (?v=175)
+- New `saved_collections` (id, user_id, name max 50, created_at;
+  name unique per member) + `saved_collection_posts`
+  (collection_id, post_id, created_at; unique pair). Cap 20
+  collections per member. Endpoints: POST/GET /saved/collections,
+  GET/PATCH/DELETE /saved/collections/{cid}, POST/DELETE
+  /saved/collections/{cid}/posts[/...]. A missing id and someone
+  else's collection both read as 404.
+- Semantics: saving to a collection also bookmarks the post;
+  a duplicate add is a no-op (200, added:false); removing from a
+  collection never unsaves the post; unsaving a post drops it
+  from all of the saver's collections; deleting a collection
+  removes only its membership rows — its posts stay in All saved
+  (GET /me/saved, unchanged).
+- Client: Saved page shows collection chips (All saved + each
+  folder with its count + New with an inline name input); opening
+  a folder shows its posts with Rename (inline) and Delete
+  (two-tap confirm). The video options menu gains "Save to
+  collection": a picker listing folders with ✓ marks for the
+  ones holding the post — tap toggles membership, so it also
+  moves a post between folders or removes it — plus "Create +
+  save here".
+- Tests: test_phase175.py — create/list/rename/delete + name and
+  cap rules, add/move/remove, unsave cascade, delete-keeps-posts,
+  isolation, client markers. Routes 177 -> 181 (7 endpoints, 4
+  new unique paths), backup tables 49 -> 51.

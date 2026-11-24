@@ -2640,6 +2640,16 @@ def toggle_save(post_id: int, user: models.User = Depends(current_user),
         post_id=p.id, user_id=user.telegram_id).first()
     if existing:
         db.delete(existing)
+        # Phase 175: unsaving also drops the post from every
+        # collection of the saver — it is no longer saved.
+        my_colls = [r[0] for r in db.query(
+            models.SavedCollection.id).filter_by(
+            user_id=user.telegram_id).all()]
+        if my_colls:
+            db.query(models.SavedCollectionPost).filter(
+                models.SavedCollectionPost.post_id == p.id,
+                models.SavedCollectionPost.collection_id.in_(
+                    my_colls)).delete(synchronize_session=False)
         saved = False
     else:
         db.add(models.SavedPost(post_id=p.id, user_id=user.telegram_id))
@@ -2657,6 +2667,172 @@ def my_saved(user: models.User = Depends(current_user),
                 models.Post.is_deleted == False) \
         .order_by(models.SavedPost.id.desc()).limit(50).all()
     return {"posts": _post_list(db, rows, user.telegram_id)}
+
+
+class CollectionIn(BaseModel):
+    name: str = Field(default="", max_length=50)
+
+
+class CollectionPostIn(BaseModel):
+    post_id: int = 0
+
+
+def _get_my_collection(db, user_id, cid):
+    """Phase 175: the caller's own collection, or 404 — a missing
+    id and someone else's id look the same."""
+    coll = db.get(models.SavedCollection, cid)
+    if coll is None or coll.user_id != user_id:
+        raise HTTPException(404, "Collection not found")
+    return coll
+
+
+def _clean_collection_name(db, user_id, name, exclude_id=None):
+    """Phase 175: a trimmed 1-50 char name, unique per member
+    (case-insensitive)."""
+    name = (name or "").strip()
+    if not name or len(name) > 50:
+        raise HTTPException(
+            400, "Collection name must be 1–50 characters")
+    q = db.query(models.SavedCollection).filter_by(user_id=user_id)
+    if exclude_id is not None:
+        q = q.filter(models.SavedCollection.id != exclude_id)
+    for c in q.all():
+        if c.name.lower() == name.lower():
+            raise HTTPException(
+                400, "You already have a collection with that name")
+    return name
+
+
+def _collection_dict(db, coll, has_post=None):
+    n = db.query(models.SavedCollectionPost).filter_by(
+        collection_id=coll.id).count()
+    d = {"id": coll.id, "name": coll.name, "post_count": n,
+         "created_at": coll.created_at.isoformat()
+         if coll.created_at else None}
+    if has_post is not None:
+        d["has_post"] = coll.id in has_post
+    return d
+
+
+@app.post("/saved/collections")
+def create_collection(body: CollectionIn,
+                      user: models.User = Depends(current_user),
+                      db: Session = Depends(get_db)):
+    """Phase 175: create a collection (max 20 per member)."""
+    me = user.telegram_id
+    if db.query(models.SavedCollection).filter_by(
+            user_id=me).count() >= 20:
+        raise HTTPException(
+            400, "You can have up to 20 collections")
+    name = _clean_collection_name(db, me, body.name)
+    coll = models.SavedCollection(user_id=me, name=name)
+    db.add(coll)
+    db.commit()
+    db.refresh(coll)
+    return _collection_dict(db, coll)
+
+
+@app.get("/saved/collections")
+def list_collections(post_id: int = 0,
+                     user: models.User = Depends(current_user),
+                     db: Session = Depends(get_db)):
+    """Phase 175: my collections, newest first. With ?post_id=N
+    each entry also says whether that post is in it (the
+    save-to-collection picker)."""
+    rows = db.query(models.SavedCollection).filter_by(
+        user_id=user.telegram_id) \
+        .order_by(models.SavedCollection.id.desc()).all()
+    has_post = None
+    if post_id:
+        has_post = {r[0] for r in db.query(
+            models.SavedCollectionPost.collection_id).filter(
+            models.SavedCollectionPost.post_id == post_id,
+            models.SavedCollectionPost.collection_id.in_(
+                [c.id for c in rows] or [-1])).all()}
+    return {"collections": [_collection_dict(db, c, has_post)
+                            for c in rows]}
+
+
+@app.get("/saved/collections/{cid}")
+def get_collection(cid: int,
+                   user: models.User = Depends(current_user),
+                   db: Session = Depends(get_db)):
+    """Phase 175: one collection with its posts (most recently
+    added first, deleted posts excluded)."""
+    coll = _get_my_collection(db, user.telegram_id, cid)
+    rows = db.query(models.Post).join(
+        models.SavedCollectionPost,
+        models.SavedCollectionPost.post_id == models.Post.id) \
+        .filter(models.SavedCollectionPost.collection_id == cid,
+                models.Post.is_deleted == False) \
+        .order_by(models.SavedCollectionPost.id.desc()).limit(50).all()
+    out = _collection_dict(db, coll)
+    out["posts"] = _post_list(db, rows, user.telegram_id)
+    return out
+
+
+@app.patch("/saved/collections/{cid}")
+def rename_collection(cid: int, body: CollectionIn,
+                      user: models.User = Depends(current_user),
+                      db: Session = Depends(get_db)):
+    """Phase 175: rename my collection."""
+    coll = _get_my_collection(db, user.telegram_id, cid)
+    coll.name = _clean_collection_name(
+        db, user.telegram_id, body.name, exclude_id=cid)
+    db.commit()
+    db.refresh(coll)
+    return _collection_dict(db, coll)
+
+
+@app.delete("/saved/collections/{cid}")
+def delete_collection(cid: int,
+                      user: models.User = Depends(current_user),
+                      db: Session = Depends(get_db)):
+    """Phase 175: delete my collection — its posts stay bookmarked
+    in All saved; only the membership rows go."""
+    coll = _get_my_collection(db, user.telegram_id, cid)
+    db.query(models.SavedCollectionPost).filter_by(
+        collection_id=cid).delete(synchronize_session=False)
+    db.delete(coll)
+    db.commit()
+    return {"deleted": True}
+
+
+@app.post("/saved/collections/{cid}/posts")
+def add_to_collection(cid: int, body: CollectionPostIn,
+                      user: models.User = Depends(current_user),
+                      db: Session = Depends(get_db)):
+    """Phase 175: save a post into my collection. Saving to a
+    collection also bookmarks the post (a duplicate add is a
+    no-op, not an error)."""
+    coll = _get_my_collection(db, user.telegram_id, cid)
+    p = get_live_post(db, body.post_id)
+    existing = db.query(models.SavedCollectionPost).filter_by(
+        collection_id=cid, post_id=p.id).first()
+    if existing:
+        return {"added": False, "saved": True}
+    if db.query(models.SavedPost).filter_by(
+            post_id=p.id, user_id=user.telegram_id).first() is None:
+        db.add(models.SavedPost(post_id=p.id,
+                                user_id=user.telegram_id))
+    db.add(models.SavedCollectionPost(collection_id=cid, post_id=p.id))
+    db.commit()
+    return {"added": True, "saved": True}
+
+
+@app.delete("/saved/collections/{cid}/posts/{post_id}")
+def remove_from_collection(cid: int, post_id: int,
+                           user: models.User = Depends(current_user),
+                           db: Session = Depends(get_db)):
+    """Phase 175: remove a post from my collection. The post stays
+    bookmarked in All saved. Removing a post that is not in the
+    collection is a no-op."""
+    coll = _get_my_collection(db, user.telegram_id, cid)
+    n = db.query(models.SavedCollectionPost).filter_by(
+        collection_id=cid, post_id=post_id) \
+        .delete(synchronize_session=False)
+    db.commit()
+    return {"removed": n > 0}
 
 
 @app.get("/me/following")
@@ -7251,6 +7427,8 @@ _BACKUP_TABLES = [
     ("reports", models.Report),
     ("notifications_log", models.NotificationLog),
     ("saved_posts", models.SavedPost),
+    ("saved_collections", models.SavedCollection),
+    ("saved_collection_posts", models.SavedCollectionPost),
     ("post_shares", models.PostShare),
     ("daily_claims", models.DailyClaim),
     ("user_activity", models.UserActivity),

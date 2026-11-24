@@ -312,22 +312,22 @@ for marker in ("hl-row", "hlCircle", "loadHighlights", "openHighlight",
 for marker in (".hl-row", ".hl-ring", ".hl-label", ".hl-pick-grid",
                ".hl-sheet", ".hl-picker-overlay"):
     assert marker in CSS, marker
-assert "app.js?v=174" in HTML
+assert "app.js?v=175" in HTML
 assert ("?v=17" + "1") not in HTML
-assert "style.css?v=174" in HTML
+assert "style.css?v=175" in HTML
 paths = {rt.path for rt in app.routes}
-assert len(paths) == 177, len(paths)
+assert len(paths) == 181, len(paths)
 for p in ("/highlights", "/highlights/user/{user_id}",
           "/highlights/{hid}", "/stories/mine"):
     assert p in paths, p
 h = c.get("/admin/health", headers=ADMIN).json()
-assert h["version"] == 174, h
+assert h["version"] == 175, h
 r = c.get("/admin/backup", headers=ADMIN)
 assert r.status_code == 200, r.text
-assert len(r.json()["tables"]) == 49, len(r.json()["tables"])
+assert len(r.json()["tables"]) == 51, len(r.json()["tables"])
 assert "story_highlights" in r.json()["tables"]
 assert "highlight_stories" in r.json()["tables"]
-assert len(_BACKUP_TABLES) == 49, len(_BACKUP_TABLES)
-print("client + version + routes + backup OK (174 routes, 48 tables, ?v=174)")
+assert len(_BACKUP_TABLES) == 51, len(_BACKUP_TABLES)
+print("client + version + routes + backup OK (174 routes, 48 tables, ?v=175)")
 
 print("PHASE 172 OK")

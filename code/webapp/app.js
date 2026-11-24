@@ -2712,6 +2712,88 @@ async function openTipSheet(target) {
   updateBackButton();
 }
 
+// Phase 175: pick collections for a post — tap toggles membership,
+// so the same sheet moves a post between collections or removes it.
+async function openSaveToCollection(p) {
+  const sheet = $("reel-sheet");
+  sheet.innerHTML = "";
+  const title = document.createElement("div");
+  title.className = "sheet-title";
+  title.textContent = "Save to collection";
+  sheet.appendChild(title);
+  const list = document.createElement("div");
+  sheet.appendChild(list);
+  const draw = async () => {
+    list.innerHTML = "";
+    try {
+      const d = await api("/saved/collections?post_id=" + p.id);
+      if (!d.collections.length) {
+        const none = document.createElement("p");
+        none.className = "hint";
+        none.textContent = "No collections yet — create one below.";
+        list.appendChild(none);
+      }
+      d.collections.forEach(coll => {
+        const b = document.createElement("button");
+        b.className = "sheet-row";
+        b.textContent = (coll.has_post ? "✓ " : "") + coll.name +
+          " (" + coll.post_count + ")";
+        b.onclick = async () => {
+          try {
+            if (coll.has_post) {
+              await api("/saved/collections/" + coll.id +
+                "/posts/" + p.id, { method: "DELETE" });
+              setStatus("Removed from " + coll.name + ".");
+            } else {
+              await api("/saved/collections/" + coll.id + "/posts",
+                { method: "POST",
+                  body: JSON.stringify({ post_id: p.id }) });
+              p.saved = true;
+              setStatus("Saved to " + coll.name + ".");
+            }
+            closeReelMenu();
+          } catch (e) { setStatus("Could not update the collection."); }
+        };
+        list.appendChild(b);
+      });
+    } catch (e) {
+      const err = document.createElement("p");
+      err.className = "hint";
+      err.textContent = "Could not load collections.";
+      list.appendChild(err);
+    }
+  };
+  await draw();
+  const row = document.createElement("div");
+  row.className = "saved-new-row";
+  const inp = document.createElement("input");
+  inp.type = "text"; inp.maxLength = 50;
+  inp.placeholder = "New collection name";
+  const ok = document.createElement("button");
+  ok.textContent = "Create + save here";
+  ok.onclick = async () => {
+    if (!inp.value.trim()) return;
+    try {
+      const r = await api("/saved/collections", { method: "POST",
+        body: JSON.stringify({ name: inp.value.trim() }) });
+      await api("/saved/collections/" + r.id + "/posts",
+        { method: "POST", body: JSON.stringify({ post_id: p.id }) });
+      p.saved = true;
+      setStatus("Saved to " + r.name + ".");
+      closeReelMenu();
+    } catch (e) { setStatus("Could not create the collection."); }
+  };
+  row.append(inp, ok);
+  sheet.appendChild(row);
+  const cancel = document.createElement("button");
+  cancel.className = "wide";
+  cancel.textContent = "Cancel";
+  cancel.onclick = () => closeReelMenu();
+  sheet.appendChild(cancel);
+  $("reel-sheet-wrap").hidden = false;
+  updateBackButton();
+}
+
 async function openReelMenu(p, reelEl) {
   const sheet = $("reel-sheet");
   sheet.innerHTML = "";
@@ -2737,6 +2819,7 @@ async function openReelMenu(p, reelEl) {
       setStatus(r.saved ? "Saved to your collection." : "Removed from Saved.");
     } catch (e) { setStatus("Could not save."); }
   });
+  row("📁", "Save to collection", () => openSaveToCollection(p));
   row("📤", "Share", () => openSharePicker(p));
   // Phase 118: repost — a post to your own feed.
   if (!mine) row("🔁", p.reposted_by_me ? "Reposted — tap to remove" : "Repost", async () => {
@@ -3163,13 +3246,119 @@ async function loadShared() {
 }
 
 // ---------------------------------------------------------------- saved ---
+let savedCollectionOpen = null; // Phase 175: open collection id, or null = All saved
+async function loadSavedCollections() {
+  const bar = $("saved-collections");
+  if (!bar) return;
+  bar.innerHTML = "";
+  const mkChip = (label, active, fn) => {
+    const b = document.createElement("button");
+    b.className = "saved-chip" + (active ? " active" : "");
+    b.textContent = label;
+    b.onclick = fn;
+    bar.appendChild(b);
+    return b;
+  };
+  mkChip("📌 All saved", savedCollectionOpen === null, () => {
+    savedCollectionOpen = null; loadSaved();
+  });
+  try {
+    const d = await api("/saved/collections");
+    d.collections.forEach(coll => {
+      mkChip("📁 " + coll.name + " (" + coll.post_count + ")",
+        savedCollectionOpen === coll.id, () => {
+          savedCollectionOpen = coll.id; loadSaved();
+        });
+    });
+    mkChip("+ New", false, () => {
+      const row = document.createElement("div");
+      row.className = "saved-new-row";
+      const inp = document.createElement("input");
+      inp.type = "text"; inp.maxLength = 50;
+      inp.placeholder = "Collection name";
+      const ok = document.createElement("button");
+      ok.textContent = "Create";
+      ok.onclick = async () => {
+        if (!inp.value.trim()) return;
+        try {
+          const r = await api("/saved/collections", { method: "POST",
+            body: JSON.stringify({ name: inp.value.trim() }) });
+          savedCollectionOpen = r.id;
+          setStatus("Collection created.");
+          loadSaved();
+        } catch (e) { setStatus("Could not create the collection."); }
+      };
+      const cx = document.createElement("button");
+      cx.textContent = "Cancel";
+      cx.onclick = () => loadSavedCollections();
+      row.append(inp, ok, cx);
+      bar.appendChild(row);
+      inp.focus();
+    });
+  } catch (e) { /* collections stay hidden; All saved still works */ }
+}
 async function loadSaved() {
   const box = $("saved-list");
   box.innerHTML = "Loading…";
+  await loadSavedCollections();
+  let shownPosts = 0;
   try {
-    const data = await api("/me/saved");
-    box.innerHTML = "";
-    data.posts.forEach(p => box.appendChild(postCard(p)));
+    if (savedCollectionOpen === null) {
+      const data = await api("/me/saved");
+      box.innerHTML = "";
+      data.posts.forEach(p => box.appendChild(postCard(p)));
+      shownPosts = data.posts.length;
+    } else {
+      const data = await api("/saved/collections/" + savedCollectionOpen);
+      box.innerHTML = "";
+      const head = document.createElement("div");
+      head.className = "saved-coll-head";
+      const nm = document.createElement("span");
+      nm.className = "saved-coll-name";
+      nm.textContent = "📁 " + data.name + " (" + data.post_count + ")";
+      head.appendChild(nm);
+      const ren = document.createElement("button");
+      ren.textContent = "Rename";
+      ren.onclick = () => {
+        const inp = document.createElement("input");
+        inp.type = "text"; inp.maxLength = 50; inp.value = data.name;
+        const ok = document.createElement("button");
+        ok.textContent = "Save";
+        ok.onclick = async () => {
+          try {
+            await api("/saved/collections/" + data.id,
+              { method: "PATCH",
+                body: JSON.stringify({ name: inp.value.trim() }) });
+            setStatus("Collection renamed.");
+            loadSaved();
+          } catch (e) { setStatus("Could not rename."); }
+        };
+        head.innerHTML = "";
+        head.append(inp, ok);
+        inp.focus();
+      };
+      head.appendChild(ren);
+      const del = document.createElement("button");
+      del.textContent = "Delete";
+      del.onclick = async () => {
+        if (del.dataset.armed) {
+          try {
+            await api("/saved/collections/" + data.id,
+              { method: "DELETE" });
+            savedCollectionOpen = null;
+            setStatus("Collection deleted — its posts stay saved.");
+            loadSaved();
+          } catch (e) { setStatus("Could not delete."); }
+        } else {
+          del.dataset.armed = "1";
+          del.textContent = "Tap again to delete";
+        }
+      };
+      head.appendChild(del);
+      box.appendChild(head);
+      data.posts.forEach(p => box.appendChild(postCard(p)));
+      shownPosts = data.posts.length;
+    }
     // Phase 66: designs saved via the long-press popup's 📌.
     const dd = await api("/me/design-saved");
     const grid = $("saved-designs");
@@ -3177,7 +3366,7 @@ async function loadSaved() {
     dd.designs.forEach(d => grid.appendChild(designCard(d)));
     $("saved-designs-title").hidden = dd.designs.length === 0;
     $("saved-empty").hidden =
-      data.posts.length > 0 || dd.designs.length > 0;
+      shownPosts > 0 || dd.designs.length > 0;
   } catch (e) { box.textContent = "Could not load your saved posts."; }
 }
 

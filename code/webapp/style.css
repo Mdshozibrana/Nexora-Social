@@ -1401,6 +1401,24 @@ button.liked { animation: heartPop .32s cubic-bezier(.22,.9,.3,1); }
    ================================================================ */
 .bubble-photo { display: block; max-width: 100%; border-radius: 12px;
   margin-bottom: 4px; cursor: pointer; }
+.saved-collections { display: flex; flex-wrap: wrap; gap: 6px;
+  margin-bottom: 10px; }
+.saved-chip { border: 1px solid var(--hatch-widget-border);
+  background: var(--hatch-widget-surface); color: var(--hatch-widget-text);
+  border-radius: 999px; padding: 5px 11px; font-size: 13px;
+  cursor: pointer; }
+.saved-chip.active { background: var(--hatch-widget-accent);
+  color: var(--hatch-widget-on-accent); border-color: transparent; }
+.saved-new-row { display: flex; gap: 6px; width: 100%; margin-top: 4px; }
+.saved-new-row input { flex: 1 1 auto; min-width: 0; padding: 6px 8px;
+  border: 1px solid var(--hatch-widget-border); border-radius: 8px;
+  background: var(--hatch-widget-surface); color: var(--hatch-widget-text); }
+.saved-coll-head { display: flex; align-items: center; gap: 8px;
+  flex-wrap: wrap; margin-bottom: 10px; }
+.saved-coll-name { font-weight: 700; flex: 1 1 auto; }
+.saved-coll-head input { flex: 1 1 auto; min-width: 0; padding: 6px 8px;
+  border: 1px solid var(--hatch-widget-border); border-radius: 8px;
+  background: var(--hatch-widget-surface); color: var(--hatch-widget-text); }
 .bubble-voice { display: flex; align-items: center; gap: 8px;
   min-width: 180px; max-width: 100%; margin-bottom: 4px; }
 .voice-play { flex: 0 0 auto; width: 32px; height: 32px;

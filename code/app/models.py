@@ -286,6 +286,35 @@ class SavedPost(Base):
     __table_args__ = (UniqueConstraint("post_id", "user_id"),)
 
 
+class SavedCollection(Base):
+    """Phase 175: a named folder for saved posts (max 20 per
+    member, name max 50 chars, unique per member). Deleting a
+    collection removes only its membership rows — the posts
+    stay bookmarked in All saved."""
+    __tablename__ = "saved_collections"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("users.telegram_id"),
+                     index=True)
+    name = Column(String(50), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    __table_args__ = (UniqueConstraint("user_id", "name"),)
+
+
+class SavedCollectionPost(Base):
+    """Phase 175: one post in one collection. Kept separate
+    from saved_posts so removing a post from a collection
+    never unsaves it, and unsaving drops it everywhere."""
+    __tablename__ = "saved_collection_posts"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    collection_id = Column(Integer,
+                           ForeignKey("saved_collections.id"),
+                           index=True)
+    post_id = Column(Integer, ForeignKey("posts.id"), index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    __table_args__ = (
+        UniqueConstraint("collection_id", "post_id"),)
+
+
 class PostShare(Base):
     """In-app share: one member sends a post/video to another member
     (owner request, Oct 31). The receiver finds it under 'Shared with me'

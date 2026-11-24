@@ -10,7 +10,7 @@ Streak, created_at after 2026-12-01 -> Pioneer NOT earned;
 locked badges still listed with earned=false + hint; profile
 response and /auth response both carry level + badges; level
 via HTTP tracks seeded ledger amounts (4999 -> L5, +1 -> L6);
-backup still 39 tables; ?v=174 x5, no ?v=136; level/badge
+backup still 39 tables; ?v=175 x5, no ?v=136; level/badge
 client markers + Phase 123-136 markers intact.
 """
 import hashlib, hmac, json, os, time, urllib.parse
@@ -266,12 +266,12 @@ with TestClient(app) as c:
     r = c.get("/admin/backup", headers=ALICE)
     assert r.status_code == 200, r.status_code
     bk = r.json()
-    assert len(bk["tables"]) == 49, len(bk["tables"])
+    assert len(bk["tables"]) == 51, len(bk["tables"])
     print("backup: 39 tables OK")
 
     # 12. Client markers + asset version.
     html = open("webapp/index.html").read()
-    assert html.count("?v=174") == 10, html.count("?v=174")
+    assert html.count("?v=175") == 10, html.count("?v=175")
     assert "?v=136" not in html
     js = open("webapp/app.js").read()
     for m in ("renderLevelBlock", "level-block", "level-bar",
@@ -295,6 +295,6 @@ with TestClient(app) as c:
     css = open("webapp/style.css").read()
     assert ".level-block" in css and ".level-bar" in css \
         and ".badge-chip" in css and ".badge-locked" in css
-    print("client markers + ?v=174 OK")
+    print("client markers + ?v=175 OK")
 
 print("PHASE-137 TESTS PASSED")
