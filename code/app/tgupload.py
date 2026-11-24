@@ -74,11 +74,15 @@ async def upload_media(chat_id: int, filename: str, data: bytes,
         else ("sendVideo", "video")
     extra = {"supports_streaming": "true"} if kind == "video" else {}
     async with httpx.AsyncClient(timeout=120) as client:
-        resp = await client.post(
-            f"{api}/{method}",
-            data={"chat_id": str(chat_id), "disable_notification": "true",
-                  **extra},
-            files={field: (filename or "upload", data, content_type)})
+        try:
+            resp = await client.post(
+                f"{api}/{method}",
+                data={"chat_id": str(chat_id),
+                      "disable_notification": "true",
+                      **extra},
+                files={field: (filename or "upload", data, content_type)})
+        except httpx.HTTPError:
+            raise TelegramUploadError("failed")
         try:
             payload = resp.json()
         except ValueError:

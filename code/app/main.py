@@ -590,6 +590,14 @@ def _media_visible(db, viewer_id: int, file_id: str) -> bool:
                 db, viewer_id, post.user_id):
             return False
         return _can_see_posts(db, viewer_id, post.user_id)
+    pm = db.query(models.PostMedia).filter_by(file_id=file_id).first()
+    if pm is not None:
+        post = db.get(models.Post, pm.post_id)
+        if post is not None and not post.is_deleted:
+            if _blocked_by(db, post.user_id, viewer_id) or _blocked_by(
+                    db, viewer_id, post.user_id):
+                return False
+            return _can_see_posts(db, viewer_id, post.user_id)
     story = db.query(models.Story).filter_by(
         media_file_id=file_id).first()
     if story is not None:
@@ -1174,6 +1182,16 @@ def _poll_dict(db, p, viewer_id=None):
             "voted_option_id": voted}
 
 
+def _post_media_list(db, p):
+    """Phase 171: the album items of a post, in position order.
+    Single-media posts have no rows — the client falls back to
+    media_file_id."""
+    return [{"file_id": m.file_id, "media_type": m.media_type,
+             "position": m.position}
+            for m in db.query(models.PostMedia).filter_by(
+                post_id=p.id).order_by(models.PostMedia.position).all()]
+
+
 def _mention_list(db, p):
     """Phase 170: the @mentions on a post — username + id, for
     the tappable links the client renders in the caption."""
@@ -1231,6 +1249,7 @@ def post_dict(db, p, liked=False, saved=False, views=None,
         "thumb_file_id": getattr(p, "thumb_file_id", None),
         "caption": p.caption, "hashtags": p.hashtags,
         "mentions": _mention_list(db, p),
+        "media": _post_media_list(db, p),
         "like_count": p.like_count, "comment_count": p.comment_count,
         "repost_count": p.repost_count or 0,
         "is_pinned": bool(getattr(p, "is_pinned", False)),
@@ -1436,6 +1455,9 @@ class PollIn(BaseModel):
 class PostIn(BaseModel):
     type: str = Field(default="text", max_length=16)
     media_file_id: Optional[str] = Field(default=None, max_length=256)
+    # Phase 171: album — ordered staged photo file_ids, max 10.
+    # Wins over media_file_id when both are given.
+    media_file_ids: Optional[list] = None
     caption: str = Field(default="", max_length=2000)
     poll: Optional[PollIn] = None
 
@@ -1462,6 +1484,32 @@ async def create_post(body: PostIn,
     poll = _validate_poll(body.poll)
     if body.type not in ("photo", "video", "text"):
         raise HTTPException(400, "type must be photo, video or text")
+    # Phase 171: albums — media_file_ids is the ordered list of
+    # staged photo file_ids (1..10). Each one is screened, exactly
+    # like a single photo post (a client-invented file_id must not
+    # slip through unscreened).
+    album_ids = None
+    if body.media_file_ids is not None:
+        if not isinstance(body.media_file_ids, list) \
+                or not 1 <= len(body.media_file_ids) <= 10:
+            raise HTTPException(
+                400, "An album holds 1 to 10 photos")
+        if body.type != "photo":
+            raise HTTPException(400, "Albums hold photos only")
+        for fid in body.media_file_ids:
+            if not isinstance(fid, str) or not fid or len(fid) > 256:
+                raise HTTPException(400, "Bad photo in album")
+        album_ids = body.media_file_ids
+        if moderation.active():
+            for fid in album_ids:
+                verdict = _screen_file_id("photo", fid)
+                if verdict != "clean":
+                    log_security_event(
+                        db, "screen_reject",
+                        actor_id=user.telegram_id, detail=
+                        f"album photo screened out ({verdict})")
+                    raise HTTPException(
+                        400, moderation.block_message("photo", verdict))
     # Phase 142: banned-word list — a post carrying a banned word
     # is refused before it exists (never echo the word itself).
     if banned_word_in(db, body.caption):
@@ -1469,7 +1517,8 @@ async def create_post(body: PostIn,
     # Phase 81: a media post carries a Telegram file_id the server
     # never saw uploaded — fetch and screen it, so this endpoint
     # cannot bypass the screening every upload goes through.
-    if moderation.active() and body.type in ("photo", "video") \
+    if album_ids is None and moderation.active() \
+            and body.type in ("photo", "video") \
             and body.media_file_id:
         verdict = _screen_file_id(body.type, body.media_file_id)
         if verdict != "clean":
@@ -1478,8 +1527,13 @@ async def create_post(body: PostIn,
                                f"{body.type} screened out ({verdict})")
             raise HTTPException(
                 400, moderation.block_message(body.type, verdict))
-    post, _, _ = register_post(db, user, body.type, body.media_file_id,
-                               body.caption)
+    if album_ids:
+        post, _, _ = register_post(
+            db, user, "photo", album_ids[0], body.caption,
+            extra_media=[(fid, "photo") for fid in album_ids])
+    else:
+        post, _, _ = register_post(db, user, body.type, body.media_file_id,
+                                   body.caption)
     if poll:
         q, opts = poll
         db.add(models.Poll(post_id=post.id, question=q))
@@ -1768,6 +1822,27 @@ def _dedupe_put(user_id, upload_id, status_code, body):
             time.time(), status_code, body)
 
 
+@app.post("/posts/upload-media")
+async def upload_media_staged(file: UploadFile = File(...),
+                              user: models.User = Depends(current_user),
+                              db: Session = Depends(get_db)):
+    """Phase 171: stage ONE photo for an album — upload it to
+    Telegram (screened, exactly like a post) and hand back its
+    file_id WITHOUT creating a post. The composer stages up to 10
+    photos this way, then creates the album with POST /posts
+    {media_file_ids}. Videos are refused here BEFORE any upload
+    (albums hold photos only — a video still goes through
+    /posts/upload on its own), so no stray video job is scheduled."""
+    kind = tgupload.classify(file.content_type or "",
+                             file.filename or "")
+    if kind != "photo":
+        raise HTTPException(
+            400, "Albums hold photos — post a video on its own")
+    _enforce_rate("upload", f"u{user.telegram_id}")
+    kind, file_id = await _telegram_upload_or_400(user, file)
+    return {"file_id": file_id, "kind": kind}
+
+
 @app.post("/posts/upload")
 async def upload_post(caption: str = Form(""),
                       file: UploadFile = File(...),
@@ -1826,6 +1901,8 @@ def _delete_post_cascade(db, p):
             rp.is_deleted = True
     # Phase 170: a deleted post takes its mention rows with it.
     db.query(models.Mention).filter_by(post_id=p.id).delete()
+    # Phase 171: ... and its album rows.
+    db.query(models.PostMedia).filter_by(post_id=p.id).delete()
 
 
 @app.delete("/posts/{post_id}")
@@ -7058,6 +7135,7 @@ _BACKUP_TABLES = [
     ("skill_entries", models.SkillEntry),
     # Phase 170: @mentions.
     ("mentions", models.Mention),
+    ("post_media", models.PostMedia),
 ]
 _BACKUP_MODELS = {name: m for name, m in _BACKUP_TABLES}
 _BACKUP_MAX_BYTES = 50 * 1024 * 1024

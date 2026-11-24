@@ -1209,22 +1209,47 @@ function avatarEl(name, id, big, photoId) {
 // whole and uncropped; tap anywhere or ✕ (or the app back button)
 // to close. The image loads from the Phase 111 /media cache, so
 // reopening is instant.
-function openPhotoViewer(photoId, name) {
+// Phase 171: the viewer now swipes through an album — pass the
+// item list + index. The Phase 112 open lines stay verbatim (the
+// first photo is already showing); the list only adds ‹ › swipe.
+let pvList = null, pvIdx = 0;
+function openPhotoViewer(photoId, name, list, index) {
   $("pv-img").src = mediaUrl(photoId);
   $("pv-img").alt = name || "Profile photo";
   $("pv-name").textContent = name || "";
+  pvList = (list && list.length > 1) ? list : null;
+  pvIdx = index || 0;
+  $("pv-count").textContent = pvList ? (pvIdx + 1) + "/" + pvList.length : "";
+  $("pv-prev").hidden = !pvList;
+  $("pv-next").hidden = !pvList;
   $("photo-viewer").hidden = false;
   updateBackButton();
+}
+function paintPhotoViewer(name) {
+  const it = pvList ? pvList[pvIdx] : null;
+  if (!it) return;
+  $("pv-img").src = mediaUrl(it.file_id);
+  $("pv-img").alt = name || "Photo";
+  $("pv-name").textContent = name || "";
+  $("pv-count").textContent = (pvIdx + 1) + "/" + pvList.length;
+}
+function stepPhotoViewer(d) {
+  if (!pvList) return;
+  pvIdx = (pvIdx + d + pvList.length) % pvList.length;
+  paintPhotoViewer();
 }
 function closePhotoViewer() {
   const v = $("photo-viewer");
   if (v.hidden) return;
   v.hidden = true;
   $("pv-img").src = "";
+  pvList = null;
   updateBackButton();
 }
 $("photo-viewer").onclick = () => closePhotoViewer();
 $("pv-close").onclick = e => { e.stopPropagation(); closePhotoViewer(); };
+$("pv-prev").onclick = e => { e.stopPropagation(); stepPhotoViewer(-1); };
+$("pv-next").onclick = e => { e.stopPropagation(); stepPhotoViewer(1); };
 
 // ---------------------------------------------------------------- posts ---
 // -------------------------------------------------------- phase 123 --
@@ -1359,6 +1384,76 @@ function attachMentionAutocomplete(ta) {
 }
 attachMentionAutocomplete($("composer-text"));
 
+// Phase 171: albums — one photo renders exactly as before;
+// 2-10 photos render as a swipeable carousel (dots + counter).
+function albumItems(p) {
+  if (p.media && p.media.length) {
+    return p.media.slice().sort((a, b) => (a.position || 0) - (b.position || 0));
+  }
+  if (p.media_file_id) return [{ file_id: p.media_file_id, media_type: p.type, position: 0 }];
+  return [];
+}
+function albumFrame(p) {
+  const items = albumItems(p);
+  const frame = document.createElement("div");
+  frame.className = "post-media";
+  if (items.length <= 1) {
+    const img = document.createElement("img");
+    img.src = mediaUrl(items[0].file_id);
+    img.loading = "lazy";
+    img.alt = "photo";
+    img.onclick = () => openPhotoViewer(items[0].file_id, "", items, 0);
+    frame.appendChild(img);
+    return frame;
+  }
+  const track = document.createElement("div");
+  track.className = "carousel-track";
+  items.forEach((it, i) => {
+    const img = document.createElement("img");
+    img.src = mediaUrl(it.file_id);
+    img.loading = "lazy";
+    img.alt = "photo " + (i + 1);
+    img.onclick = () => openPhotoViewer(it.file_id, "", items, i);
+    track.appendChild(img);
+  });
+  frame.appendChild(track);
+  const dots = document.createElement("div");
+  dots.className = "carousel-dots";
+  const count = document.createElement("div");
+  count.className = "carousel-count";
+  let idx = 0;
+  const paint = () => {
+    track.style.transform = "translateX(-" + (idx * 100) + "%)";
+    count.textContent = (idx + 1) + "/" + items.length;
+    [...dots.children].forEach((d, i) => d.classList.toggle("on", i === idx));
+  };
+  items.forEach((_, i) => {
+    const d = document.createElement("button");
+    d.className = "carousel-dot";
+    d.onclick = (e) => { e.stopPropagation(); idx = i; paint(); };
+    dots.appendChild(d);
+  });
+  const prev = document.createElement("button");
+  prev.className = "carousel-arrow left";
+  prev.textContent = "‹";
+  prev.onclick = (e) => { e.stopPropagation(); idx = (idx - 1 + items.length) % items.length; paint(); };
+  const next = document.createElement("button");
+  next.className = "carousel-arrow right";
+  next.textContent = "›";
+  next.onclick = (e) => { e.stopPropagation(); idx = (idx + 1) % items.length; paint(); };
+  frame.append(prev, next, dots, count);
+  let sx = null;
+  track.addEventListener("touchstart", (e) => { sx = e.touches[0].clientX; }, { passive: true });
+  track.addEventListener("touchend", (e) => {
+    if (sx == null) return;
+    const dx = e.changedTouches[0].clientX - sx;
+    if (Math.abs(dx) > 40) idx = (idx + (dx < 0 ? 1 : -1) + items.length) % items.length;
+    sx = null; paint();
+  }, { passive: true });
+  paint();
+  return frame;
+}
+
 function postCard(p) {
   const el = document.createElement("article");
   el.className = "post";
@@ -1398,17 +1493,9 @@ function postCard(p) {
   }
 
   if (p.media_file_id && p.type === "photo") {
-    // Social-media frame: 4:5 portrait (the Instagram/Facebook feed
-    // standard, 1080x1350). Display crop only — the original file in
-    // Telegram is never touched.
-    const frame = document.createElement("div");
-    frame.className = "post-media";
-    const img = document.createElement("img");
-    img.src = mediaUrl(p.media_file_id);
-    img.loading = "lazy";
-    img.alt = "photo";
-    frame.appendChild(img);
-    el.appendChild(frame);
+    // Phase 171: albums render through albumFrame (one photo
+    // exactly as before; 2-10 as a swipeable carousel).
+    el.appendChild(albumFrame(p));
   } else if (p.media_file_id && p.type === "video") {
     const frame = document.createElement("div");
     frame.className = "post-media";
@@ -5692,50 +5779,65 @@ function composerStatus(msg) {
 }
 
 let composerFile = null;
+let composerFiles = [];  // Phase 171: multi-pick album staging
 let composerUploadId = null;
 
 function paintAttach() {
   const chip = $("composer-attach");
   if (!composerFile) { chip.hidden = true; chip.textContent = ""; return; }
   chip.hidden = false;
-  chip.textContent = (composerFile.type.startsWith("video") ? "🎬 " : "🖼 ") +
-    composerFile.name + " ";
+  if (composerFiles.length > 1) {
+    chip.textContent = "🖼 " + composerFiles.length + " photos ";
+  } else {
+    chip.textContent = (composerFile.type.startsWith("video") ? "🎬 " : "🖼 ") +
+      composerFile.name + " ";
+  }
   const x = document.createElement("button");
   x.className = "attach-x";
   x.textContent = "✕";
   x.title = "Remove";
-  x.onclick = () => { composerFile = null; composerUploadId = null; $("composer-file").value = ""; paintAttach(); };
+  x.onclick = () => { composerFile = null; composerFiles = []; composerUploadId = null; $("composer-file").value = ""; paintAttach(); };
   chip.appendChild(x);
 }
 
 $("composer-media").onclick = () => $("composer-file").click();
 $("composer-file").onchange = () => {
-  composerFile = $("composer-file").files[0] || null;
+  // Phase 171: multi-pick — up to 10 photos in one album. A video
+  // among photos is dropped (albums hold photos only; a video
+  // still posts on its own). A single pick keeps the old flow.
+  const picked = [...($("composer-file").files || [])];
+  composerFiles = [];
+  composerFile = null;
   composerStatus("");
-  if (composerFile) {
-    // Phase 19 caps: photos 20 MB; videos up to 60 MB (the server
-    // shrinks them to fit Telegram before posting). Phase 26: some
-    // phone pickers report an empty or generic MIME type, so the
-    // file-name extension decides the kind when the type is vague.
-    const t = (composerFile.type || "").toLowerCase();
-    const ext = (composerFile.name || "").split(".").pop()
-      .toLowerCase();
+  let droppedVideo = false, droppedOver = false;
+  for (const f of picked) {
+    const t = (f.type || "").toLowerCase();
+    const ext = (f.name || "").split(".").pop().toLowerCase();
     const isVideo = t.startsWith("video") ||
       ["mp4", "mov", "webm", "mkv", "3gp", "avi", "m4v"].includes(ext);
+    if (isVideo && picked.length > 1) { droppedVideo = true; continue; }
+    if (composerFiles.length >= 10) { droppedOver = true; continue; }
     const cap = (isVideo ? 60 : 20) * 1024 * 1024;
-    if (composerFile.size > cap) {
+    if (f.size > cap) {
       composerStatus(isVideo
         ? "That video is over 60 MB — please trim it or record at a lower resolution."
         : "That file is over 20 MB — please pick a smaller one.");
+      composerFiles = [];
       composerFile = null;
-      composerUploadId = null;
       $("composer-file").value = "";
-    } else {
-      composerUploadId = newUploadId();
-      composerStatus("Attached ✓ — now tap Post.");
+      paintAttach();
+      return;
     }
+    composerFiles.push(f);
   }
+  if (composerFiles.length === 1) composerFile = composerFiles[0];
+  if (composerFiles.length) composerUploadId = newUploadId();
+  if (droppedVideo) composerStatus("Videos can't join an album — the video was left out.");
+  else if (droppedOver) composerStatus("Up to 10 photos in one album — the rest were left out.");
+  else if (composerFiles.length > 1) composerStatus(composerFiles.length + " photos attached ✓ — now tap Post.");
+  else if (composerFile) composerStatus("Attached ✓ — now tap Post.");
   paintAttach();
+  return;
 };
 
 // Phase 123: creator tools in the composer — an optional poll
@@ -5841,7 +5943,7 @@ $("composer-sched-send").onclick = async () => {
 
 $("composer-post").onclick = async () => {
   const text = $("composer-text").value.trim();
-  if (!text && !composerFile) {
+  if (!text && !composerFiles.length) {
     // Phase 26: never a silent no-op — say what is missing, right
     // under the button where the member is looking.
     composerStatus("Write something or attach a photo/video first 📷");
@@ -5857,7 +5959,47 @@ $("composer-post").onclick = async () => {
   btn.disabled = true;
   composerStatus("");
   try {
-    if (composerFile) {
+    if (composerFiles.length > 1) {
+      // Phase 171: album — stage each photo (screened, no post
+      // yet), then create one album post with the file_ids.
+      btn.textContent = "Uploading…";
+      const bar = $("composer-progress"),
+            fill = $("composer-progress-fill"),
+            lab = $("composer-progress-label");
+      bar.hidden = false;
+      fill.classList.remove("busy", "done");
+      const ids = [];
+      for (let i = 0; i < composerFiles.length; i++) {
+        fill.style.width = Math.round(i / composerFiles.length * 100) + "%";
+        lab.textContent = "Uploading photo " + (i + 1) + "/" + composerFiles.length + "…";
+        btn.textContent = "Uploading photo " + (i + 1) + "/" + composerFiles.length + "…";
+        const form = new FormData();
+        form.append("file", await shrinkForUpload(composerFiles[i]));
+        const r = await apiFormProgress("/posts/upload-media", form, () => {});
+        ids.push(r.file_id);
+      }
+      fill.style.width = "100%";
+      fill.classList.add("busy");
+      lab.textContent = "Posting…";
+      btn.textContent = "Sending… keep the app open";
+      await api("/posts", { method: "POST",
+        body: JSON.stringify({ type: "photo", caption: text,
+                               media_file_ids: ids }) });
+      fill.classList.remove("busy");
+      fill.classList.add("done");
+      lab.textContent = "Posted ✓";
+      setTimeout(() => { bar.hidden = true; }, 3000);
+      composerFiles = [];
+      composerFile = null;
+      composerUploadId = null;
+      $("composer-file").value = "";
+      paintAttach();
+      // Phase 123: polls only go with text posts.
+      if (composerPollOn) {
+        composerStatus("Posted without the poll — polls only go with text posts 📊");
+        clearComposerPoll();
+      }
+    } else if (composerFile) {
       btn.textContent = "Uploading…";
       const form = new FormData();
       form.append("file", await shrinkForUpload(composerFile));
@@ -5898,6 +6040,7 @@ $("composer-post").onclick = async () => {
       }
       setTimeout(() => { bar.hidden = true; }, 3000);
       composerFile = null;
+      composerFiles = [];
       composerUploadId = null;
       $("composer-file").value = "";
       paintAttach();

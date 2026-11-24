@@ -190,7 +190,135 @@ async def _save_media_post(update: Update, ptype: str, file_id: str,
         db.close()
 
 
+# Phase 171: Telegram media groups — several photos sent together
+# arrive as separate updates sharing one media_group_id. Collect
+# them for ~2 s, then post ONCE as an album instead of one post
+# per photo. A group with a video in it falls back to one post
+# per item (albums hold photos only). Screening happens in the
+# handler, per item, before collecting: a screened-out item is
+# dropped with its reason and the rest still post as one album.
+_media_groups = {}
+
+
+async def _media_group_collect(group_id, user_id, item, caption, finish):
+    """Add one screened item to a pending group; (re)schedule the
+    flush ~2 s out so the whole group lands together. item is
+    (ptype, file_id, thumb_file_id). finish(text) reports the
+    outcome once, on the first item's status message."""
+    entry = _media_groups.get(group_id)
+    if entry is None:
+        entry = {"user_id": user_id, "items": [], "caption": caption,
+                 "finish": finish, "task": None}
+        _media_groups[group_id] = entry
+    if caption and not entry["caption"]:
+        entry["caption"] = caption
+    if all(fid != item[1] for _, fid, _ in entry["items"]):
+        entry["items"].append(item)
+    if entry["task"] is not None:
+        entry["task"].cancel()
+    entry["task"] = asyncio.create_task(_media_group_flush_later(group_id))
+
+
+async def _media_group_flush_later(group_id):
+    try:
+        await asyncio.sleep(2.0)
+    except asyncio.CancelledError:
+        return
+    await _media_group_flush(group_id)
+
+
+async def _media_group_flush(group_id):
+    """Post one pending group: >1 photos -> one album post; a
+    single item, or any video in the group -> one post per item
+    (the shared caption rides on the first post only)."""
+    entry = _media_groups.pop(group_id, None)
+    if entry is None or not entry["items"]:
+        return
+    user_id = entry["user_id"]
+    caption = entry["caption"] or ""
+    finish = entry["finish"]
+    db = SessionLocal()
+    try:
+        user = db.get(models.User, user_id)
+        if user is None:
+            return
+        if user.is_banned:
+            await finish("This account is suspended.")
+            return
+        if banned_word_in(db, caption):
+            await finish(BANNED_WORD_MESSAGE)
+            return
+        items = entry["items"]
+        if len(items) > 1 and all(t == "photo" for t, _, _ in items):
+            post, is_first, _ = register_post(
+                db, user, "photo", items[0][1], caption,
+                extra_media=[(fid, "photo") for _, fid, _ in items])
+            for uid in sync_mentions(db, user_id, post.id, None,
+                                     caption, user_id):
+                await notify.notify_user(
+                    db, uid, "mention",
+                    f"📣 @{user.username or user.first_name} mentioned you "
+                    f"in a post: {caption[:80]}")
+            note = " \U0001F389 First post bonus earned!" if is_first else ""
+            await finish(f"✅ Posted an album of {len(items)} photos "
+                         f"to {settings.APP_NAME}!{note}")
+            return
+        for i, (ptype, fid, thumb) in enumerate(items):
+            post, is_first, _ = register_post(
+                db, user, ptype, fid, caption if i == 0 else "",
+                thumb_file_id=thumb)
+            for uid in sync_mentions(db, user_id, post.id, None,
+                                     caption if i == 0 else "", user_id):
+                await notify.notify_user(
+                    db, uid, "mention",
+                    f"📣 @{user.username or user.first_name} mentioned you "
+                    f"in a post: {caption[:80]}")
+        note = " \U0001F389 First post bonus earned!" if is_first else ""
+        if len(items) > 1:
+            # a group holding any video posts as single posts,
+            # so the count is items, not photos.
+            await finish(f"✅ Posted {len(items)} items "
+                         f"to {settings.APP_NAME}!{note}")
+        else:
+            await finish(f"✅ Posted to {settings.APP_NAME}!{note}")
+    finally:
+        db.close()
+
+
 async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    group_id = getattr(update.message, "media_group_id", None)
+    if group_id:
+        # Phase 171: a photo in a media group joins the album
+        # collector instead of posting alone (groups never set
+        # the profile picture, even with a #profile caption).
+        if context is not None and moderation.active():
+            verdict = await _screen_via_bot(
+                context, "photo", update.message.photo[-1].file_id)
+            if verdict != "clean":
+                await update.message.reply_text(
+                    moderation.block_message("photo", verdict))
+                return
+        status_msg = None
+        if group_id not in _media_groups:
+            try:
+                status_msg = await update.message.reply_text(
+                    "⏳ Posting…")
+            except Exception:
+                status_msg = None
+
+        async def _gfinish(text):
+            if status_msg is not None:
+                try:
+                    await status_msg.edit_text(text)
+                    return
+                except Exception:
+                    pass
+            await update.message.reply_text(text)
+        await _media_group_collect(
+            group_id, update.effective_user.id,
+            ("photo", update.message.photo[-1].file_id, None),
+            update.message.caption or "", _gfinish)
+        return
     caption = (update.message.caption or "").lower()
     if "#profile" in caption:
         tg_user = update.effective_user
@@ -236,6 +364,41 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def video_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    group_id = getattr(update.message, "media_group_id", None)
+    if group_id:
+        # Phase 171: a video in a media group joins the collector
+        # too; the flush posts a group holding any video as
+        # single posts (albums hold photos only).
+        video = update.message.video
+        if context is not None and moderation.active():
+            verdict = await _screen_via_bot(
+                context, "video", video.file_id)
+            if verdict != "clean":
+                await update.message.reply_text(
+                    moderation.block_message("video", verdict))
+                return
+        status_msg = None
+        if group_id not in _media_groups:
+            try:
+                status_msg = await update.message.reply_text(
+                    "⏳ Posting…")
+            except Exception:
+                status_msg = None
+
+        async def _vfinish(text):
+            if status_msg is not None:
+                try:
+                    await status_msg.edit_text(text)
+                    return
+                except Exception:
+                    pass
+            await update.message.reply_text(text)
+        thumb = video.thumbnail.file_id if video.thumbnail else None
+        await _media_group_collect(
+            group_id, update.effective_user.id,
+            ("video", video.file_id, thumb),
+            update.message.caption or "", _vfinish)
+        return
     video = update.message.video
     # Phase 51: keep Telegram's own thumbnail so the app can show
     # a preview frame before the video plays.
@@ -342,7 +505,7 @@ async def start_bot(app: Application):
             # shell version.
             menu_url = settings.WEBAPP_URL
             if "?" not in menu_url:
-                menu_url = menu_url.rstrip("/") + "/?v=170"
+                menu_url = menu_url.rstrip("/") + "/?v=171"
             await app.bot.set_chat_menu_button(
                 menu_button=MenuButtonWebApp(
                     text="Open App",

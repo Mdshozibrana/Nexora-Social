@@ -180,18 +180,18 @@ with TestClient(app) as c:
     print("neighbours OK (composer, sidebar, mascot, startapp)")
 
     # 7. Version + routes + backup.
-    assert HTML.count("?v=170") == 10, HTML.count("?v=170")
+    assert HTML.count("?v=171") == 10, HTML.count("?v=171")
     assert "?v=16" + "8" not in HTML
-    assert "app.js?v=170" in HTML and "style.css?v=170" in HTML
-    assert 'menu_url.rstrip("/") + "/?v=170"' in BOT
+    assert "app.js?v=171" in HTML and "style.css?v=171" in HTML
+    assert 'menu_url.rstrip("/") + "/?v=171"' in BOT
     paths = {rt.path for rt in app.routes}
-    assert len(paths) == 166, len(paths)
+    assert len(paths) == 167, len(paths)
     assert "/inbox-posts" not in paths and "/posts" in paths, paths
     h = c.get("/admin/health", headers=ADMIN).json()
-    assert h["version"] == 170, h
+    assert h["version"] == 171, h
     r = c.get("/admin/backup", headers=ADMIN)
     assert r.status_code == 200, r.text
-    assert len(r.json()["tables"]) == 45, len(r.json()["tables"])
-    print("version + routes + backup OK (166 routes, 44 tables, ?v=170)")
+    assert len(r.json()["tables"]) == 46, len(r.json()["tables"])
+    print("version + routes + backup OK (166 routes, 44 tables, ?v=171)")
 
 print("PHASE 169 OK")

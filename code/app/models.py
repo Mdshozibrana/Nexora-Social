@@ -137,6 +137,21 @@ class Mention(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class PostMedia(Base):
+    """Phase 171: album items — one row per photo in a multi-photo
+    post, in position order. Single-media posts keep using
+    posts.media_file_id; the first album item is ALSO stored there,
+    so every existing reader (feed, /media, insights, search)
+    keeps working without changes."""
+    __tablename__ = "post_media"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    post_id = Column(Integer, ForeignKey("posts.id"), index=True)
+    file_id = Column(String(256), nullable=False)
+    media_type = Column(String(16), default="photo")
+    position = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class Draft(Base):
     """Phase 123: an unfinished post, saved from the composer and
     finished later — text plus an optional already-uploaded media

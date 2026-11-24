@@ -146,7 +146,10 @@ def award_points(db, user_id, amount, reason, ref_id=None):
 
 
 def register_post(db, author, ptype, media_file_id, caption,
-                  thumb_file_id=None):
+                  thumb_file_id=None, extra_media=None):
+    """extra_media (Phase 171): the FULL ordered album list of
+    (file_id, media_type) — position 0 is media_file_id itself.
+    Single-media posts pass None and get no rows."""
     """Create a post for author (a models.User). Returns
     (post, is_first_post, referral_qualified_now).
     Every post earns post points (Phase 113); on the author's FIRST
@@ -163,6 +166,11 @@ def register_post(db, author, ptype, media_file_id, caption,
     db.add(post)
     db.commit()
     db.refresh(post)
+    if extra_media:
+        for i, (fid, mtype) in enumerate(extra_media):
+            db.add(models.PostMedia(post_id=post.id, file_id=fid,
+                                    media_type=mtype, position=i))
+        db.commit()
     qualified = False
     # Phase 113 (owner): every post earns 10 points, not just the
     # first. Referral qualification stays first-post-only below.

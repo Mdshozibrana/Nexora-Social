@@ -580,9 +580,37 @@ body { padding-bottom: 96px; }
   width: 100%; height: 100%; object-fit: cover; display: block;
   margin: 0; border-radius: 0;
 }
+/* Phase 171: album carousel — the track slides 100% per photo;
+   dots + counter ride on the frame, arrows on the sides. */
+.carousel-track { display: flex; height: 100%;
+  transition: transform .25s ease; }
+.carousel-track img { flex: 0 0 100%; }
+.carousel-dots { position: absolute; bottom: 8px; left: 0; right: 0;
+  display: flex; gap: 6px; justify-content: center; }
+.carousel-dot { width: 7px; height: 7px; border-radius: 50%;
+  border: 0; background: rgba(255,255,255,.55); padding: 0;
+  cursor: pointer; }
+.carousel-dot.on { background: #3E8FD0; }
+.carousel-count { position: absolute; top: 8px; right: 8px;
+  background: rgba(0,0,0,.55); color: #fff; font-size: 12px;
+  padding: 2px 8px; border-radius: 10px; }
+.carousel-arrow { position: absolute; top: 42%;
+  background: rgba(0,0,0,.45); color: #fff; border: 0;
+  border-radius: 50%; width: 30px; height: 30px; font-size: 18px;
+  line-height: 1; cursor: pointer; }
+.carousel-arrow.left { left: 8px; }
+.carousel-arrow.right { right: 8px; }
+/* Phase 171: full-screen viewer swipe — prev/next + counter. */
+#pv-prev, #pv-next { position: absolute; top: 50%;
+  transform: translateY(-50%); width: 40px; height: 40px;
+  border-radius: 50%; border: 0; background: rgba(255,255,255,.16);
+  color: #fff; font-size: 22px; line-height: 1; cursor: pointer; }
+#pv-prev { left: 12px; }
+#pv-next { right: 12px; }
+#pv-count { position: absolute; left: 0; right: 0; bottom: 52px;
+  text-align: center; color: #fff; font-size: 13px;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, .6); pointer-events: none; }
 .post-media .play-badge {
-  position: absolute; top: 50%; left: 50%;
-  transform: translate(-50%, -50%);
   width: 62px; height: 62px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
   font-size: 22px; color: #fff; padding-left: 4px; cursor: pointer;

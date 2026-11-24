@@ -64,7 +64,7 @@ assert mb.type == "web_app", mb.type
 assert mb.text == "Open App"
 # Phase 148: the menu-button URL carries the shell version so
 # Telegram opens a fresh page on every deploy.
-assert mb.web_app.url == "https://example.com/webapp/?v=170"
+assert mb.web_app.url == "https://example.com/webapp/?v=171"
 print("menu button set OK")
 
 # --- a Telegram failure must not stop the bot -----------------------

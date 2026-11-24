@@ -309,21 +309,21 @@ for marker in ("renderRichText", "attachMentionAutocomplete",
                'mention: "📣"', "loadSkills", "loadBlood",
                "MASCOT_TIPS_BY_VIEW", "totp-card"):
     assert marker in js, marker
-assert "app.js?v=170" in HTML
+assert "app.js?v=171" in HTML
 assert ("?v=16" + "9") not in HTML
-assert "style.css?v=170" in HTML
-assert "games.js?v=170" in HTML
+assert "style.css?v=171" in HTML
+assert "games.js?v=171" in HTML
 assert ".mention" in CSS
 paths = {rt.path for rt in app.routes}
-assert len(paths) == 166, len(paths)
+assert len(paths) == 167, len(paths)
 assert "/posts" in paths
 h = c.get("/admin/health", headers=ADMIN).json()
-assert h["version"] == 170, h
+assert h["version"] == 171, h
 r = c.get("/admin/backup", headers=ADMIN)
 assert r.status_code == 200, r.text
-assert len(r.json()["tables"]) == 45, len(r.json()["tables"])
+assert len(r.json()["tables"]) == 46, len(r.json()["tables"])
 assert "mentions" in r.json()["tables"]
-assert len(_BACKUP_TABLES) == 45, len(_BACKUP_TABLES)
-print("client + version + routes + backup OK (166 routes, 45 tables, ?v=170)")
+assert len(_BACKUP_TABLES) == 46, len(_BACKUP_TABLES)
+print("client + version + routes + backup OK (166 routes, 45 tables, ?v=171)")
 
 print("PHASE 170 OK")
