@@ -2971,3 +2971,25 @@ html[data-theme] .suggest-follow.on { background: var(--t-chip, #F3DCE7);
   padding: 9px 12px; background: none; border: 0; cursor: pointer;
   font-size: 14px; color: inherit; }
 .mention-drop button:hover { background: #f0f4fa; }
+
+/* Phase 172: Story Highlights — circles under the profile bio. */
+.hl-row { display: flex; gap: 14px; overflow-x: auto; padding: 12px 16px 4px; }
+.hl-item { flex: 0 0 auto; width: 68px; text-align: center; cursor: pointer; }
+.hl-ring { width: 64px; height: 64px; margin: 0 auto; border-radius: 50%; overflow: hidden; border: 2px solid #EC4899; background: #F6F1E7; display: flex; align-items: center; justify-content: center; }
+.hl-ring img { width: 100%; height: 100%; object-fit: cover; }
+.hl-initial { font-size: 26px; font-weight: 700; color: #8A6D7B; }
+.hl-label { font-size: 12px; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hl-new .hl-ring { border-style: dashed; border-color: #8A6D7B; }
+.hl-plus { font-size: 28px; color: #8A6D7B; }
+.hl-picker-overlay { position: fixed; inset: 0; z-index: 60; background: rgba(0,0,0,.5); display: flex; align-items: flex-end; justify-content: center; }
+.hl-sheet { width: 100%; max-width: 560px; max-height: 85vh; overflow-y: auto; background: #FFFBFC; color: #3A2E33; border-radius: 18px 18px 0 0; padding: 14px 16px 20px; }
+.hl-form-title { font-weight: 700; margin: 12px 0 6px; }
+.hl-title-input { width: 100%; box-sizing: border-box; padding: 9px 10px; border: 1px solid #E5D5DC; border-radius: 10px; font-size: 14px; }
+.hl-pick-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 10px 0; }
+.hl-pick-item { position: relative; aspect-ratio: 3/4; border-radius: 10px; overflow: hidden; cursor: pointer; border: 2px solid transparent; }
+.hl-pick-item img { width: 100%; height: 100%; object-fit: cover; }
+.hl-pick-item.selected { border-color: #EC4899; }
+.hl-expired-tag { position: absolute; left: 4px; bottom: 4px; background: rgba(0,0,0,.6); color: #fff; font-size: 10px; padding: 2px 5px; border-radius: 6px; }
+.hl-manage-list { display: flex; flex-direction: column; gap: 8px; margin: 6px 0 12px; }
+.hl-manage-row { display: flex; gap: 8px; }
+.hl-manage-row input { flex: 1; min-width: 0; padding: 8px 10px; border: 1px solid #E5D5DC; border-radius: 10px; font-size: 14px; }

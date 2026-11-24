@@ -149,14 +149,14 @@ with TestClient(app) as c:
     # backup still 43 tables.
     r = c.get("/admin/backup", headers=ALICE)
     assert r.status_code == 200, r.text
-    assert len(r.json()["tables"]) == 46, len(r.json()["tables"])
+    assert len(r.json()["tables"]) == 48, len(r.json()["tables"])
     paths = {rt.path for rt in app.routes}
-    assert len(paths) == 167, len(paths)
+    assert len(paths) == 174, len(paths)
     print("routes 158 + backup 43 tables OK (no new endpoints, no schema change)")
 
 # 7. Version.
-assert HTML.count("?v=171") == 10, HTML.count("?v=171")
+assert HTML.count("?v=172") == 10, HTML.count("?v=172")
 assert "?v=15" + "6" not in HTML
-assert 'menu_url.rstrip("/") + "/?v=171"' in BOT
+assert 'menu_url.rstrip("/") + "/?v=172"' in BOT
 assert "Phase 157" in CSS and "Phase 157" in HTML
 print("PHASE 157 OK")

@@ -134,6 +134,8 @@ RATE_LIMITS = {
     # Phase 158: skill swap — add/remove/connect.
     "skills": (120, 3600),
     "payout_admin": (120, 3600),
+    # Phase 172: story highlights — create/rename/delete/add.
+    "highlights": (120, 3600),
 }
 
 # Points economy (PRD section 5). PLACEHOLDER defaults — these are product

@@ -572,6 +572,20 @@ def _media_token_ok(token: str):
     return user_id, iat
 
 
+def _story_in_visible_highlight(db, viewer_id, story_id):
+    """Phase 172: True when the story sits in a highlight whose
+    owner the viewer may see (private-account + block rules apply;
+    the story author IS the highlight owner, and the block check
+    already ran in the caller)."""
+    rows = db.query(models.HighlightStory).filter_by(
+        story_id=story_id).all()
+    for row in rows:
+        h = db.get(models.StoryHighlight, row.highlight_id)
+        if h is not None and _can_see_posts(db, viewer_id, h.user_id):
+            return True
+    return False
+
+
 def _media_visible(db, viewer_id: int, file_id: str) -> bool:
     """Phase 164 (P1): may viewer_id see this Telegram file_id?
     The file's owner is resolved from the tables that hold it, and
@@ -601,12 +615,14 @@ def _media_visible(db, viewer_id: int, file_id: str) -> bool:
     story = db.query(models.Story).filter_by(
         media_file_id=file_id).first()
     if story is not None:
-        if story.created_at is not None and (
-                datetime.utcnow() - story.created_at).total_seconds() > 86400:
-            return False
         if _blocked_by(db, story.user_id, viewer_id) or _blocked_by(
                 db, viewer_id, story.user_id):
             return False
+        if story.created_at is not None and (
+                datetime.utcnow() - story.created_at).total_seconds() > 86400:
+            # Phase 172: an expired story stays viewable only inside
+            # a highlight the viewer may see — nowhere else.
+            return _story_in_visible_highlight(db, viewer_id, story.id)
         return _can_see_posts(db, viewer_id, story.user_id)
     msg = db.query(models.Message).filter_by(
         media_file_id=file_id).first()
@@ -7136,6 +7152,9 @@ _BACKUP_TABLES = [
     # Phase 170: @mentions.
     ("mentions", models.Mention),
     ("post_media", models.PostMedia),
+    # Phase 172: story highlights.
+    ("story_highlights", models.StoryHighlight),
+    ("highlight_stories", models.HighlightStory),
 ]
 _BACKUP_MODELS = {name: m for name, m in _BACKUP_TABLES}
 _BACKUP_MAX_BYTES = 50 * 1024 * 1024
@@ -7915,6 +7934,24 @@ async def upload_story(request: Request,
     return body
 
 
+@app.get("/stories/mine")
+def my_stories(user: models.User = Depends(current_user),
+               db: Session = Depends(get_db)):
+    """Phase 172: the member's own stories, active AND expired,
+    newest first — the highlight picker source."""
+    rows = db.query(models.Story).filter_by(
+        user_id=user.telegram_id).order_by(
+            models.Story.id.desc()).limit(100).all()
+    cutoff = datetime.utcnow() - STORY_TTL
+    out = []
+    for s in rows:
+        d = _story_dict(db, s, user.telegram_id)
+        d["expired"] = bool(
+            s.created_at is not None and s.created_at <= cutoff)
+        out.append(d)
+    return {"stories": out}
+
+
 @app.get("/stories")
 def list_stories(user: models.User = Depends(current_user),
                  db: Session = Depends(get_db)):
@@ -7980,6 +8017,8 @@ def delete_story(sid: int, user: models.User = Depends(current_user),
     if s.user_id != user.telegram_id and not admin_own:
         raise HTTPException(403, "Not your story")
     db.query(models.StoryView).filter_by(story_id=sid).delete()
+    # Phase 172: a deleted story leaves every highlight it was in.
+    db.query(models.HighlightStory).filter_by(story_id=sid).delete()
     db.delete(s)
     db.commit()
     return {"ok": True}
@@ -8044,6 +8083,208 @@ def reply_story(sid: int, body: StoryReplyIn,
     previews = _story_previews(db, [sid])
     return _message_dict(m, me, {"reactions": {}, "my_reaction": None},
                          previews)
+
+
+
+# ---------------------------------------------------------------------------
+# Phase 172: Story Highlights — a member pins their own stories
+# (active AND expired) into named collections on their profile.
+# Stories are never copied and never deleted for expiry; a highlight
+# replays the originals in position order. Private-account + block
+# rules reuse Phase 136; only the owner manages a highlight.
+# ---------------------------------------------------------------------------
+class HighlightIn(BaseModel):
+    title: str = Field(default="", max_length=50)
+    story_ids: list = Field(default_factory=list)
+
+
+def _highlight_visible(db, viewer_id, owner_id):
+    if _blocked_by(db, owner_id, viewer_id) or _blocked_by(
+            db, viewer_id, owner_id):
+        return False
+    return _can_see_posts(db, viewer_id, owner_id)
+
+
+def _highlight_out(db, h, viewer_id):
+    rows = db.query(models.HighlightStory).filter_by(
+        highlight_id=h.id).order_by(
+            models.HighlightStory.position.asc()).all()
+    cover = None
+    if rows:
+        first = db.get(models.Story, rows[0].story_id)
+        if first is not None:
+            cover = first.media_file_id
+    return {"id": h.id, "user_id": h.user_id, "title": h.title,
+            "story_count": len(rows), "cover_media_file_id": cover,
+            "created_at": h.created_at.isoformat() if h.created_at
+            else None}
+
+
+def _highlight_story_ids(body):
+    ids = []
+    for sid in (body.story_ids or []):
+        try:
+            sid = int(sid)
+        except (TypeError, ValueError):
+            continue
+        if sid not in ids:
+            ids.append(sid)
+    return ids
+
+
+@app.post("/highlights")
+def create_highlight(body: HighlightIn,
+                     user: models.User = Depends(current_user),
+                     db: Session = Depends(get_db)):
+    _enforce_rate("highlights", f"u{user.telegram_id}")
+    title = (body.title or "").strip()
+    if not title:
+        raise HTTPException(400, "A highlight needs a title")
+    ids = _highlight_story_ids(body)
+    if not ids:
+        raise HTTPException(400, "Pick at least one story")
+    if len(ids) > 50:
+        raise HTTPException(400, "At most 50 stories per highlight")
+    if db.query(models.StoryHighlight).filter_by(
+            user_id=user.telegram_id).count() >= 20:
+        raise HTTPException(400, "At most 20 highlights")
+    found = db.query(models.Story).filter(
+        models.Story.id.in_(ids),
+        models.Story.user_id == user.telegram_id).all()
+    if len({s.id for s in found}) != len(ids):
+        raise HTTPException(400, "Only your own stories can be added")
+    h = models.StoryHighlight(user_id=user.telegram_id, title=title)
+    db.add(h)
+    db.flush()
+    for pos, sid in enumerate(ids):
+        db.add(models.HighlightStory(
+            highlight_id=h.id, story_id=sid, position=pos))
+    db.commit()
+    db.refresh(h)
+    return _highlight_out(db, h, user.telegram_id)
+
+
+@app.get("/highlights/user/{user_id}")
+def list_highlights(user_id: int,
+                    user: models.User = Depends(current_user),
+                    db: Session = Depends(get_db)):
+    if not _highlight_visible(db, user.telegram_id, user_id):
+        return {"highlights": []}
+    rows = db.query(models.StoryHighlight).filter_by(
+        user_id=user_id).order_by(
+            models.StoryHighlight.id.asc()).all()
+    return {"highlights": [_highlight_out(db, h, user.telegram_id)
+                           for h in rows]}
+
+
+@app.get("/highlights/{hid}")
+def get_highlight(hid: int, user: models.User = Depends(current_user),
+                  db: Session = Depends(get_db)):
+    h = db.get(models.StoryHighlight, hid)
+    if h is None:
+        raise HTTPException(404, "Highlight not found")
+    if not _highlight_visible(db, user.telegram_id, h.user_id):
+        raise HTTPException(404, "Highlight not found")
+    rows = db.query(models.HighlightStory).filter_by(
+        highlight_id=h.id).order_by(
+            models.HighlightStory.position.asc()).all()
+    cutoff = datetime.utcnow() - STORY_TTL
+    stories = []
+    for row in rows:
+        s = db.get(models.Story, row.story_id)
+        if s is None:
+            continue
+        d = _story_dict(db, s, user.telegram_id)
+        d["expired"] = bool(
+            s.created_at is not None and s.created_at <= cutoff)
+        stories.append(d)
+    owner = db.get(models.User, h.user_id)
+    return {"highlight": _highlight_out(db, h, user.telegram_id),
+            "owner": _brief_user(owner) if owner else None,
+            "stories": stories}
+
+
+@app.post("/highlights/{hid}/rename")
+def rename_highlight(hid: int, body: HighlightIn,
+                     user: models.User = Depends(current_user),
+                     db: Session = Depends(get_db)):
+    h = db.get(models.StoryHighlight, hid)
+    if h is None:
+        raise HTTPException(404, "Highlight not found")
+    if h.user_id != user.telegram_id:
+        raise HTTPException(403, "Not your highlight")
+    title = (body.title or "").strip()
+    if not title:
+        raise HTTPException(400, "A highlight needs a title")
+    h.title = title
+    db.commit()
+    return _highlight_out(db, h, user.telegram_id)
+
+
+@app.delete("/highlights/{hid}")
+def delete_highlight(hid: int, user: models.User = Depends(current_user),
+                     db: Session = Depends(get_db)):
+    h = db.get(models.StoryHighlight, hid)
+    if h is None:
+        raise HTTPException(404, "Highlight not found")
+    real_id = getattr(user, "_real_id", user.telegram_id)
+    admin_own = user.telegram_id in settings.ADMIN_IDS \
+        and real_id == user.telegram_id
+    if h.user_id != user.telegram_id and not admin_own:
+        raise HTTPException(403, "Not your highlight")
+    db.query(models.HighlightStory).filter_by(
+        highlight_id=h.id).delete()
+    db.delete(h)
+    db.commit()
+    return {"ok": True}
+
+
+@app.post("/highlights/{hid}/stories")
+def add_highlight_stories(hid: int, body: HighlightIn,
+                          user: models.User = Depends(current_user),
+                          db: Session = Depends(get_db)):
+    h = db.get(models.StoryHighlight, hid)
+    if h is None:
+        raise HTTPException(404, "Highlight not found")
+    if h.user_id != user.telegram_id:
+        raise HTTPException(403, "Not your highlight")
+    ids = _highlight_story_ids(body)
+    if not ids:
+        raise HTTPException(400, "Pick at least one story")
+    existing = db.query(models.HighlightStory).filter_by(
+        highlight_id=h.id).all()
+    have = {r.story_id for r in existing}
+    if len(have) + len([s for s in ids if s not in have]) > 50:
+        raise HTTPException(400, "At most 50 stories per highlight")
+    found = db.query(models.Story).filter(
+        models.Story.id.in_(ids),
+        models.Story.user_id == user.telegram_id).all()
+    if len({s.id for s in found}) != len(ids):
+        raise HTTPException(400, "Only your own stories can be added")
+    pos = max([r.position for r in existing], default=-1) + 1
+    for sid in ids:
+        if sid in have:
+            continue
+        db.add(models.HighlightStory(
+            highlight_id=h.id, story_id=sid, position=pos))
+        pos += 1
+    db.commit()
+    return _highlight_out(db, h, user.telegram_id)
+
+
+@app.delete("/highlights/{hid}/stories/{sid}")
+def remove_highlight_story(hid: int, sid: int,
+                           user: models.User = Depends(current_user),
+                           db: Session = Depends(get_db)):
+    h = db.get(models.StoryHighlight, hid)
+    if h is None:
+        raise HTTPException(404, "Highlight not found")
+    if h.user_id != user.telegram_id:
+        raise HTTPException(403, "Not your highlight")
+    db.query(models.HighlightStory).filter_by(
+        highlight_id=h.id, story_id=sid).delete()
+    db.commit()
+    return {"ok": True}
 
 
 # ---------------------------------------------------------------------------

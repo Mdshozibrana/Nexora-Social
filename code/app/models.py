@@ -697,3 +697,29 @@ class SkillEntry(Base):
     kind = Column(String(8), nullable=False)  # "teach" | "learn"
     note = Column(String(200), default="")
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
+class StoryHighlight(Base):
+    """Phase 172: a named collection of a member's own stories
+    (active AND expired) shown as circles under the profile bio.
+    Stories are never copied — HighlightStory rows point at the
+    original story rows, which are never hard-deleted for expiry."""
+    __tablename__ = "story_highlights"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("users.telegram_id"),
+                     index=True, nullable=False)
+    title = Column(String(50), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
+class HighlightStory(Base):
+    """Phase 172: one story inside a highlight, in position order.
+    One row per (highlight, story) — a story appears once."""
+    __tablename__ = "highlight_stories"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    highlight_id = Column(Integer, ForeignKey("story_highlights.id"),
+                          index=True, nullable=False)
+    story_id = Column(Integer, ForeignKey("stories.id"),
+                      index=True, nullable=False)
+    position = Column(Integer, default=0, nullable=False)
+    __table_args__ = (UniqueConstraint("highlight_id", "story_id"),)

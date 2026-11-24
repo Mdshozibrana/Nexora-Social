@@ -20,7 +20,7 @@ text is accepted while a genuinely banned word still rejects
 (the GEMINI media screening is image-only and never touches
 this text flow); /auth + /users/{id} expose blood_group only
 when opted in; backup 43 tables; routes 158 (6 new blood paths);
-?v=171 x9, no old-version literals.
+?v=172 x9, no old-version literals.
 """
 import hashlib, hmac, json, os, re, time, urllib.parse
 
@@ -84,9 +84,9 @@ def count_type(c, h, ntype):
 
 
 # 1. Client markers: Blood page + sidebar + Settings + badge + toggle.
-assert HTML.count("?v=171") == 10, HTML.count("?v=171")
+assert HTML.count("?v=172") == 10, HTML.count("?v=172")
 assert "?v=15" + "0" not in HTML
-assert 'menu_url.rstrip("/") + "/?v=171"' in BOT
+assert 'menu_url.rstrip("/") + "/?v=172"' in BOT
 assert 'data-go="blood"' in HTML
 assert 'id="view-blood"' in HTML
 for cid in ("blood-tab-donors", "blood-tab-requests",
@@ -111,7 +111,7 @@ assert "Phase 151: Blood donors" in CSS
 for rule in (".blood-tabs", ".blood-group-badge", ".blood-badge",
              ".blood-form", ".blood-card"):
     assert rule in CSS, rule
-print("client markers OK (?v=171 x9, Blood page, Settings, badge, toggle)")
+print("client markers OK (?v=172 x9, Blood page, Settings, badge, toggle)")
 
 # 2. Server markers: model, migration, backup, notify map.
 assert "class BloodRequest(Base):" in MODELS
@@ -333,11 +333,11 @@ with TestClient(app) as c:
     # 14. Backup 43 tables; routes 158 (6 new blood paths).
     r = c.get("/admin/backup", headers=ALICE)
     assert r.status_code == 200, r.text
-    assert len(r.json()["tables"]) == 46, len(r.json()["tables"])
+    assert len(r.json()["tables"]) == 48, len(r.json()["tables"])
     assert "blood_requests" in r.json()["tables"], r.json().keys()
     print("backup: 43 tables incl. blood_requests OK")
     paths = {rt.path for rt in app.routes}
-    assert len(paths) == 167, len(paths)
+    assert len(paths) == 174, len(paths)
     expected = {"/me/blood-group", "/blood/donors", "/blood/requests",
                 "/blood/requests/{req_id}/respond",
                 "/blood/requests/{req_id}/fulfill",

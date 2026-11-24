@@ -22,7 +22,7 @@ The fix: the switch is ALWAYS visible (when 3D is off it reads
 "Try 3D" and retries); a one-line honest diagnostic under the
 map names the reason (lib / webgl / style); a retry resets
 nb3DFailed + nb3DFailKind and re-attempts 3D; nbInit3D() records
-WHY it failed; the bot menu-button URL now carries ?v=171 so
+WHY it failed; the bot menu-button URL now carries ?v=172 so
 Telegram opens a fresh page on every deploy. The 2D fallback
 stays — the map never goes blank.
 
@@ -36,7 +36,7 @@ nbPaintModeBtn / nbPaint3DNote / nbInit3D helpers with stubs
 (reason matrix, button labels, note text/visibility, 3D init
 success, style timeout, constructor WebGL vs other errors,
 retry-after-timeout succeeds, WebGL-unsupported retry cannot
-loop); ?v=171 x7, no ?v=147; neighbouring markers intact.
+loop); ?v=172 x7, no ?v=147; neighbouring markers intact.
 """
 import hashlib, hmac, json, os, re, subprocess, sys, tempfile, time, urllib.parse
 
@@ -114,7 +114,7 @@ assert ".nb-3d-note" in CSS
 print("diagnostic style OK")
 
 # 4. Menu-button URL versioning (bot.py, start_bot only).
-assert 'menu_url.rstrip("/") + "/?v=171"' in BOT
+assert 'menu_url.rstrip("/") + "/?v=172"' in BOT
 assert "web_app=WebAppInfo(url=menu_url)" in BOT
 # The /start inline button keeps the bare URL (exactly one bare
 # WebAppInfo left — the menu button now uses menu_url).
@@ -154,7 +154,7 @@ with TestClient(app) as c:
     # 7. Backup still 42 tables (no schema change).
     r = c.get("/admin/backup", headers=ALICE)
     assert r.status_code == 200, r.text
-    assert len(r.json()["tables"]) == 46, len(r.json()["tables"])
+    assert len(r.json()["tables"]) == 48, len(r.json()["tables"])
     print("backup: 42 tables OK")
 
 
@@ -299,7 +299,7 @@ assert r.returncode == 0, r.stderr or r.stdout
 print("node harness: 148 helpers OK")
 
 # 9. Client markers + asset version.
-assert HTML.count("?v=171") == 10, HTML.count("?v=171")
+assert HTML.count("?v=172") == 10, HTML.count("?v=172")
 assert "?v=14" + "7" not in HTML
 for m in ("loadSettings", "renderLevelBlock", "openTipSheet",
           "loadProfilePosts", "openProfile", "loadMe",
@@ -326,6 +326,6 @@ for m in ("loadSettings", "renderLevelBlock", "openTipSheet",
           "maplibregl.supported()", "setTimeout(fail, 12000)",
           "map.once(\"load\"", "map.on(\"error\""):
     assert m in JS, m
-print("client markers + ?v=171 OK")
+print("client markers + ?v=172 OK")
 
 print("PHASE-148 TESTS PASSED")

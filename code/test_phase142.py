@@ -10,7 +10,7 @@ empty 400, non-admin 403, unknown id 404, add/remove audit-logged);
 enforcement (post with a banned word 400 + no post created, comment
 400, case-insensitive, clean text unaffected, scheduled post fails
 via the sweeper path, DM text with a banned word NOT blocked);
-backup 42 tables incl. banned_words rows; ?v=171 x5, no ?v=171;
+backup 42 tables incl. banned_words rows; ?v=172 x5, no ?v=172;
 admin-trio client markers + Phase 123-141 markers intact.
 
 Scope note: DMs are private conversations and are deliberately NOT
@@ -240,7 +240,7 @@ with TestClient(app) as c:
     r = c.get("/admin/backup", headers=ALICE)
     assert r.status_code == 200, r.text
     bk = r.json()
-    assert len(bk["tables"]) == 46, len(bk["tables"])
+    assert len(bk["tables"]) == 48, len(bk["tables"])
     assert "banned_words" in bk["tables"], list(bk["tables"])
     assert any(w["word"] == "scam"
                for w in bk["tables"]["banned_words"])
@@ -248,7 +248,7 @@ with TestClient(app) as c:
 
     # 7. Client markers + asset version.
     html = open("webapp/index.html").read()
-    assert html.count("?v=171") == 10, html.count("?v=171")
+    assert html.count("?v=172") == 10, html.count("?v=172")
     assert "?v=14" + "1" not in html
     js = open("webapp/app.js").read()
     for m in ("loadAuditLog", "applyAuditFilters", "clearAuditFilters",
@@ -297,6 +297,6 @@ with TestClient(app) as c:
               "search-tag-follow", "hashtag-card", "hashtag-row",
               "followedTags", "/me/hashtags", "/feed/hashtags"):
         assert m in js, m
-    print("client markers + ?v=171 OK")
+    print("client markers + ?v=172 OK")
 
 print("ALL PHASE 142 CHECKS PASSED")

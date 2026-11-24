@@ -4234,6 +4234,7 @@ async function openProfile(userId) {
     // hero — they already live in Settings ("My level"). The
     // shared level renderer stays: Settings still uses it.
     box.appendChild(hero);
+    await loadHighlights(userId, box);
     fitVerifiedNames(box);
     const wave = document.createElement("div");
     wave.className = "wave-div";
@@ -9680,6 +9681,7 @@ let storyGroups = [];
 let storyPos = null;
 let storyTimer = null;
 let ownStoryGroup = null;
+let hlMode = false;  // Phase 172: replaying a highlight
 
 async function loadStories() {
   const strip = $("stories-strip");
@@ -9789,12 +9791,12 @@ function paintStory() {
   viewsEl.style.cursor = s.mine ? "pointer" : "";
   viewsEl.onclick = s.mine ? () => openStoryViewers(s.id) : null;
   const replyRow = $("story-reply");
-  replyRow.hidden = !!s.mine;
+  replyRow.hidden = hlMode || !!s.mine;
   if (!s.mine) {
     const inp = $("story-reply-input");
     if (document.activeElement !== inp) inp.value = "";
   }
-  $("story-del").hidden = !s.mine && !(me && me.is_admin);
+  $("story-del").hidden = hlMode || (!s.mine && !(me && me.is_admin));
   const fill = $("story-progress-fill");
   fill.style.transition = "none";
   fill.style.width = "0%";
@@ -9802,7 +9804,7 @@ function paintStory() {
     fill.style.transition = "width 6s linear";
     fill.style.width = "100%";
   });
-  if (!s.mine && !s.viewed) {
+  if (!hlMode && !s.mine && !s.viewed) {
     api("/stories/" + s.id + "/view", { method: "POST" })
       .then(r => { s.views = r.views; s.viewed = true; })
       .catch(() => {});
@@ -9834,6 +9836,7 @@ function prevStory() {
 }
 function closeStory() {
   stopStoryTimer();
+  hlMode = false;
   storyPos = null;
   $("story-wrap").hidden = true;
   loadStories();
@@ -10353,3 +10356,229 @@ function mascotInit3D() {
   } catch (e) { showFallback(); }
 }
 mascotInit3D();
+
+// Phase 172: Story Highlights — named collections of the member's
+// own stories (active + expired) shown as circles under the bio.
+// A highlight replays its stories in the story viewer (hlMode:
+// view-only, no view-count, no reply, no delete).
+function hlCircle(h) {
+  const item = document.createElement("div");
+  item.className = "hl-item";
+  const ring = document.createElement("div");
+  ring.className = "hl-ring";
+  if (h.cover_media_file_id) {
+    const img = document.createElement("img");
+    img.src = mediaUrl(h.cover_media_file_id);
+    img.alt = h.title || "Highlight";
+    img.loading = "lazy";
+    ring.appendChild(img);
+  } else {
+    const init = document.createElement("span");
+    init.className = "hl-initial";
+    init.textContent = (h.title || "?").trim().charAt(0).toUpperCase();
+    ring.appendChild(init);
+  }
+  const label = document.createElement("div");
+  label.className = "hl-label";
+  label.textContent = h.title || "";
+  item.append(ring, label);
+  item.onclick = () => openHighlight(h.id);
+  return item;
+}
+
+async function loadHighlights(userId, box) {
+  const row = document.createElement("div");
+  row.className = "hl-row";
+  row.id = "profile-highlights";
+  try {
+    const r = await api("/highlights/user/" + userId);
+    (r.highlights || []).forEach(h => row.appendChild(hlCircle(h)));
+  } catch (e) { /* no highlights — row stays empty */ }
+  if (me && userId === me.telegram_id) {
+    const add = document.createElement("div");
+    add.className = "hl-item hl-new";
+    const ring = document.createElement("div");
+    ring.className = "hl-ring";
+    const plus = document.createElement("span");
+    plus.className = "hl-plus";
+    plus.textContent = "+";
+    ring.appendChild(plus);
+    const label = document.createElement("div");
+    label.className = "hl-label";
+    label.textContent = "New";
+    add.append(ring, label);
+    add.onclick = () => openHighlightPicker();
+    row.appendChild(add);
+  }
+  if (row.children.length) box.appendChild(row);
+}
+
+async function openHighlight(hid) {
+  try {
+    const r = await api("/highlights/" + hid);
+    const stories = r.stories || [];
+    if (!stories.length) { setStatus("This highlight is empty."); return; }
+    hlMode = true;
+    storyGroups = [{ author: r.owner || { first_name: "Highlights" },
+                     stories, has_unviewed: false }];
+    openStory(0, 0);
+  } catch (e) { setStatus("Could not open this highlight."); }
+}
+
+let hlPickerSel = new Set();
+async function openHighlightPicker() {
+  closeHighlightPicker();
+  hlPickerSel = new Set();
+  const overlay = document.createElement("div");
+  overlay.className = "hl-picker-overlay";
+  overlay.id = "hl-picker";
+  const sheet = document.createElement("div");
+  sheet.className = "hl-sheet";
+  const title = document.createElement("div");
+  title.className = "sheet-title";
+  title.textContent = "✨ Story Highlights";
+  sheet.appendChild(title);
+  const formTitle = document.createElement("div");
+  formTitle.className = "hl-form-title";
+  formTitle.textContent = "New highlight";
+  sheet.appendChild(formTitle);
+  const input = document.createElement("input");
+  input.type = "text";
+  input.maxLength = 50;
+  input.placeholder = "Highlight title";
+  input.className = "hl-title-input";
+  sheet.appendChild(input);
+  const grid = document.createElement("div");
+  grid.className = "hl-pick-grid";
+  sheet.appendChild(grid);
+  const createBtn = document.createElement("button");
+  createBtn.className = "wide btn";
+  createBtn.textContent = "Create highlight";
+  createBtn.disabled = true;
+  sheet.appendChild(createBtn);
+  const refreshCreate = () => {
+    createBtn.disabled = !input.value.trim() || !hlPickerSel.size;
+  };
+  input.oninput = refreshCreate;
+  try {
+    const r = await api("/stories/mine");
+    (r.stories || []).forEach(s => {
+      const cell = document.createElement("div");
+      cell.className = "hl-pick-item";
+      const img = document.createElement("img");
+      img.src = mediaUrl(s.media_file_id);
+      img.alt = "";
+      img.loading = "lazy";
+      cell.appendChild(img);
+      if (s.expired) {
+        const tag = document.createElement("span");
+        tag.className = "hl-expired-tag";
+        tag.textContent = "expired";
+        cell.appendChild(tag);
+      }
+      cell.onclick = () => {
+        if (hlPickerSel.has(s.id)) {
+          hlPickerSel.delete(s.id);
+          cell.classList.remove("selected");
+        } else {
+          hlPickerSel.add(s.id);
+          cell.classList.add("selected");
+        }
+        refreshCreate();
+      };
+      grid.appendChild(cell);
+    });
+    if (!grid.children.length) {
+      const none = document.createElement("p");
+      none.className = "hint";
+      none.textContent = "No stories yet — post a story first.";
+      grid.appendChild(none);
+    }
+  } catch (e) {
+    const err = document.createElement("p");
+    err.className = "hint";
+    err.textContent = "Could not load your stories.";
+    grid.appendChild(err);
+  }
+  createBtn.onclick = async () => {
+    const t = input.value.trim();
+    if (!t || !hlPickerSel.size) return;
+    createBtn.disabled = true;
+    try {
+      await api("/highlights", { method: "POST",
+        body: JSON.stringify({ title: t, story_ids: [...hlPickerSel] }) });
+      closeHighlightPicker();
+      setStatus("✨ Highlight created.");
+      if (me) openProfile(me.telegram_id);
+    } catch (e) {
+      setStatus("Could not create the highlight.");
+      createBtn.disabled = false;
+    }
+  };
+  const mgTitle = document.createElement("div");
+  mgTitle.className = "hl-form-title";
+  mgTitle.textContent = "Your highlights";
+  sheet.appendChild(mgTitle);
+  const mgList = document.createElement("div");
+  mgList.className = "hl-manage-list";
+  sheet.appendChild(mgList);
+  try {
+    const r = await api("/highlights/user/" + (me ? me.telegram_id : 0));
+    (r.highlights || []).forEach(h => {
+      const row = document.createElement("div");
+      row.className = "hl-manage-row";
+      const inp = document.createElement("input");
+      inp.type = "text";
+      inp.maxLength = 50;
+      inp.value = h.title;
+      row.appendChild(inp);
+      const save = document.createElement("button");
+      save.className = "tool-btn";
+      save.textContent = "Rename";
+      save.onclick = async () => {
+        const t = inp.value.trim();
+        if (!t) { setStatus("A highlight needs a title."); return; }
+        try {
+          await api("/highlights/" + h.id + "/rename", { method: "POST",
+            body: JSON.stringify({ title: t }) });
+          setStatus("Highlight renamed.");
+        } catch (e) { setStatus("Could not rename."); }
+      };
+      const del = document.createElement("button");
+      del.className = "tool-btn";
+      del.textContent = "Delete";
+      del.onclick = async () => {
+        if (!confirm("Delete this highlight? Your stories stay."))
+          return;
+        try {
+          await api("/highlights/" + h.id, { method: "DELETE" });
+          closeHighlightPicker();
+          setStatus("Highlight deleted.");
+          if (me) openProfile(me.telegram_id);
+        } catch (e) { setStatus("Could not delete."); }
+      };
+      row.append(save, del);
+      mgList.appendChild(row);
+    });
+    if (!mgList.children.length) {
+      const none = document.createElement("p");
+      none.className = "hint";
+      none.textContent = "No highlights yet.";
+      mgList.appendChild(none);
+    }
+  } catch (e) { /* manage list stays empty */ }
+  const closeBtn = document.createElement("button");
+  closeBtn.className = "wide";
+  closeBtn.textContent = "✕ Close";
+  closeBtn.onclick = closeHighlightPicker;
+  sheet.appendChild(closeBtn);
+  overlay.appendChild(sheet);
+  overlay.onclick = e => {
+    if (e.target === overlay) closeHighlightPicker();
+  };
+  document.body.appendChild(overlay);
+}
+function closeHighlightPicker() {
+  const el = document.getElementById("hl-picker");
+  if (el) el.remove();
+}
