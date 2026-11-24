@@ -2933,3 +2933,13 @@ html[data-theme] .suggest-follow.on { background: var(--t-chip, #F3DCE7);
 .skill-block { margin-top: 8px; }
 .skill-line { font-size: 14px; line-height: 1.5; }
 .settings-skill-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 6px 0; }
+
+/* Phase 170: @mention links + autocomplete dropdown. */
+.mention { color: #2f7fc4; font-weight: 700; text-decoration: none; }
+.mention-drop { position: fixed; z-index: 60; background: #fff; color: #111;
+  border: 1px solid #e5e0d8; border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.18); max-width: 280px; overflow: hidden; }
+.mention-drop button { display: block; width: 100%; text-align: left;
+  padding: 9px 12px; background: none; border: 0; cursor: pointer;
+  font-size: 14px; color: inherit; }
+.mention-drop button:hover { background: #f0f4fa; }

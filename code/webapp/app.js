@@ -1283,6 +1283,82 @@ function pollBlock(p) {
   return box;
 }
 
+// Phase 170: @mentions — render a caption/comment with tappable
+// mention links. Only usernames the server resolved (mentions)
+// become links; unknown names stay plain text. The text is
+// escaped by construction (text nodes only, never innerHTML).
+function renderRichText(el, text, mentions) {
+  el.innerHTML = "";
+  const list = (mentions || []).filter(m => m && m.username);
+  if (!text) return;
+  if (!list.length) { el.textContent = text; return; }
+  const byName = {};
+  list.forEach(m => { byName[m.username.toLowerCase()] = m; });
+  const re = /(^|[^\w@])@([A-Za-z0-9_]{3,32})/g;
+  let last = 0, m;
+  while ((m = re.exec(text))) {
+    const hit = byName[m[2].toLowerCase()];
+    if (!hit) continue;
+    const at = m.index + m[1].length;
+    if (at > last) el.appendChild(document.createTextNode(text.slice(last, at)));
+    const a = document.createElement("a");
+    a.className = "mention";
+    a.href = "javascript:void(0)";
+    a.textContent = "@" + m[2];
+    a.onclick = (e) => { e.stopPropagation(); openProfile(hit.telegram_id); };
+    el.appendChild(a);
+    last = at + 1 + m[2].length;
+  }
+  if (last < text.length) el.appendChild(document.createTextNode(text.slice(last)));
+}
+
+// Phase 170: @ autocomplete — type @ + a prefix in the composer
+// or a comment box and pick a member from the dropdown (uses the
+// existing GET /search). Tap inserts "@username ".
+function attachMentionAutocomplete(ta) {
+  if (!ta || ta._mentionWired) return;
+  ta._mentionWired = true;
+  let drop = null, timer = null;
+  const close = () => { if (drop) { drop.remove(); drop = null; } };
+  ta.addEventListener("input", () => {
+    clearTimeout(timer);
+    const pos = ta.selectionStart;
+    const before = ta.value.slice(0, pos == null ? 0 : pos);
+    const m = /@([A-Za-z0-9_]{1,32})$/.exec(before);
+    if (!m) { close(); return; }
+    timer = setTimeout(async () => {
+      try {
+        const d = await api("/search?q=" + encodeURIComponent(m[1]));
+        const users = (d.users || []).filter(u => u.username).slice(0, 5);
+        close();
+        if (!users.length) return;
+        drop = document.createElement("div");
+        drop.className = "mention-drop";
+        users.forEach(u => {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.textContent = "@" + u.username + (u.first_name ? " — " + u.first_name : "");
+          b.addEventListener("mousedown", (e) => {
+            e.preventDefault();
+            const start = pos - m[1].length - 1;
+            ta.value = ta.value.slice(0, start) + "@" + u.username + " " + ta.value.slice(pos);
+            ta.focus();
+            ta.selectionStart = ta.selectionEnd = start + u.username.length + 2;
+            close();
+          });
+          drop.appendChild(b);
+        });
+        const r = ta.getBoundingClientRect();
+        drop.style.left = Math.max(8, r.left) + "px";
+        drop.style.top = (r.bottom + 4) + "px";
+        document.body.appendChild(drop);
+      } catch (e) { close(); }
+    }, 200);
+  });
+  ta.addEventListener("blur", () => setTimeout(close, 250));
+}
+attachMentionAutocomplete($("composer-text"));
+
 function postCard(p) {
   const el = document.createElement("article");
   el.className = "post";
@@ -1369,7 +1445,7 @@ function postCard(p) {
   if (p.caption) {
     const body = document.createElement("p");
     body.className = "caption";
-    body.textContent = p.caption;
+    renderRichText(body, p.caption, p.mentions);
     el.appendChild(body);
   }
 
@@ -1481,6 +1557,7 @@ function postCard(p) {
   cInput.type = "text";
   cInput.placeholder = "Write a comment…";
   cInput.maxLength = 500;
+  attachMentionAutocomplete(cInput);
   const cSend = document.createElement("button");
   cSend.textContent = "Send";
   cForm.append(cInput, cSend);
@@ -1542,7 +1619,10 @@ function commentRow(cm, onReply) {
   nm.appendChild(who);
   if (cm.author_verified) nm.appendChild(verifiedBadge());
   row.appendChild(nm);
-  row.appendChild(document.createTextNode(": " + cm.text));
+  row.appendChild(document.createTextNode(": "));
+  const cmText = document.createElement("span");
+  renderRichText(cmText, cm.text, cm.mentions);
+  row.appendChild(cmText);
   // Phase 118: answer a comment directly — the reply nests
   // under it instead of starting a new top-level comment.
   if (onReply) {
@@ -2284,7 +2364,7 @@ function reelCard(p) {
   if (p.caption) {
     const cap = document.createElement("p");
     cap.className = "reel-caption";
-    cap.textContent = p.caption;
+    renderRichText(cap, p.caption, p.mentions);
     shade.appendChild(cap);
   }
   el.appendChild(shade);
@@ -2394,6 +2474,7 @@ function reelCard(p) {
   cInput.type = "text";
   cInput.placeholder = "Write a comment…";
   cInput.maxLength = 500;
+  attachMentionAutocomplete(cInput);
   const cSend = document.createElement("button");
   cSend.textContent = "Send";
   cForm.append(cInput, cSend);
@@ -2820,7 +2901,7 @@ function openPostEditor(p, cardEl) {
             cap.className = "caption";
             actions.before(cap);
           }
-          cap.textContent = r.caption;
+          renderRichText(cap, r.caption, r.mentions);
         } else if (cap) cap.remove();
         const oldTags = cardEl.querySelector(".tags");
         if (oldTags) oldTags.remove();
@@ -5001,6 +5082,7 @@ const NOTIF_PREF_META = [
   ["system", "🛡️ System", "Payouts, verification decisions, your posts going live, admin announcements"],
   ["blood", "🩸 Blood requests", "A matching blood request needs your group, or a donor answers your request"],
   ["skills", "🤝 Skill swap", "Someone wants to swap skills with you"],
+  ["mention", "📣 Mentions", "Someone mentions you in a post or comment"],
 ];
 
 async function loadSettings() {
@@ -6251,7 +6333,8 @@ const NOTIF_ICONS = { like: "❤️", comment: "💬", follow: "👥",
                       verification: "🛡️", repost: "🔁", reply: "↩️",
                       tip: "⭐", blood_request: "🩸",
                       blood_respond: "🩸",
-                      skill_connect: "🤝" };
+                      skill_connect: "🤝",
+                      mention: "📣" };
 async function loadNotifications(reset) {
   const box = $("notif-list");
   if (reset) { box.innerHTML = ""; notifCursor = null; }
@@ -9938,7 +10021,7 @@ const MASCOT_TIPS_BY_VIEW = {
   ],
   notifications: [
     "Likes, comments, follows, tips and blood requests all land here.",
-    "Turn any kind off in Settings → Notification prefs — 9 switches.",
+    "Turn any kind off in Settings → Notification prefs — 10 switches.",
   ],
   messages: [
     "Tap the photo button in a chat to send a photo DM.",
@@ -9966,7 +10049,7 @@ const MASCOT_TIPS_BY_VIEW = {
   ],
   settings: [
     "Theme: pick one of 33 shades — the whole app follows it.",
-    "Notification prefs has 9 switches — likes, comments, follows, tips, messages, system, follow requests, blood and skills.",
+    "Notification prefs has 10 switches — likes, comments, follows, tips, messages, system, follow requests, blood, skills and mentions.",
     "Payout wallet: save a TON, Gram or USDT address, then request a payout in points.",
   ],
   blood: [

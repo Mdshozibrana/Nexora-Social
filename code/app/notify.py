@@ -17,11 +17,11 @@ MAX_PER_HOUR = 20
 # behaviour is preserved for everyone until they opt out.
 # Phase 151: blood requests + donor answers (8th toggle).
 NOTIF_PREF_KEYS = ("likes", "comments", "follows", "follow_requests",
-                   "tips", "messages", "system", "blood", "skills")
+                   "tips", "messages", "system", "blood", "skills",
+                   "mention")
 # Which pref key gates each notification type the app actually
-# creates. "mention" is deliberately absent: no code path ever
-# creates a mention notification, so there is nothing to toggle.
-# "broadcast" is the admin announcement (NotificationLog only).
+# creates. "broadcast" is the admin announcement
+# (NotificationLog only).
 NOTIF_TYPE_MAP = {
     "like": "likes", "repost": "likes", "share": "likes",
     "comment": "comments", "reply": "comments",
@@ -34,6 +34,8 @@ NOTIF_TYPE_MAP = {
     "blood_request": "blood", "blood_respond": "blood",
     # Phase 158: skill-swap connect (9th toggle).
     "skill_connect": "skills",
+    # Phase 170: @mentions (10th toggle).
+    "mention": "mention",
 }
 
 

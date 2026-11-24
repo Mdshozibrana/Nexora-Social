@@ -38,7 +38,8 @@ from .config import (DAILY_TASKS, MONETIZATION, OFFICIAL_FOLLOWER_BASE,
 from .db import Base, SessionLocal, engine, get_db
 from .security import init_data_auth_date, validate_init_data
 from .services import (BANNED_WORD_MESSAGE, award_points,
-                      banned_word_in, extract_hashtags, register_post)
+                      banned_word_in, extract_hashtags, register_post,
+                      sync_mentions)
 from .users import get_or_create_user
 
 # Phase 28 (security §13): security events go to the service log —
@@ -1173,6 +1174,30 @@ def _poll_dict(db, p, viewer_id=None):
             "voted_option_id": voted}
 
 
+def _mention_list(db, p):
+    """Phase 170: the @mentions on a post — username + id, for
+    the tappable links the client renders in the caption."""
+    out = []
+    for m in db.query(models.Mention).filter_by(post_id=p.id).all():
+        u = db.get(models.User, m.mentioned_id)
+        if u is not None and u.username:
+            out.append({"telegram_id": u.telegram_id,
+                        "username": u.username})
+    return out
+
+
+def _comment_mention_list(db, cm):
+    """Phase 170: same, for a comment."""
+    out = []
+    for m in db.query(models.Mention).filter_by(
+            comment_id=cm.id).all():
+        u = db.get(models.User, m.mentioned_id)
+        if u is not None and u.username:
+            out.append({"telegram_id": u.telegram_id,
+                        "username": u.username})
+    return out
+
+
 def post_dict(db, p, liked=False, saved=False, views=None,
               reposted_by_me=False, viewer_id=None):
     # Phase 118: a repost row shows its ORIGINAL — the card's
@@ -1205,6 +1230,7 @@ def post_dict(db, p, liked=False, saved=False, views=None,
         "id": p.id, "type": p.type, "media_file_id": p.media_file_id,
         "thumb_file_id": getattr(p, "thumb_file_id", None),
         "caption": p.caption, "hashtags": p.hashtags,
+        "mentions": _mention_list(db, p),
         "like_count": p.like_count, "comment_count": p.comment_count,
         "repost_count": p.repost_count or 0,
         "is_pinned": bool(getattr(p, "is_pinned", False)),
@@ -1429,7 +1455,8 @@ def _validate_poll(poll):
 
 
 @app.post("/posts")
-def create_post(body: PostIn, user: models.User = Depends(current_user),
+async def create_post(body: PostIn,
+                      user: models.User = Depends(current_user),
                 db: Session = Depends(get_db)):
     _enforce_rate("post", f"u{user.telegram_id}")
     poll = _validate_poll(body.poll)
@@ -1464,6 +1491,14 @@ def create_post(body: PostIn, user: models.User = Depends(current_user),
                                    position=i))
         db.commit()
         db.refresh(post)
+    # Phase 170: @mentions in the caption — rows + in-app record
+    # (sync_mentions) plus the bot push for each new mention.
+    for uid in sync_mentions(db, user.telegram_id, post.id, None,
+                             body.caption, post.user_id):
+        await notify.notify_user(
+            db, uid, "mention",
+            f"📣 @{user.username or user.first_name} mentioned you "
+            f"in a post: {(body.caption or '')[:80]}")
     return post_dict(db, post, viewer_id=user.telegram_id)
 
 
@@ -1789,6 +1824,8 @@ def _delete_post_cascade(db, p):
         for rp in db.query(models.Post).filter_by(
                 repost_of_id=p.id, is_deleted=False).all():
             rp.is_deleted = True
+    # Phase 170: a deleted post takes its mention rows with it.
+    db.query(models.Mention).filter_by(post_id=p.id).delete()
 
 
 @app.delete("/posts/{post_id}")
@@ -1808,7 +1845,7 @@ class PostEditIn(BaseModel):
 
 
 @app.post("/posts/{post_id}/edit")
-def edit_post(post_id: int, body: PostEditIn,
+async def edit_post(post_id: int, body: PostEditIn,
               user: models.User = Depends(current_user),
               db: Session = Depends(get_db)):
     """Phase 59 (owner: the post ⋮ menu has no Edit). The
@@ -1823,6 +1860,14 @@ def edit_post(post_id: int, body: PostEditIn,
     p.hashtags = extract_hashtags(p.caption or "")
     db.commit()
     db.refresh(p)
+    # Phase 170: re-editing re-syncs mentions — only NEW names
+    # notify (dedupe), removed names lose their row.
+    for uid in sync_mentions(db, user.telegram_id, p.id, None,
+                             p.caption, p.user_id):
+        await notify.notify_user(
+            db, uid, "mention",
+            f"📣 @{user.username or user.first_name} mentioned you "
+            f"in a post: {(p.caption or '')[:80]}")
     return post_dict(db, p)
 
 
@@ -2153,6 +2198,12 @@ def _publish_scheduled_row(db, row):
                 return
         post, _, _ = register_post(db, user, ptype,
                                    row.media_file_id, row.text or "")
+        # Phase 170: @mentions in a scheduled post — rows +
+        # in-app record only; the bot push needs an async caller,
+        # so a scheduled post's mention lands in the 🔔 list,
+        # not as a bot message. (See PRD Phase 170.)
+        sync_mentions(db, row.user_id, post.id, None,
+                      row.text or "", row.user_id)
         row.status = "posted"
         row.posted_post_id = post.id
         row.error = None
@@ -2515,6 +2566,7 @@ def comment_dict(db, cm, reply_count=0, replies=None,
         "author_verified": bool(author and author.is_verified),
         "author_photo": author.photo_file_id if author else None,
         "text": cm.text,
+        "mentions": _comment_mention_list(db, cm),
         "reply_count": reply_count,
         "replies": replies or [],
         "created_at": cm.created_at.isoformat() if cm.created_at else None,
@@ -2601,6 +2653,13 @@ async def add_comment(post_id: int, body: CommentIn,
     p.comment_count = (p.comment_count or 0) + 1
     db.commit()
     db.refresh(cm)
+    # Phase 170: @mentions in the comment.
+    for uid in sync_mentions(db, user.telegram_id, None, cm.id,
+                             text, p.user_id):
+        await notify.notify_user(
+            db, uid, "mention",
+            f"📣 @{user.username or user.first_name} mentioned you "
+            f"in a comment: {text[:80]}")
     if p.user_id != user.telegram_id:
         await notify.notify_user(
             db, p.user_id, "comment",
@@ -6997,6 +7056,8 @@ _BACKUP_TABLES = [
     ("blood_requests", models.BloodRequest),
     # Phase 158: skill swap entries.
     ("skill_entries", models.SkillEntry),
+    # Phase 170: @mentions.
+    ("mentions", models.Mention),
 ]
 _BACKUP_MODELS = {name: m for name, m in _BACKUP_TABLES}
 _BACKUP_MAX_BYTES = 50 * 1024 * 1024

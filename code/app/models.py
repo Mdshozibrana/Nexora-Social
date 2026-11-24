@@ -121,6 +121,22 @@ class Comment(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class Mention(Base):
+    """Phase 170: @username mentions — one row per mentioned member
+    per post or comment (never both columns set). Rows are the
+    render source for tappable mention links and the dedupe record
+    for notifications (a re-edit notifies only NEW mentions)."""
+    __tablename__ = "mentions"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    post_id = Column(Integer, ForeignKey("posts.id"), nullable=True,
+                     index=True)
+    comment_id = Column(Integer, ForeignKey("comments.id"),
+                        nullable=True, index=True)
+    mentioned_id = Column(BigInteger,
+                          ForeignKey("users.telegram_id"), index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class Draft(Base):
     """Phase 123: an unfinished post, saved from the composer and
     finished later — text plus an optional already-uploaded media

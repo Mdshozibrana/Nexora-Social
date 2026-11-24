@@ -3,10 +3,108 @@
 the same rules as one made in the Mini App (PRD sections 4-5)."""
 import re
 
-from . import models
+from sqlalchemy import func
+
+from . import models, notify
 from .config import POINTS
 
 HASHTAG_RE = re.compile(r"#(\w+)")
+
+MENTION_RE = re.compile(r"(?<![\w@])@([A-Za-z0-9_]{3,32})")
+
+
+def extract_mentions(text):
+    """'@alice and @Bob!' -> ['alice', 'bob'] (lowercase, deduped,
+    order preserved). Unknown names are kept here — resolution
+    against real usernames happens in sync_mentions."""
+    seen = []
+    for name in MENTION_RE.findall(text or ""):
+        low = name.lower()
+        if low not in seen:
+            seen.append(low)
+    return seen
+
+
+def _mention_visible(db, mentioned_id, post_author_id):
+    """Phase 136: a mention inside a private author's post is
+    only real for followers (and the author themself)."""
+    if mentioned_id == post_author_id:
+        return True
+    author = db.get(models.User, post_author_id)
+    if author is None or not getattr(author, "is_private", False):
+        return True
+    return db.query(models.Follow).filter_by(
+        follower_id=mentioned_id,
+        following_id=post_author_id).first() is not None
+
+
+def _mention_blocked(db, a, b):
+    return db.query(models.UserBlock).filter_by(
+        blocker_id=a, blocked_id=b).first() is not None
+
+
+def sync_mentions(db, author_id, post_id, comment_id, text,
+                  post_author_id):
+    """Phase 170: reconcile the Mention rows for one post (or one
+    comment) with the @usernames in text, and write an in-app
+    notification for each NEW mention. Returns the list of newly
+    mentioned user ids — callers send the bot push for those.
+    Exactly one of post_id / comment_id is set. Rules: only
+    existing usernames count (case-insensitive lookup); unknown
+    names stay plain text; self-mentions get a row but no
+    notification; blocked either way and private-invisible
+    mentions are ignored entirely; a re-edit notifies only the
+    mentions that are new. The bot push is the caller's job —
+    this also runs in sync contexts (scheduled-post sweeper)."""
+    if post_id is not None:
+        rows = db.query(models.Mention).filter_by(
+            post_id=post_id).all()
+    else:
+        rows = db.query(models.Mention).filter_by(
+            comment_id=comment_id).all()
+    existing = {r.mentioned_id for r in rows}
+    notif_post_id = post_id
+    if comment_id is not None:
+        cm = db.get(models.Comment, comment_id)
+        notif_post_id = cm.post_id if cm else None
+    targets = []
+    seen = set()
+    for name in extract_mentions(text):
+        u = db.query(models.User).filter(
+            func.lower(models.User.username) == name).first()
+        if u is None or u.telegram_id in seen:
+            continue
+        seen.add(u.telegram_id)
+        if u.telegram_id == author_id:
+            targets.append(u)
+            continue
+        if _mention_blocked(db, author_id, u.telegram_id) or \
+                _mention_blocked(db, u.telegram_id, author_id):
+            continue
+        if not _mention_visible(db, u.telegram_id, post_author_id):
+            continue
+        targets.append(u)
+    wanted = {u.telegram_id for u in targets}
+    for r in rows:
+        if r.mentioned_id not in wanted:
+            db.delete(r)
+    new_ids = []
+    for u in targets:
+        if u.telegram_id not in existing:
+            db.add(models.Mention(
+                post_id=post_id, comment_id=comment_id,
+                mentioned_id=u.telegram_id))
+            new_ids.append(u.telegram_id)
+            if u.telegram_id != author_id:
+                notify.record(
+                    db, u.telegram_id, "mention", actor_id=author_id,
+                    post_id=notif_post_id,
+                    text=("mentioned you in a comment: "
+                          if comment_id is not None
+                          else "mentioned you in a post: ")
+                    + (text or "")[:80])
+    db.commit()
+    return new_ids
 
 
 def extract_hashtags(caption: str) -> str:

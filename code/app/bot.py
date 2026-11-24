@@ -23,7 +23,7 @@ from . import models
 from .config import settings
 from .db import SessionLocal
 from .services import (BANNED_WORD_MESSAGE, banned_word_in,
-                      register_post)
+                      register_post, sync_mentions)
 from .users import get_or_create_user
 
 
@@ -176,6 +176,14 @@ async def _save_media_post(update: Update, ptype: str, file_id: str,
         post, is_first, _ = register_post(
             db, user, ptype, file_id, update.message.caption or "",
             thumb_file_id=thumb_file_id)
+        # Phase 170: @mentions in a bot-chat caption.
+        for uid in sync_mentions(db, user.telegram_id, post.id, None,
+                                 update.message.caption or "",
+                                 user.telegram_id):
+            await notify.notify_user(
+                db, uid, "mention",
+                f"📣 @{user.username or user.first_name} mentioned you "
+                f"in a post: {(update.message.caption or '')[:80]}")
         note = " \U0001F389 First post bonus earned!" if is_first else ""
         await _finish(f"✅ Posted to {settings.APP_NAME}!{note}")
     finally:
@@ -334,7 +342,7 @@ async def start_bot(app: Application):
             # shell version.
             menu_url = settings.WEBAPP_URL
             if "?" not in menu_url:
-                menu_url = menu_url.rstrip("/") + "/?v=169"
+                menu_url = menu_url.rstrip("/") + "/?v=170"
             await app.bot.set_chat_menu_button(
                 menu_button=MenuButtonWebApp(
                     text="Open App",

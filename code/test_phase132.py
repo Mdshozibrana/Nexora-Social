@@ -6,7 +6,7 @@ after an admin backup download last_backup_at is set with kind
 (mocked) kind becomes "send"; after a restore last_restore_at is
 set and the last backup (from the restored audit rows) survives;
 non-admin 403, unauthenticated 401; backup still carries 39 tables;
-?v=169 x5, no ?v=169; backup-reminder client markers + Phase 123-131
+?v=170 x5, no ?v=170; backup-reminder client markers + Phase 123-131
 markers intact.
 """
 import hashlib, hmac, json, os, time, urllib.parse
@@ -124,12 +124,12 @@ with TestClient(app) as c:
     # 6. Backup still carries 39 tables, no migration change.
     r = c.get("/admin/backup", headers=ADMIN)
     assert r.status_code == 200, r.status_code
-    assert len(r.json()["tables"]) == 44, len(r.json()["tables"])
+    assert len(r.json()["tables"]) == 45, len(r.json()["tables"])
     print("backup: 39 tables OK")
 
     # 7. Client markers + asset version.
     html = open("webapp/index.html").read()
-    assert html.count("?v=169") == 10, html.count("?v=169")
+    assert html.count("?v=170") == 10, html.count("?v=170")
     assert "?v=131" not in html
     assert 'id="backup-reminder"' in html
     assert 'id="backup-warn"' in html
@@ -145,6 +145,6 @@ with TestClient(app) as c:
               "loadSecurityLog", "loadPayouts", "loadBroadcasts",
               "BC_TARGET_LABELS"):
         assert m in js, m
-    print("client markers + ?v=169 OK")
+    print("client markers + ?v=170 OK")
 
 print("PHASE-132 TESTS PASSED")
