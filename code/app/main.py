@@ -927,6 +927,10 @@ def feed(tab: str = "explore", type: str = "", cursor: int = 0,
         # someone else.
         if orig.user_id in muted:
             continue
+        # Phase 177: nor a blocked author's post, reposted by
+        # someone else (either block direction).
+        if orig.user_id in hidden:
+            continue
         if type in ("photo", "video", "text"):
             if orig.type == type:
                 keep.append(p)
@@ -1263,6 +1267,13 @@ def post_dict(db, p, liked=False, saved=False, views=None,
     if getattr(p, "repost_of_id", None):
         orig = db.get(models.Post, p.repost_of_id)
         if orig is None or orig.is_deleted:
+            return None
+        # Phase 177: a repost must not leak a blocked author's
+        # post — either block direction hides the card. The
+        # repost row is never deleted; unblocking restores it.
+        if viewer_id is not None and (
+                _blocked_by(db, orig.user_id, viewer_id)
+                or _blocked_by(db, viewer_id, orig.user_id)):
             return None
         d = post_dict(db, orig, liked=liked, saved=saved,
                       views=views, reposted_by_me=reposted_by_me,
@@ -2899,10 +2910,13 @@ def my_shared(user: models.User = Depends(current_user),
         if p is None or p.is_deleted:
             continue
         sender = db.get(models.User, s.from_user_id)
+        # Phase 177: resolve reposts with the viewer, so a
+        # shared repost of a blocked author stays hidden.
         d = post_dict(db, p,
                       liked=_eff_id(p) in liked_ids(db, user.telegram_id, [p]),
                       saved=_eff_id(p) in saved_ids(db, user.telegram_id, [p]),
-                      reposted_by_me=_eff_id(p) in reposted_ids(db, user.telegram_id, [p]))
+                      reposted_by_me=_eff_id(p) in reposted_ids(db, user.telegram_id, [p]),
+                      viewer_id=user.telegram_id)
         if d is None:
             continue
         d["shared_by_id"] = s.from_user_id
@@ -5136,7 +5150,11 @@ def public_post_page(post_id: int, request: Request,
             viewer_id = tg.get("id")
     if not _can_see_posts(db, viewer_id or -1, author.telegram_id):
         return _public_notice(post_id, post_url, image_url)
-    if viewer_id and _blocked_by(db, author.telegram_id, viewer_id):
+    # Phase 177: either block direction hides the post on the
+    # public page — a viewer who blocked the author sees the
+    # notice too, same as an author who blocked the viewer.
+    if viewer_id and (_blocked_by(db, author.telegram_id, viewer_id)
+                      or _blocked_by(db, viewer_id, author.telegram_id)):
         return _public_notice(post_id, post_url, image_url)
     name = html.escape(author.first_name or "Nexora member")
     caption = html.escape(eff.caption or "")

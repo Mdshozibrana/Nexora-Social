@@ -55,8 +55,8 @@ with TestClient(app) as c:
     assert 'classList.add("sheet-open")' in js[oi:ci2]
     print("Phase 108 markers OK")
 
-    for asset in ("style.css?v=176", "app.js?v=176", "games.js?v=176"):
+    for asset in ("style.css?v=177", "app.js?v=177", "games.js?v=177"):
         assert asset in html, asset
-    print("asset version ?v=176 OK")
+    print("asset version ?v=177 OK")
 
 print("PHASE 109 OK")

@@ -1874,3 +1874,58 @@ enforces full visibility rules.
 
 No new tables. Routes 181 -> 183. Backup tables stay 51.
 Test: test_phase176.py (8 sections, green standalone).
+
+## Phase 177 — Blocked-repost leak fix (Nov 25, 2026)
+
+A repost of a BLOCKED author's post by a third party still
+showed in the feed. The feed's repost loop checked private
+(Phase 136) and muted (Phase 174) originals, but not blocked
+ones — and post_dict() never checked blocks at all when
+resolving a repost to its original. Found by the Phase 174
+coordinator, recorded in its addendum, fixed here on the
+owner's order.
+
+Fix (server only, no schema change, no new routes, no client
+change except the version bump):
+- post_dict(): when a repost resolves to its original, the
+  card is dropped (None) if the original's author is
+  block-related to the viewer in EITHER direction
+  (author blocked viewer, or viewer blocked author). This
+  one check covers every display surface by construction:
+  feed, saved, collections, shared, profile posts, search
+  results, Trending, and the single-post view (which then
+  404s, as for a gone original).
+- Feed keep loop: the same check on the row
+  (orig.user_id in hidden) — defence in depth at the exact
+  site the Phase 174 finding named.
+- Shared view (/me/shared): post_dict now receives the
+  viewer_id, so a share of a repost of a blocked author
+  stays hidden from the recipient.
+- Public page /p/{id}: the identified-viewer block check now
+  covers BOTH directions (before: only author-blocked-viewer).
+
+Decisions, recorded here:
+- The repost row is NEVER deleted. Blocking hides the card;
+  unblocking restores it exactly as before.
+- Your own repost of someone you later block hides the same
+  way — the card shows their content, so it stays hidden
+  from your feed and profile too until you unblock.
+- The edit echo (POST /posts/{id}/edit returns your own row
+  as a mutation acknowledgement) and the bot-chat creation
+  response (a bot-chat post is never a repost) are unchanged.
+- Repost CREATION already refuses blocked authors (403,
+  existing check in toggle_repost) — the leak was display
+  only, for reposts made before the block.
+
+Out of scope, noted for a follow-up: the Saved and
+Collections pages never applied ANY visibility filter, so a
+saved ORIGINAL by a blocked, muted or private author still
+shows there (only saved/shared REPOST rows are fixed here,
+via post_dict). The comments list also does not filter
+blocked commenters (only muted, Phase 174) and does not
+check the post author's block/private state before
+returning comments.
+
+Routes stay 183. Backup tables stay 51.
+Test: test_phase177.py (7 sections, green standalone).
+Full regression: 171/171 green.

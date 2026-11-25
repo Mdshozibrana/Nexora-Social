@@ -274,9 +274,9 @@ assert alice_post in feed_ids(BOB, "explore")
 print("8. DMs + reverse visibility OK")
 
 # 9. Mute + block: block stays stronger; unblocking restores the mute state.
-# (Checked on tech_post, never reposted: a repost of a BLOCKED author
-# still leaks through the feed's repost loop — pre-existing block
-# behaviour, out of scope for this phase.)
+# (Checked on tech_post, never reposted. A repost of a BLOCKED
+# author used to leak through the feed's repost loop — fixed
+# in Phase 177, covered by test_phase177.py §1-2.)
 r = c.post("/users/1742/block", headers=ALICE)
 assert r.status_code == 200, r.text
 assert mute(ALICE, 1742) is False  # unmute while blocked
@@ -292,10 +292,10 @@ JS_MARKS = ["paintMute", "loadMuted", "Muted members", "/mute",
             "muted_by_me", "Member muted", "Nobody muted.", "Unmute"]
 for m in JS_MARKS:
     assert m in JS, f"missing JS marker: {m}"
-assert HTML.count("?v=176") == 10, HTML.count("?v=176")
+assert HTML.count("?v=177") == 10, HTML.count("?v=177")
 assert "?v=17" + "3" not in HTML
 BOT = open(os.path.join(ROOT, "code/app/bot.py")).read()
-assert "/?v=176" in BOT and "/?v=17" + "3" not in BOT
+assert "/?v=177" in BOT and "/?v=17" + "3" not in BOT
 paths = set()
 for route in app.routes:
     paths.add(route.path)
