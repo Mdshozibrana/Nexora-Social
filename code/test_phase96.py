@@ -41,7 +41,7 @@ for bit in ("loadAccountTheme", '"nx_theme_"', "/me/theme",
             'localStorage.removeItem("nx_theme")', "themeKey()"):
     assert bit in JS, bit
 assert 'getItem("nx_theme")' in JS  # legacy migration read only
-assert "app.js?v=184" in HTML and "style.css?v=184" in HTML
+assert "app.js?v=185" in HTML and "style.css?v=185" in HTML
 print("static contract OK")
 
 def make_init_data(user):

@@ -47,5 +47,5 @@ assert "members chat with you by text" in MAIN
 assert "spoken aloud" not in JS
 print("server voice routes gone OK")
 
-assert "app.js?v=184" in HTML and "style.css?v=184" in HTML
+assert "app.js?v=185" in HTML and "style.css?v=185" in HTML
 print("PHASE 75 OK")

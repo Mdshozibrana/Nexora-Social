@@ -224,7 +224,11 @@ class FollowRequest(Base):
     """Phase 136: a request to follow a private account. One
     pending row per (requester, target) at a time — the target
     accepts (a follow row appears) or rejects (nothing does).
-    After a decision a fresh request is a new row."""
+    After a decision a fresh request is a new row. Phase 185: a
+    decision first clears any earlier decided row of the same
+    outcome for the pair — the unique key covers (requester,
+    target, status), so two "accepted" rows for one pair would
+    500 on the second accept."""
     __tablename__ = "follow_requests"
     id = Column(Integer, primary_key=True, autoincrement=True)
     requester_id = Column(BigInteger, ForeignKey("users.telegram_id"),

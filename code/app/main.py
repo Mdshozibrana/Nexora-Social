@@ -3904,6 +3904,16 @@ async def accept_follow_request(request_id: int,
         db.add(models.Follow(follower_id=req.requester_id,
                              following_id=user.telegram_id))
         _record_follow_task_event(db, req.requester_id, user.telegram_id)
+    # Phase 185: the follow_requests unique key covers
+    # (requester_id, target_id, status) — an earlier "accepted"
+    # row for this pair makes flipping a second request to
+    # "accepted" an IntegrityError (500). A decision clears any
+    # earlier decided row of the same outcome first, so at most
+    # one row per (pair, outcome) ever exists. The pending row
+    # itself is untouched (still "pending" at this point).
+    db.query(models.FollowRequest).filter_by(
+        requester_id=req.requester_id, target_id=user.telegram_id,
+        status="accepted").delete(synchronize_session=False)
     req.status = "accepted"
     db.commit()
     # Phase 183 (audit M19): the acceptance notifies under
@@ -3925,6 +3935,12 @@ def reject_follow_request(request_id: int,
     """Turn a follow request away: no follow row, no message."""
     _enforce_rate("follow", f"u{user.telegram_id}")
     req = _pending_request_for(db, request_id, user.telegram_id)
+    # Phase 185: same stale-row hazard as accept — an earlier
+    # "rejected" row for this pair would 500 the second reject
+    # on the (requester, target, status) unique key.
+    db.query(models.FollowRequest).filter_by(
+        requester_id=req.requester_id, target_id=user.telegram_id,
+        status="rejected").delete(synchronize_session=False)
     req.status = "rejected"
     db.commit()
     return {"rejected": True, "request_id": req.id}
@@ -6833,7 +6849,9 @@ def admin_delete_fake_user(telegram_id: int,
                            db: Session = Depends(get_db)):
     """Remove a managed account completely. Since Phase 24 (full
     admin control) this wipes its posts and every other trace too —
-    see _wipe_member."""
+    see _wipe_member. Phase 185: shares the admin_mutation budget
+    (120/h) like the other mutating admin endpoints."""
+    _enforce_rate("admin_mutation", f"a{admin.telegram_id}")
     u = db.get(models.User, telegram_id)
     if u is None or not u.is_managed:
         raise HTTPException(404, "Managed user not found")
