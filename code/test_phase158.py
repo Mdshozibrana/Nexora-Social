@@ -14,7 +14,7 @@ kind filter, exact skill, no phone keys, private + block visibility);
 matches (computed overlap); connect (notifies, 400/403/404 guards,
 pref gates delivery); profile exposure (skills hidden from private
 strangers); backup 44 tables; routes 166 (5 new paths, 6 route
-entries); ?v=185 x10, no old-version literals.
+entries); ?v=186 x10, no old-version literals.
 """
 import hashlib, hmac, json, os, re, time, urllib.parse
 
@@ -86,9 +86,9 @@ def add_skill(c, h, skill, kind, note=""):
 
 
 # 1. Client markers: Skills page + sidebar + Settings + profile + toggle.
-assert HTML.count("?v=185") == 10, HTML.count("?v=185")
+assert HTML.count("?v=186") == 10, HTML.count("?v=186")
 assert "?v=15" + "7" not in HTML
-assert 'menu_url.rstrip("/") + "/?v=185"' in BOT
+assert 'menu_url.rstrip("/") + "/?v=186"' in BOT
 assert 'data-go="skills"' in HTML
 assert 'id="view-skills"' in HTML
 assert "🤝 Skills" in HTML
@@ -116,7 +116,7 @@ for rule in (".skill-tabs", ".skill-card", ".skill-chip-teach",
              ".settings-skill-row"):
     assert rule in CSS, rule
 assert "Phase 158" in CSS
-print("client markers OK (?v=185 x10, Skills page, Settings, profile, toggle)")
+print("client markers OK (?v=186 x10, Skills page, Settings, profile, toggle)")
 
 # 2. Server markers: model, backup, notify map, rate bucket.
 assert "class SkillEntry(Base):" in MODELS
@@ -361,8 +361,8 @@ with TestClient(app) as c:
     print("routes: 163 OK (5 new skill paths, nothing else)")
 
 # 15. Version.
-assert HTML.count("?v=185") == 10, HTML.count("?v=185")
+assert HTML.count("?v=186") == 10, HTML.count("?v=186")
 assert "?v=15" + "7" not in HTML
-assert 'menu_url.rstrip("/") + "/?v=185"' in BOT
+assert 'menu_url.rstrip("/") + "/?v=186"' in BOT
 assert "Phase 158" in CSS and "Phase 158" in HTML
 print("PHASE 158 OK")

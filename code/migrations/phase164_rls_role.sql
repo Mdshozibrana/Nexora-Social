@@ -27,18 +27,27 @@ $$;
 GRANT CONNECT ON DATABASE "nexora-db" TO nexora_app;
 GRANT USAGE ON SCHEMA public TO nexora_app;
 
--- 3. DML on every application table (44 tables, Phase 164).
+-- 3. DML on every application table (52 tables — Phase 186 audit
+--    of models.py; was 44 at Phase 164. Phases 170-185 added
+--    highlight_stories, mentions, mutes, post_media,
+--    saved_collection_posts, saved_collections,
+--    story_highlights and task_follow_events. The list MUST
+--    match the models tables exactly; a missed table breaks
+--    that feature when DATABASE_URL is repointed.)
 GRANT SELECT, INSERT, UPDATE, DELETE ON
   ad_events, admin_audit_logs, app_settings, banned_words,
-  blood_requests, broadcasts, comment_likes, comments, daily_claims,
-  design_likes, design_saves, design_shares, design_views, designs,
-  drafts, follow_requests, follows, hashtag_follows, likes,
-  message_reactions, messages, notifications, notifications_log,
-  payout_requests, points_ledger, poll_options, poll_votes, polls,
-  post_shares, post_views, posts, referrals, reports, saved_posts,
+  blood_requests, broadcasts, comment_likes, comments,
+  daily_claims, design_likes, design_saves, design_shares,
+  design_views, designs, drafts, follow_requests,
+  follows, hashtag_follows, highlight_stories, likes,
+  mentions, message_reactions, messages, mutes,
+  notifications, notifications_log, payout_requests, points_ledger,
+  poll_options, poll_votes, polls, post_media,
+  post_shares, post_views, posts, referrals,
+  reports, saved_collection_posts, saved_collections, saved_posts,
   scheduled_posts, security_events, skill_entries, stories,
-  story_views, tips, user_activity, user_blocks, users,
-  verification_requests
+  story_highlights, story_views, task_follow_events, tips,
+  user_activity, user_blocks, users, verification_requests
 TO nexora_app;
 
 -- 4. Sequences (autoincrement ids) — the app must be able to take

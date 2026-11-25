@@ -8,7 +8,7 @@ no auth 401, unknown/expired 404); POST /stories/{id}/reply
 400, empty 400, unauthenticated 401, unknown/expired 404,
 blocked 403, private-account non-follower 403); the old reply's
 preview reports live=False once the story expires; backup still
-40 tables incl. story_views rows; ?v=185 x5; story reply/viewer
+40 tables incl. story_views rows; ?v=186 x5; story reply/viewer
 client markers + Phase 123-138 markers intact.
 
 Survey note: story_views already existed (Phase 36, unique per
@@ -201,7 +201,7 @@ with TestClient(app) as c:
 
     # 10. Client markers + asset version.
     html = open("webapp/index.html").read()
-    assert html.count("?v=185") == 10, html.count("?v=185")
+    assert html.count("?v=186") == 10, html.count("?v=186")
     assert "?v=13" + "8" not in html
     js = open("webapp/app.js").read()
     for m in ("openStoryViewers", "sendStoryReply", "openStoryById",
@@ -230,6 +230,6 @@ with TestClient(app) as c:
     css = open("webapp/style.css").read()
     assert ".story-reply" in css and ".story-viewer-row" in css \
         and ".story-reply-chip" in css and "#story-viewers" in css
-    print("client markers + ?v=185 OK")
+    print("client markers + ?v=186 OK")
 
 print("PHASE-139 TESTS PASSED")

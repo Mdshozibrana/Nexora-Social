@@ -30,7 +30,8 @@ async def _no_poll(app):
 bot_mod.start_bot = _no_poll
 
 from fastapi.testclient import TestClient
-from app.main import app, SessionLocal
+from app.main import app
+from app.db import SessionLocal
 from app import models
 
 
@@ -148,7 +149,7 @@ assert "museum" not in JS.lower() and "museum" not in HTML.lower()
 print("neighbours OK (Blood flows, distance, Nearby, feed photos, no museum)")
 
 # 7. Version.
-assert HTML.count("?v=185") == 10, HTML.count("?v=185")
+assert HTML.count("?v=186") == 10, HTML.count("?v=186")
 assert "?v=15" + "3" not in HTML
-assert 'menu_url.rstrip("/") + "/?v=185"' in BOT
+assert 'menu_url.rstrip("/") + "/?v=186"' in BOT
 print("PHASE 154 OK")

@@ -25,7 +25,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, \
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy import func, inspect, or_, text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.orm import Session
 from telegram import LabeledPrice
 
@@ -40,7 +40,8 @@ from .config import (ADS_PROVIDER_LIVE, DAILY_TASKS, MONETIZATION,
                      OFFICIAL_ID, OFFICIAL_NAME, PAYOUT_NETWORKS,
                      RATE_LIMITS, VERIFICATION_MIN_FOLLOWERS,
                      VERIFICATION_MIN_REFERRALS, settings)
-from .db import Base, SessionLocal, engine, get_db
+from .db import (Base, apply_rls_context, engine, get_db,
+                 rls_session, set_rls_context_for, system_session)
 from .security import init_data_auth_date, validate_init_data
 from .services import (BANNED_WORD_MESSAGE, award_points,
                       banned_word_in, extract_hashtags, register_post,
@@ -52,10 +53,45 @@ from .users import get_or_create_user
 # NEVER log initData, tokens or message content.
 sec_log = logging.getLogger("nexora.security")
 
+
+def _is_permission_error(exc):
+    """Phase 186: True when Postgres refused for lack of privilege
+    (SQLSTATE 42501, permission denied). The app role has no DDL,
+    so create_all() / _migrate() must survive exactly this
+    refusal at boot; any other failure still aborts the boot,
+    as before — a genuine migration bug must never boot silently
+    into a half-migrated schema."""
+    orig = getattr(exc, "orig", None)
+    # psycopg2 names it pgcode, psycopg3 names it sqlstate — the
+    # app runs psycopg3, so checking only pgcode missed the
+    # refusal entirely (smoke-tested Phase 186: "must be owner
+    # of table users" sailed straight past the guard).
+    code = getattr(orig, "pgcode", None) or getattr(
+        orig, "sqlstate", None)
+    if code == "42501":
+        return True
+    msg = str(exc).lower()
+    return ("permission denied" in msg
+            or "insufficient_privilege" in msg
+            or "must be owner of" in msg)
+
 # Phase 130: process start time, for the System Health card.
 _STARTED_AT = time.time()
 
-Base.metadata.create_all(bind=engine)
+# Phase 186 (RLS H4): the app role has no DDL — create_all() must
+# survive a permission refusal at boot (the owner connection
+# still runs it normally; a fresh database is bootstrapped by
+# the owner first, see the Phase 186 production pack). A missing
+# table on an app-role boot is logged loudly, not hidden.
+try:
+    Base.metadata.create_all(bind=engine)
+except DBAPIError as exc:
+    if _is_permission_error(exc):
+        sec_log.error(
+            "create_all skipped: database role has no DDL "
+            "privilege — run migrations as the database owner")
+    else:
+        raise
 
 
 def _migrate():
@@ -192,7 +228,19 @@ def _migrate():
                 {"u": uname.lstrip("@"), "t": tid})
 
 
-_migrate()
+# Phase 186 (RLS H4): same rule as create_all above — under the
+# app role _migrate() cannot ALTER, and that must not break the
+# deploy. Migrations then become an owner-run step (the boot
+# log says so loudly); any non-permission failure still aborts.
+try:
+    _migrate()
+except DBAPIError as exc:
+    if _is_permission_error(exc):
+        sec_log.error(
+            "_migrate skipped: database role has no DDL "
+            "privilege — apply migrations as the database owner")
+    else:
+        raise
 
 app = FastAPI(title=settings.APP_NAME)
 
@@ -306,12 +354,12 @@ def _maintenance_on_db() -> bool:
     falls back to the env flag only — the panel toggle never breaks
     the API by itself."""
     try:
-        db = SessionLocal()
-        try:
+        # Phase 186 (RLS H4): the middleware runs on every request
+        # with no member identity — the system session reads the
+        # flag as the platform, not as a member.
+        with system_session() as db:
             row = db.get(models.AppSetting, "maintenance")
             return bool(row is not None and row.value == "1")
-        finally:
-            db.close()
     except Exception:
         return False
 
@@ -413,6 +461,24 @@ _SECURITY_KINDS = ("screen_reject", "rate_limit", "auth_reject",
 _SECURITY_EVENT_MAX = 1000
 
 
+def _log_security_event_write(s, kind, actor_id, target_id, detail):
+    """One security-event row + the 1000-row prune, on an already
+    open session. Split out of log_security_event so the own-session
+    path can run under the system RLS identity (Phase 186)."""
+    s.add(models.SecurityEvent(
+        kind=kind, actor_id=actor_id, target_id=target_id,
+        detail=(detail or "")[:512]))
+    s.flush()
+    n = s.query(models.SecurityEvent).count()
+    if n > _SECURITY_EVENT_MAX:
+        old = s.query(models.SecurityEvent) \
+            .order_by(models.SecurityEvent.id.asc()) \
+            .limit(n - _SECURITY_EVENT_MAX).all()
+        for row in old:
+            s.delete(row)
+    s.commit()
+
+
 def log_security_event(db, kind, actor_id=None, target_id=None,
                        detail=""):
     """Phase 128: persist one security event. The write rides its
@@ -423,24 +489,17 @@ def log_security_event(db, kind, actor_id=None, target_id=None,
     every error is swallowed. Details are one-line summaries only
     — never a traceback."""
     try:
-        own = db is None
-        s = SessionLocal() if own else db
-        try:
-            s.add(models.SecurityEvent(
-                kind=kind, actor_id=actor_id, target_id=target_id,
-                detail=(detail or "")[:512]))
-            s.flush()
-            n = s.query(models.SecurityEvent).count()
-            if n > _SECURITY_EVENT_MAX:
-                old = s.query(models.SecurityEvent) \
-                    .order_by(models.SecurityEvent.id.asc()) \
-                    .limit(n - _SECURITY_EVENT_MAX).all()
-                for row in old:
-                    s.delete(row)
-            s.commit()
-        finally:
-            if own:
-                s.close()
+        if db is None:
+            # Phase 186 (RLS H4): the own session runs as the
+            # system identity — it must never fail closed on a
+            # table the policies later cover, and it must never
+            # impersonate a member.
+            with system_session() as s:
+                _log_security_event_write(s, kind, actor_id,
+                                          target_id, detail)
+        else:
+            _log_security_event_write(db, kind, actor_id,
+                                      target_id, detail)
     except Exception:
         pass
 
@@ -817,6 +876,14 @@ def current_user(x_init_data: str = Header(default=""),
         log_security_event(db, "auth_reject", detail=
                            "Invalid initData on API request")
         raise HTTPException(401, "Invalid Telegram login")
+    # Phase 186 (RLS H4): bind this request's session to the caller
+    # BEFORE the first RLS-filtered query. The id comes from the
+    # validated initData, so the binding cannot be spoofed; the
+    # after_begin listener in app.db keeps it applied across the
+    # commits this request makes, and apply_rls_context covers the
+    # transaction get_or_create_user already opened.
+    set_rls_context_for(int(tg_user["id"]))
+    apply_rls_context(db)
     user, _ = get_or_create_user(db, tg_user)
     if user.is_banned:
         raise HTTPException(403, "Account suspended")
@@ -830,6 +897,12 @@ def current_user(x_init_data: str = Header(default=""),
         db.commit()
     real_id = user.telegram_id
     user = _resolve_act_as(db, user, x_act_as)
+    # Phase 186: act-as changes the effective identity — the RLS
+    # context follows the RESOLVED user (an admin behind an act-as
+    # session keeps no admin bypass while acting as a member;
+    # admin endpoints re-check the resolved user too).
+    set_rls_context_for(user.telegram_id)
+    apply_rls_context(db)
     # Phase 32: remember the REAL caller on the resolved identity.
     # Managed accounts and the official account have no Telegram
     # chat of their own (chat 1 can never press Start), so uploads
@@ -864,6 +937,11 @@ async def auth(body: AuthIn, request: Request,
         log_security_event(db, "auth_reject", detail=
                            "Invalid initData at /auth")
         raise HTTPException(401, "Invalid Telegram login")
+    # Phase 186 (RLS H4): same binding as current_user — /auth
+    # resolves its member itself, and the counts below read posts
+    # (RLS-filtered), so the identity must be bound first.
+    set_rls_context_for(int(tg_user["id"]))
+    apply_rls_context(db)
     user, is_new = get_or_create_user(db, tg_user)
     _check_revoked(user, body.initData)
     user.last_seen_at = datetime.utcnow()
@@ -873,6 +951,10 @@ async def auth(body: AuthIn, request: Request,
     if x_act_as:
         user = _resolve_act_as(db, user, x_act_as)
         is_new = False
+        # Phase 186: act-as changes the effective identity (see
+        # current_user) — re-bind to the resolved member.
+        set_rls_context_for(user.telegram_id)
+        apply_rls_context(db)
     # Phase 19: Telegram never reveals a member's country, so it is
     # approximated ONCE from the sign-in IP (only the name is stored).
     if not user.country:
@@ -1966,8 +2048,10 @@ async def _finish_video_post(author_id, send_chat_id, src_path,
             mp4 = f.read()
         _, file_id, thumb_id = await tgupload.upload_media(
             send_chat_id, "video.mp4", mp4, "video/mp4")
-        db = SessionLocal()
-        try:
+        # Phase 186 (RLS H4): the background job runs outside any
+        # request, so it binds its own session to the acting member
+        # — register_post inserts into posts (RLS-filtered).
+        with rls_session(author_id) as db:
             user = db.get(models.User, author_id)
             if user is not None and not user.is_banned:
                 post, _, _ = register_post(db, user, "video", file_id,
@@ -1977,8 +2061,6 @@ async def _finish_video_post(author_id, send_chat_id, src_path,
                               post_id=post.id,
                               text="Your video is now live on "
                                    "Nexora Social!")
-        finally:
-            db.close()
         await notify.send_message(
             send_chat_id, "✅ Your video is now live on Nexora Social!")
     except tgupload.TelegramUploadError as e:
@@ -2676,7 +2758,9 @@ def _run_scheduled_sweep():
     row is adopted (its post exists) or published (it does not)
     on the next sweep, never duplicated."""
     now = datetime.utcnow()
-    with SessionLocal() as db:
+    # Phase 186 (RLS H4): the sweep runs as the system (admin
+    # bypass) — see the note above about scheduled publishes.
+    with system_session() as db:
         rows = db.query(models.ScheduledPost).filter(
             models.ScheduledPost.status.in_(["pending", "publishing"]),
             models.ScheduledPost.scheduled_at <= now).order_by(
@@ -2789,7 +2873,7 @@ def _auto_backup_next_due(db):
 def _build_auto_backup():
     """Sync (runs in a thread): build the full backup bytes.
     Phase 164: encrypted when BACKUP_ENCRYPTION_KEY is set."""
-    with SessionLocal() as db:
+    with system_session() as db:
         payload = _backup_payload(db)
     data, fname, encrypted = _backup_pack(payload, prefix="nexora-auto-backup")
     if not encrypted:
@@ -2802,7 +2886,7 @@ def _build_auto_backup():
 def _record_auto_backup(sent, size, total, detail=None):
     """Sync (runs in a thread): record an auto-backup attempt."""
     owner_tid = settings.ADMIN_IDS[0] if settings.ADMIN_IDS else None
-    with SessionLocal() as db:
+    with system_session() as db:
         if sent:
             _set_app_setting(db, "auto_backup_last_run",
                              datetime.utcnow().isoformat())
@@ -2829,7 +2913,7 @@ def _stamp_auto_backup_attempt():
     Phase 180 (audit M12): a crash between the send and the
     success record then cannot re-send the same backup on the
     next hourly check — the stamp already says it ran."""
-    with SessionLocal() as db:
+    with system_session() as db:
         prev = _auto_backup_last_run(db)
         _set_app_setting(db, "auto_backup_last_run",
                          datetime.utcnow().isoformat())
@@ -2842,7 +2926,7 @@ def _restore_auto_backup_stamp(prev):
     its previous value (or delete the key when there was none)
     after a failed build or send, so the next hourly check
     retries instead of waiting 7 days."""
-    with SessionLocal() as db:
+    with system_session() as db:
         row = db.get(models.AppSetting, "auto_backup_last_run")
         if prev is None:
             if row is not None:
@@ -2866,7 +2950,7 @@ async def _maybe_auto_backup(send_fn=None):
     restores the previous stamp, so the next hourly check
     retries. A build crash is admin-visible (M13): it records
     auto_backup_failed + a server_error security-log row."""
-    with SessionLocal() as db:
+    with system_session() as db:
         due = _auto_backup_due(db)
     if not due:
         return False
@@ -5934,16 +6018,6 @@ def public_post_page(post_id: int, request: Request,
     post_url = (base + f"/p/{post_id}") if base else f"/p/{post_id}"
     image_url = (base + "/webapp/og-image.png") if base \
         else "/webapp/og-image.png"
-    p = db.get(models.Post, post_id)
-    if p is None or p.is_deleted:
-        return _public_not_found(post_id, post_url, image_url)
-    eff = db.get(models.Post, p.repost_of_id) \
-        if getattr(p, "repost_of_id", None) else p
-    if eff is None or eff.is_deleted:
-        return _public_not_found(post_id, post_url, image_url)
-    author = db.get(models.User, eff.user_id)
-    if author is None:
-        return _public_not_found(post_id, post_url, image_url)
     viewer_id = None
     if x_init_data:
         # Phase 179 (audit M3): a PRESENT-but-invalid/expired
@@ -5955,6 +6029,25 @@ def public_post_page(post_id: int, request: Request,
         if tg is None:
             raise HTTPException(401, "Invalid Telegram login")
         viewer_id = tg.get("id")
+    # Phase 186 (RLS H4): the post row itself is RLS-filtered, so
+    # the identity must be bound BEFORE the first db.get — a
+    # follower reading a private author's public page would
+    # otherwise 404 on the row before the visibility check below
+    # ever runs. Anonymous stays unbound (the policies' anonymous
+    # view: public posts only, no DMs).
+    if viewer_id:
+        set_rls_context_for(int(viewer_id))
+        apply_rls_context(db)
+    p = db.get(models.Post, post_id)
+    if p is None or p.is_deleted:
+        return _public_not_found(post_id, post_url, image_url)
+    eff = db.get(models.Post, p.repost_of_id) \
+        if getattr(p, "repost_of_id", None) else p
+    if eff is None or eff.is_deleted:
+        return _public_not_found(post_id, post_url, image_url)
+    author = db.get(models.User, eff.user_id)
+    if author is None:
+        return _public_not_found(post_id, post_url, image_url)
     if not _can_see_posts(db, viewer_id or -1, author.telegram_id):
         return _public_notice(post_id, post_url, image_url)
     # Phase 177: either block direction hides the post on the
@@ -8995,6 +9088,11 @@ async def media_proxy(file_id: str, request: Request,
     # Phase 164 (H2): /media was unthrottled — one token holder could
     # hammer the Telegram proxy without limit.
     _enforce_rate("media", f"u{viewer_id}")
+    # Phase 186 (RLS H4): _media_visible reads posts / messages,
+    # both RLS-filtered — bind the token's viewer first, or every
+    # private post / DM photo 404s even for its own owner.
+    set_rls_context_for(viewer_id)
+    apply_rls_context(db)
     # Phase 164 (P1): the file's owner/visibility decides — a token
     # alone never opens another member's private media.
     if not _media_visible(db, viewer_id, file_id):

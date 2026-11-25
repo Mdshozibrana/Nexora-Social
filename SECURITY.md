@@ -332,15 +332,34 @@ Implemented. Phase 164 fixes every gap (report:
 - 🟡 H4: RLS policies + `nexora_app` role written
   (`code/migrations/phase164_rls.sql`,
   `code/migrations/phase164_rls_role.sql`) — NOT live-enabled.
-  Remaining owner steps, in order: (1) create the role with the
-  role script (needs the DB owner password from Render);
-  (2) point the service's DATABASE_URL at the `nexora_app` role;
-  (3) add `SET LOCAL app.current_user_id / app.is_admin` per
-  session in `get_db` (the policies read these — without them the
-  policies deny everything); (4) verify on staging with a
-  read/write smoke pass before enabling on production. RLS was
-  NOT tested locally: the suites run SQLite, and no local
-  Postgres exists in the sandbox.
+  Phase 186 (Nov 25, 2026) finished step (3) in code: every DB
+  session carries the caller's identity (`SET LOCAL
+  app.current_user_id / app.is_admin`) via a contextvar +
+  `after_begin` listener in `app/db.py` (SET LOCAL dies at COMMIT,
+  so it is re-applied at every transaction begin), bound in
+  `current_user` / `/auth` / `/media` / `/p/{id}`, in all 6 bot
+  handlers, and as the system identity in the sweeper, auto-backup,
+  security log and video-upload job. The role script was fixed to
+  grant DML on all 52 current tables (Phase 164 listed 44; the 8
+  Phases 170–185 tables were missing). `create_all()` /
+  `_migrate()` now survive a permission refusal (42501) at boot
+  with a loud log — the app role has no DDL, so migrations become
+  an owner-run step. Step (4) was done LOCALLY, not on staging:
+  a Postgres 16 scratch DB smoke pass (32/32 probes —
+  `~/workspace/nexora_designs/phase186_smoke.py`) verified the
+  policy matrix (own/private/DM/admin/no-vars), write denial,
+  identity surviving COMMIT, and a clean `app.main` import under
+  the app role with RLS live; it also caught two real bugs (the
+  permission check read psycopg2's `pgcode` while the app runs
+  psycopg3's `sqlstate`, and CREATE TABLE IF NOT EXISTS does fail
+  without CREATE privilege). Remaining owner steps, in order:
+  (1) create the role with the role script; (2) point the
+  service's DATABASE_URL at the `nexora_app` role and confirm the
+  app still works; (3) run the policies file as the owner;
+  (4) verify with the cross-user probe. Exact commands, rollback
+  (`phase186_rollback.sql`) and the role password are in
+  `~/workspace/nexora_designs/phase186_production_steps.md`.
+  RLS is NOT live on production until those run.
 - ✅ M1: Dependabot (`.github/dependabot.yml`, pip, weekly) +
   monthly `pip-audit` run documented; `pip-audit` run 21 Nov 2026:
   no known vulnerabilities.
@@ -360,5 +379,12 @@ Owner steps still open after Phase 164 (do not claim done):
    generated secret), then enroll via the Admin Panel's
    "Show setup code" — until then TOTP stays dormant.
 3. Turn on Telegram two-step verification on the owner's account.
-4. H4 live enablement (the 4 steps above) — only when the owner
-   chooses to; the app is safe without it (query-level scoping).
+4. H4 live enablement — the code half is done (Phase 186: session
+   variables in every DB session, role script fixed to 52 tables,
+   local Postgres smoke pass 32/32). The production half is owner
+   steps in `~/workspace/nexora_designs/phase186_production_steps.md`
+   (create role → repoint DATABASE_URL → run policies → verify,
+   with rollback); only when the owner chooses to. The app is safe
+   without it (query-level scoping), and the production database
+   expires 2026-11-30 — after any migration to a new database the
+   same enablement must be repeated on the new database.

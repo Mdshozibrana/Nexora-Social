@@ -34,8 +34,9 @@ async def _no_poll(app):
 bot_mod.start_bot = _no_poll
 
 from fastapi.testclient import TestClient
-from app.main import (app, SessionLocal, DM_REACTIONS, STORY_TTL,
+from app.main import (app, DM_REACTIONS, STORY_TTL,
                     LEVELS)
+from app.db import SessionLocal
 from app import models
 from app.config import (DAILY_TASKS, MONETIZATION,
                         VERIFICATION_MIN_FOLLOWERS,
@@ -118,7 +119,7 @@ assert not os.path.exists("webapp/assets/mascot-head.webp")
 wrap = HTML[HTML.index('id="mascot-wrap"'):]
 wrap = wrap[:wrap.index("</div>\n</div>") + len("</div>\n</div>")]
 assert "<img" not in wrap
-assert "vendor/three/three.min.js?v=185" in HTML
+assert "vendor/three/three.min.js?v=186" in HTML
 three = open("webapp/vendor/three/three.min.js").read()
 assert len(three) > 500 * 1024, len(three)
 assert "WebGLRenderer" in three and "REVISION" in three
@@ -297,7 +298,7 @@ assert "museum" not in JS.lower() and "museum" not in HTML.lower()
 print("neighbours OK (Blood, Nearby, composer, glassbar, feed photos)")
 
 # 10. Version.
-assert HTML.count("?v=185") == 10, HTML.count("?v=185")
+assert HTML.count("?v=186") == 10, HTML.count("?v=186")
 assert "?v=15" + "5" not in HTML
-assert 'menu_url.rstrip("/") + "/?v=185"' in BOT
+assert 'menu_url.rstrip("/") + "/?v=186"' in BOT
 print("PHASE 156 OK")

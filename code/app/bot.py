@@ -21,7 +21,7 @@ from . import moderation
 from . import notify
 from . import models
 from .config import settings
-from .db import SessionLocal
+from .db import SessionLocal, clear_rls_context, set_rls_context_for
 from .services import (BANNED_WORD_MESSAGE, banned_word_in,
                       register_post, sync_mentions)
 from .users import get_or_create_user
@@ -42,6 +42,8 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             profile_id = int(context.args[0][8:])
         except ValueError:
             profile_id = None
+    # Phase 186 (RLS H4): bind the session to the acting member before the first query — the after_begin listener applies it to every transaction this session opens.
+    set_rls_context_for(tg_user.id)
     db = SessionLocal()
     try:
         user, is_new = get_or_create_user(
@@ -67,6 +69,7 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 db.commit()
     finally:
         db.close()
+        clear_rls_context()
     if banned:
         await update.message.reply_text("This account is suspended.")
         return
@@ -131,6 +134,8 @@ async def _save_media_post(update: Update, ptype: str, file_id: str,
     Same shared service as the Mini App, so first-post points and referral
     qualification work identically."""
     tg_user = update.effective_user
+    # Phase 186 (RLS H4): bind the session to the acting member before the first query — the after_begin listener applies it to every transaction this session opens.
+    set_rls_context_for(tg_user.id)
     db = SessionLocal()
     try:
         user, _ = get_or_create_user(
@@ -188,6 +193,7 @@ async def _save_media_post(update: Update, ptype: str, file_id: str,
         await _finish(f"✅ Posted to {settings.APP_NAME}!{note}")
     finally:
         db.close()
+        clear_rls_context()
 
 
 # Phase 171: Telegram media groups — several photos sent together
@@ -237,6 +243,8 @@ async def _media_group_flush(group_id):
     user_id = entry["user_id"]
     caption = entry["caption"] or ""
     finish = entry["finish"]
+    # Phase 186 (RLS H4): bind the session to the acting member before the first query — the after_begin listener applies it to every transaction this session opens.
+    set_rls_context_for(user_id)
     db = SessionLocal()
     try:
         user = db.get(models.User, user_id)
@@ -283,6 +291,7 @@ async def _media_group_flush(group_id):
             await finish(f"✅ Posted to {settings.APP_NAME}!{note}")
     finally:
         db.close()
+        clear_rls_context()
 
 
 async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -322,6 +331,8 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     caption = (update.message.caption or "").lower()
     if "#profile" in caption:
         tg_user = update.effective_user
+        # Phase 186 (RLS H4): bind the session to the acting member before the first query — the after_begin listener applies it to every transaction this session opens.
+        set_rls_context_for(tg_user.id)
         db = SessionLocal()
         try:
             user, _ = get_or_create_user(
@@ -331,6 +342,7 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             banned = user.is_banned
         finally:
             db.close()
+            clear_rls_context()
         # Phase 97 (audit): this branch skipped BOTH guards the
         # posting route has — a suspended account could still set a
         # profile picture, and the photo became an avatar everywhere
@@ -345,6 +357,8 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text(
                     moderation.block_message("photo", verdict))
                 return
+        # Phase 186 (RLS H4): bind the session to the acting member before the first query — the after_begin listener applies it to every transaction this session opens.
+        set_rls_context_for(tg_user.id)
         db = SessionLocal()
         try:
             user, _ = get_or_create_user(
@@ -355,6 +369,7 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             db.commit()
         finally:
             db.close()
+            clear_rls_context()
         await update.message.reply_text(
             "\u2705 Profile picture updated!")
         return
@@ -450,6 +465,8 @@ async def successful_payment_handler(update: Update,
     payer = update.effective_user
     if payer is None or payer.id != parsed["from"]:
         return
+    # Phase 186 (RLS H4): bind the session to the acting member before the first query — the after_begin listener applies it to every transaction this session opens.
+    set_rls_context_for(payer.id)
     db = SessionLocal()
     try:
         charge = sp.telegram_payment_charge_id
@@ -472,6 +489,7 @@ async def successful_payment_handler(update: Update,
                       post_id=parsed["post"], text=text)
     finally:
         db.close()
+        clear_rls_context()
 
 
 def build_bot_app() -> Application:
@@ -505,7 +523,7 @@ async def start_bot(app: Application):
             # shell version.
             menu_url = settings.WEBAPP_URL
             if "?" not in menu_url:
-                menu_url = menu_url.rstrip("/") + "/?v=185"
+                menu_url = menu_url.rstrip("/") + "/?v=186"
             await app.bot.set_chat_menu_button(
                 menu_button=MenuButtonWebApp(
                     text="Open App",
