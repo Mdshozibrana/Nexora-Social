@@ -13,7 +13,17 @@ import httpx
 
 
 def _public_ip(raw):
-    """First public IP from an X-Forwarded-For chain / client host."""
+    """Last public IP from an X-Forwarded-For chain / client host.
+
+    Phase 181 (audit M11): aligned to the ONE rule _client_ip()
+    in main.py uses — the last hop. The first entry is
+    client-chosen and spoofable (proxies append without
+    stripping), so trusting it would let anyone pick the IP
+    their country is looked up from. (The caller passes the
+    single IP _client_ip() already resolved, so in practice
+    this sees one address; the chain handling is the contract.)
+    """
+    last = None
     for part in (raw or "").split(","):
         ip = part.strip()
         if not ip:
@@ -23,8 +33,8 @@ def _public_ip(raw):
         except ValueError:
             continue
         if addr.is_global:
-            return ip
-    return None
+            last = ip
+    return last
 
 
 async def lookup_country(raw_ip):

@@ -134,6 +134,13 @@ RATE_LIMITS = {
     # Phase 158: skill swap — add/remove/connect.
     "skills": (120, 3600),
     "payout_admin": (120, 3600),
+    # Phase 181 (audit H10/M10): TOTP verify attempts — 5 per
+    # 15 min per admin; the sliding window IS the lockout (it
+    # expires on its own, so the owner can never be locked out
+    # permanently) — plus one shared budget for every mutating
+    # admin endpoint.
+    "totp_verify": (5, 900),
+    "admin_mutation": (120, 3600),
     # Phase 172: story highlights — create/rename/delete/add.
     "highlights": (120, 3600),
     # Phase 179 (audit M4): read/discovery budgets. Generous on

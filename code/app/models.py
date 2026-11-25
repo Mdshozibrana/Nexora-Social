@@ -637,6 +637,10 @@ class Broadcast(Base):
     sent_at = Column(DateTime, default=datetime.utcnow, index=True)
     delivered_count = Column(Integer, default=0, nullable=False)
     total_count = Column(Integer, default=0, nullable=False)
+    # Phase 181 (audit M9): per-target delivery tracking — JSON
+    # list of telegram_ids already sent/processed, so a retry /
+    # resume skips them instead of DMing the same members twice.
+    delivered_targets = Column(Text, default="[]", nullable=False)
 
 
 class Tip(Base):

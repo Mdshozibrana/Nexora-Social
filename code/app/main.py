@@ -364,6 +364,17 @@ def _client_ip(request) -> str:
     # X-Forwarded-For entry — the first entry is client-chosen and
     # spoofable, so trusting it let anyone dodge the per-IP /auth
     # budget by rotating fake values.
+    # Phase 181 (audit M11): the audit proposed the FIRST public
+    # IP (standard XFF semantics), but the in-repo rule is
+    # last-hop (SECURITY.md, test_phase164) and the first entry
+    # is attacker-controlled whenever the edge does not strip
+    # client-sent XFF — Render sits behind Cloudflare, which
+    # appends without stripping — so flipping to first-public
+    # would reopen the exact /auth-budget bypass H2 closed. The
+    # rule stays last-hop and geoip.py is aligned to it instead.
+    # Residual: members behind one Cloudflare edge share one
+    # auth_ip bucket key; the correct fix needs trusted-proxy
+    # ranges, not a naive flip.
     fwd = request.headers.get("x-forwarded-for") or ""
     if fwd:
         return fwd.split(",")[-1].strip()
@@ -6085,7 +6096,8 @@ def admin_totp_status(admin: models.User = Depends(admin_user_bootstrap)):
 @app.get("/admin/totp/setup")
 def admin_totp_setup(request: Request,
                      x_init_data: str = Header(default=""),
-                     admin: models.User = Depends(admin_user_bootstrap)):
+                     admin: models.User = Depends(admin_user_bootstrap),
+                     db: Session = Depends(get_db)):
     """Phase 164 (H1): enrollment — returns the otpauth URL for the
     env-stored secret so the owner can add it to his authenticator
     app. A secret-revealing GET, so it needs fresh initData even
@@ -6099,6 +6111,13 @@ def admin_totp_setup(request: Request,
     import pyotp
     uri = pyotp.TOTP(secret).provisioning_uri(
         name="Nexora Admin", issuer_name="Nexora Social")
+    # Phase 181 (audit H10): every fetch is audit-logged (who +
+    # when) — the secret value itself is NEVER written to the log.
+    # The endpoint KEEPS returning the secret: it is the owner
+    # recovery path (Phase 166 removed the client display only).
+    _audit(db, admin, "totp_setup_fetch",
+           detail="TOTP setup fetched (secret not logged)")
+    db.commit()
     return {"otpauth_url": uri, "secret": secret}
 
 
@@ -6115,10 +6134,18 @@ def admin_totp_verify(body: TotpVerifyIn,
     code = (body.code or "").strip().replace(" ", "")
     if not code.isdigit() or len(code) != 6:
         raise HTTPException(400, "Enter the 6-digit code")
+    # Phase 181 (audit H10): 5 attempts per 15 min per admin —
+    # the sliding window IS the lockout (it expires on its own,
+    # so the owner can never be locked out permanently);
+    # _enforce_rate logs the 429 as a security event.
+    _enforce_rate("totp_verify", f"a{admin.telegram_id}")
     if not pyotp.TOTP(secret).verify(code, valid_window=1):
         sec_log.warning("totp verify failed for admin %s", admin.telegram_id)
         log_security_event(db, "auth_reject", actor_id=admin.telegram_id,
                            detail="TOTP code rejected")
+        _audit(db, admin, "totp_verify_failed",
+               detail="TOTP code rejected")
+        db.commit()
         raise HTTPException(400, "Wrong code — try again")
     _totp_mark_verified(admin.telegram_id)
     _audit(db, admin, "totp_verified", detail="Admin TOTP verified")
@@ -6134,6 +6161,7 @@ class BanIn(BaseModel):
 @app.post("/admin/ban")
 def admin_ban(body: BanIn, admin: models.User = Depends(moderator_user),
               db: Session = Depends(get_db)):
+    _enforce_rate("admin_mutation", f"a{admin.telegram_id}")
     if body.banned and (body.telegram_id == OFFICIAL_ID
                         or body.telegram_id in settings.ADMIN_IDS):
         raise HTTPException(400, "The official account and admins cannot be banned")
@@ -6314,6 +6342,7 @@ def set_earnings_rate(body: RateIn,
                       admin: models.User = Depends(admin_user),
                       db: Session = Depends(get_db)):
     """Save the owner-set rate the Earning Panel estimates with."""
+    _enforce_rate("admin_mutation", f"a{admin.telegram_id}")
     row = db.get(models.AppSetting, "ad_rate_per_1000")
     if row is None:
         row = models.AppSetting(key="ad_rate_per_1000")
@@ -6509,6 +6538,7 @@ def admin_create_fake_users(body: FakeUserIn,
     Act-as (see _resolve_act_as). IDs live in a reserved 9.000.000.00x
     range that real Telegram accounts do not use, so a managed account
     can never collide with, or be confused for, a real member."""
+    _enforce_rate("admin_mutation", f"a{admin.telegram_id}")
     name = body.first_name.strip()
     if not name:
         raise HTTPException(400, "A name is required")
@@ -6583,6 +6613,7 @@ def admin_posts(limit: int = 30, admin: models.User = Depends(moderator_user),
 @app.post("/admin/posts/{post_id}/remove")
 def admin_remove_post(post_id: int, admin: models.User = Depends(moderator_user),
                       db: Session = Depends(get_db)):
+    _enforce_rate("admin_mutation", f"a{admin.telegram_id}")
     p = db.get(models.Post, post_id)
     if p is None or p.is_deleted:
         raise HTTPException(404, "Post not found")
@@ -6666,6 +6697,7 @@ class ResolveIn(BaseModel):
 def admin_resolve_report(report_id: int, body: ResolveIn,
                          admin: models.User = Depends(moderator_user),
                          db: Session = Depends(get_db)):
+    _enforce_rate("admin_mutation", f"a{admin.telegram_id}")
     r = db.get(models.Report, report_id)
     if r is None:
         raise HTTPException(404, "Report not found")
@@ -6715,54 +6747,83 @@ def _broadcast_targets(db, target):
 class BroadcastIn(BaseModel):
     text: str = Field(max_length=4000)
     target: str = "all"
+    # Phase 181 (audit M9): resume a broadcast that was cut short
+    # (crash/restart mid-send) — targets already in the row's
+    # delivered_targets are skipped, never DM'd twice.
+    broadcast_id: Optional[int] = None
 
 
 @app.post("/admin/broadcast")
 async def admin_broadcast(body: BroadcastIn,
                           admin: models.User = Depends(admin_user),
                           db: Session = Depends(get_db)):
-    text = body.text.strip()
-    if not text:
-        raise HTTPException(400, "Broadcast text is empty")
-    if body.target not in _BROADCAST_TARGETS:
-        raise HTTPException(400, "Unknown broadcast target")
-    targets = _broadcast_targets(db, body.target)
-    # The history row is recorded first, so a broadcast is never
-    # lost even if sending fails part-way through.
-    row = models.Broadcast(text=text, target=body.target,
-                           sent_by=admin.telegram_id,
-                           total_count=len(targets))
-    db.add(row)
-    db.flush()
+    # Phase 181 (audit M9/M10): one shared admin-mutation budget.
+    _enforce_rate("admin_mutation", f"a{admin.telegram_id}")
+    if body.broadcast_id is not None:
+        # Resume: the row already exists (committed before the
+        # first delivery), so reuse its text/target and skip the
+        # members it already reached.
+        row = db.get(models.Broadcast, body.broadcast_id)
+        if row is None or row.sent_by != admin.telegram_id:
+            raise HTTPException(404, "Broadcast not found")
+        text = row.text
+        targets = _broadcast_targets(db, row.target)
+    else:
+        text = body.text.strip()
+        if not text:
+            raise HTTPException(400, "Broadcast text is empty")
+        if body.target not in _BROADCAST_TARGETS:
+            raise HTTPException(400, "Unknown broadcast target")
+        targets = _broadcast_targets(db, body.target)
+        # The history row is COMMITTED first, before any DM goes
+        # out — a crash/restart mid-broadcast no longer rolls the
+        # row back while Telegram DMs already sent stay sent.
+        row = models.Broadcast(text=text, target=body.target,
+                               sent_by=admin.telegram_id,
+                               total_count=len(targets))
+        db.add(row)
+        db.commit()
+    try:
+        delivered = set(json.loads(row.delivered_targets or "[]"))
+    except (ValueError, TypeError):
+        delivered = set()
     sent = 0
     for u in targets:
+        if u.telegram_id in delivered:
+            # Already reached by an earlier attempt — never DM
+            # (or re-row) the same member twice.
+            continue
         # Phase 144: a member who turned off System
-        # notifications does not get the admin broadcast (they
+        # notifications does not get the admin broadcast DM (they
         # still count in total_count — they were a target,
         # just not sent).
-        if not notify.notif_allowed(db, u.telegram_id,
-                                   "broadcast"):
-            continue
-        try:
-            ok = await notify.send_message(u.telegram_id, text)
-        except Exception:
-            ok = False
-        if ok:
-            sent += 1
-            db.add(models.NotificationLog(user_id=u.telegram_id,
-                                           type="broadcast"))
-        # Phase 20: the announcement also lands in the in-app 🔔 list,
-        # including for managed accounts (they have no Telegram chat
-        # to DM) — recorded for every target, DM or not.
-        db.add(models.Notification(
-            user_id=u.telegram_id, type="announcement",
-            text=text[:250]))
-    row.delivered_count = sent
+        if notify.notif_allowed(db, u.telegram_id, "broadcast"):
+            try:
+                ok = await notify.send_message(u.telegram_id, text)
+            except Exception:
+                ok = False
+            if ok:
+                sent += 1
+                db.add(models.NotificationLog(user_id=u.telegram_id,
+                                               type="broadcast"))
+        # Phase 181 (audit M14): the in-app row goes through
+        # record()'s gating, not a direct add — a member who
+        # turned System off gets no announcement in the in-app
+        # list either. Managed accounts still get the row (they
+        # have no Telegram chat to DM); record() commits, which
+        # also commits the NotificationLog above.
+        notify.record(db, u.telegram_id, "announcement",
+                      text=text[:250])
+        delivered.add(u.telegram_id)
+        row.delivered_targets = json.dumps(sorted(delivered))
+        row.delivered_count = sent
+        db.commit()
     _audit(db, admin, "broadcast",
-           detail=f"{body.target}: {sent}/{len(targets)} delivered")
+           detail=f"{row.target}: {sent}/{len(targets)} delivered "
+                  f"this attempt, {len(delivered)}/{len(targets)} total")
     db.commit()
     return {"recipients": len(targets), "sent": sent,
-            "broadcast_id": row.id}
+            "delivered": len(delivered), "broadcast_id": row.id}
 
 
 @app.get("/admin/broadcasts")
@@ -6959,6 +7020,7 @@ async def admin_verification_decide(
         request_id: int, body: VerifyDecideIn,
         admin: models.User = Depends(admin_user),
         db: Session = Depends(get_db)):
+    _enforce_rate("admin_mutation", f"a{admin.telegram_id}")
     req = db.get(models.VerificationRequest, request_id)
     if req is None:
         raise HTTPException(404, "Application not found")
@@ -7096,6 +7158,7 @@ class ProfileEditIn(BaseModel):
 def admin_adjust_points(telegram_id: int, body: PointsAdjustIn,
                         admin: models.User = Depends(admin_user),
                         db: Session = Depends(get_db)):
+    _enforce_rate("admin_mutation", f"a{admin.telegram_id}")
     u = db.get(models.User, telegram_id)
     if u is None:
         raise HTTPException(404, "Member not found")
@@ -7119,6 +7182,7 @@ def admin_adjust_points(telegram_id: int, body: PointsAdjustIn,
 def admin_verify_toggle(telegram_id: int, body: VerifyToggleIn,
                         admin: models.User = Depends(admin_user),
                         db: Session = Depends(get_db)):
+    _enforce_rate("admin_mutation", f"a{admin.telegram_id}")
     if telegram_id == OFFICIAL_ID:
         raise HTTPException(
             400, "The official account is always verified")
@@ -7135,6 +7199,7 @@ def admin_verify_toggle(telegram_id: int, body: VerifyToggleIn,
 def admin_edit_profile(telegram_id: int, body: ProfileEditIn,
                        admin: models.User = Depends(admin_user),
                        db: Session = Depends(get_db)):
+    _enforce_rate("admin_mutation", f"a{admin.telegram_id}")
     u = db.get(models.User, telegram_id)
     if u is None:
         raise HTTPException(404, "Member not found")
@@ -7160,6 +7225,7 @@ def admin_edit_profile(telegram_id: int, body: ProfileEditIn,
 def admin_delete_member(telegram_id: int,
                         admin: models.User = Depends(admin_user),
                         db: Session = Depends(get_db)):
+    _enforce_rate("admin_mutation", f"a{admin.telegram_id}")
     if telegram_id == OFFICIAL_ID:
         raise HTTPException(
             400, "The official account cannot be deleted")
@@ -7198,6 +7264,7 @@ def admin_comments(admin: models.User = Depends(moderator_user),
 def admin_comment_remove(comment_id: int,
                          admin: models.User = Depends(moderator_user),
                          db: Session = Depends(get_db)):
+    _enforce_rate("admin_mutation", f"a{admin.telegram_id}")
     cm = db.get(models.Comment, comment_id)
     if cm is None:
         raise HTTPException(404, "Comment not found")
@@ -7605,6 +7672,7 @@ def delete_design(design_id: int,
 def admin_delete_design(design_id: int,
                         admin: models.User = Depends(moderator_user),
                         db: Session = Depends(get_db)):
+    _enforce_rate("admin_mutation", f"a{admin.telegram_id}")
     design = db.get(models.Design, design_id)
     if design is None:
         raise HTTPException(404, "Design not found")
@@ -7626,6 +7694,7 @@ def admin_revoke_sessions(telegram_id: int,
     """Invalidate every initData issued to this member so far (a
     leaked login string dies immediately) without banning them:
     reopening the app issues fresh initData and they are back in."""
+    _enforce_rate("admin_mutation", f"a{admin.telegram_id}")
     u = db.get(models.User, telegram_id)
     if u is None:
         raise HTTPException(404, "Member not found")
@@ -7722,6 +7791,7 @@ def admin_banned_word_add(body: BannedWordIn,
                           db: Session = Depends(get_db)):
     """Phase 142: ban one word (lowercased, stripped). The add
     is audit-logged; a duplicate is a 400."""
+    _enforce_rate("admin_mutation", f"a{admin.telegram_id}")
     word = (body.word or "").strip().lower()
     if not word:
         raise HTTPException(400, "A word is required")
@@ -7744,6 +7814,7 @@ def admin_banned_word_remove(word_id: int,
                              admin: models.User = Depends(admin_user),
                              db: Session = Depends(get_db)):
     """Phase 142: unban one word (audit-logged)."""
+    _enforce_rate("admin_mutation", f"a{admin.telegram_id}")
     row = db.get(models.BannedWord, word_id)
     if row is None:
         raise HTTPException(404, "Word not found")
@@ -7906,6 +7977,7 @@ def admin_maintenance_set(body: MaintenanceIn,
     "maintenance"). The env flag still wins when set; the
     middleware exempts this route, so the panel can always switch
     the site back on."""
+    _enforce_rate("admin_mutation", f"a{admin.telegram_id}")
     row = db.get(models.AppSetting, "maintenance")
     if row is None:
         row = models.AppSetting(key="maintenance", value="")
@@ -7937,6 +8009,7 @@ def admin_announcement_set(body: AnnouncementIn,
                            db: Session = Depends(get_db)):
     """Set (or clear, with empty text) the app-wide announcement
     banner. Shown on every member's feed until cleared."""
+    _enforce_rate("admin_mutation", f"a{admin.telegram_id}")
     text = (body.text or "").strip()
     row = db.get(models.AppSetting, "announcement")
     if row is None:
@@ -8012,6 +8085,7 @@ async def admin_verify_by_username(body: VerifyByUsernameIn,
     notification. The official account (@nexora) can never change
     through here. A real change notifies the member, like the
     verification-approval grant does."""
+    _enforce_rate("admin_mutation", f"a{admin.telegram_id}")
     if body.action not in ("grant", "revoke"):
         raise HTTPException(400, "Action must be 'grant' or 'revoke'")
     name = _normalize_username(body.username)
@@ -8243,9 +8317,14 @@ def _backup_pack(payload: dict, prefix="nexora-full-backup"):
 
 
 def _backup_unpack(raw):
-    """Phase 164 (M2): accept both encrypted and plaintext backups.
-    Fernet tokens start with the version byte 0x80 (base64 'gAAAAA');
-    anything else parses as plain JSON. Raises 400 on bad input."""
+    """Phase 164 (M2) + Phase 181 (audit M7): Fernet tokens start
+    with the version byte 0x80 (base64 'gAAAAA') and are
+    decrypted; anything else is plaintext JSON — accepted ONLY
+    when no key is configured (backups are plaintext then, and
+    pre-164 plaintext backups exist). When a key IS configured,
+    restores are encrypted-only: a plaintext payload has no
+    authenticity check and is rejected with 400. Raises 400 on
+    bad input."""
     if isinstance(raw, str):
         raw = raw.encode()
     if raw[:6] == b"gAAAAA":
@@ -8259,6 +8338,12 @@ def _backup_unpack(raw):
         except Exception:
             raise HTTPException(400, "Could not decrypt this backup — "
                                      "wrong key?")
+    elif _backup_fernet() is not None:
+        # Phase 181 (audit M7): encrypted-only while a key is
+        # configured — see the docstring.
+        raise HTTPException(
+            400, "Encrypted backup required — this server has "
+                 "BACKUP_ENCRYPTION_KEY configured")
     try:
         payload = json.loads(raw.decode("utf-8"))
     except Exception:
@@ -8356,10 +8441,17 @@ def _restore_backup(db: Session, payload: dict) -> dict:
 
 
 @app.get("/admin/backup")
-def admin_backup(admin: models.User = Depends(admin_user),
+def admin_backup(request: Request,
+                 x_init_data: str = Header(default=""),
+                 admin: models.User = Depends(admin_user),
                  db: Session = Depends(get_db)):
     """Admin-only full-site backup download (Phase 107; Phase 164:
-    encrypted with BACKUP_ENCRYPTION_KEY when configured)."""
+    encrypted with BACKUP_ENCRYPTION_KEY when configured).
+    Phase 181 (audit H11): a full-DB download needs fresh 5-minute
+    step-up, like the TOTP setup GET — the 24 h window alone is not
+    enough for the whole database. Other admin GETs stay on the
+    24 h window (documented residual)."""
+    _require_admin_fresh(request, x_init_data, force=True)
     _enforce_rate("backup", f"a{admin.telegram_id}")
     payload = _backup_payload(db)
     total = sum(len(v) for v in payload["tables"].values())
@@ -8429,17 +8521,30 @@ def admin_restore(body: RestoreIn,
             400, "Switch back to your own account to restore")
     if body.confirm != "RESTORE":
         raise HTTPException(400, "Type RESTORE to confirm the restore")
+    # Phase 181 (audit M7): the budget runs FIRST — before any
+    # size check, decrypt or unpack — so repeated huge payloads
+    # cannot burn CPU unthrottled. (The cheap confirm / act-as
+    # guards above it stay first: a mistyped confirmation is
+    # not a restore attempt.)
+    _enforce_rate("restore", f"a{admin.telegram_id}")
     if body.backup_encrypted:
-        if len(body.backup_encrypted) > 70_000_000:
+        if len(body.backup_encrypted) > _BACKUP_MAX_BYTES:
             raise HTTPException(413, "Backup file is too large (max 50 MB)")
         payload = _backup_unpack(body.backup_encrypted)
     elif body.backup is not None:
+        # Phase 181 (audit M7): encrypted-only when a key is
+        # configured — _backup_unpack enforces the same rule for
+        # the string path. Without a key, plaintext is the only
+        # format backups come in, so it stays accepted.
+        if _backup_fernet() is not None:
+            raise HTTPException(
+                400, "Encrypted backup required — this server has "
+                     "BACKUP_ENCRYPTION_KEY configured")
         if len(json.dumps(body.backup, ensure_ascii=False)) > _BACKUP_MAX_BYTES:
             raise HTTPException(413, "Backup file is too large (max 50 MB)")
         payload = body.backup
     else:
         raise HTTPException(400, "Pick a backup file first")
-    _enforce_rate("restore", f"a{admin.telegram_id}")
     try:
         counts = _restore_backup(db, payload)
     except HTTPException:
@@ -8449,8 +8554,16 @@ def admin_restore(body: RestoreIn,
         db.rollback()
         raise HTTPException(400, "Restore failed — nothing was changed")
     total = sum(counts.values())
+    if body.backup is not None:
+        # Phase 181 (audit M7): plaintext restores happen only
+        # when no key is configured — loud, and on the audit row.
+        sec_log.warning(
+            "plaintext backup restored by admin %s — no "
+            "BACKUP_ENCRYPTION_KEY configured", admin.telegram_id)
     _audit(db, admin, "backup_restore",
-           detail=f"{total} rows across {len(counts)} tables")
+           detail=f"{total} rows across {len(counts)} tables"
+                  + (" (plaintext — no key configured)"
+                     if body.backup is not None else ""))
     db.commit()
     return {"restored": counts}
 
@@ -8459,12 +8572,16 @@ def admin_restore(body: RestoreIn,
 def admin_backup_status(admin: models.User = Depends(admin_user),
                         db: Session = Depends(get_db)):
     """Phase 132: when was the last backup / restore? Derived from
-    the audit log — the newest backup_download / backup_send entry
-    (kind download or send) and the newest backup_restore entry.
+    the audit log — the newest backup_download / backup_send /
+    auto_backup_send entry (kind download, send or auto) and the
+    newest backup_restore entry. Phase 181 (audit M8): a working
+    weekly auto-backup counts as a backup, so the panel stops
+    warning ">7 days — take one now" when only auto-backups ran.
     Each is null when no such entry exists yet. No new table."""
     last_backup = db.query(models.AdminAuditLog) \
         .filter(models.AdminAuditLog.action.in_(
-            ("backup_download", "backup_send"))) \
+            ("backup_download", "backup_send",
+             "auto_backup_send"))) \
         .order_by(models.AdminAuditLog.id.desc()).first()
     last_restore = db.query(models.AdminAuditLog) \
         .filter(models.AdminAuditLog.action == "backup_restore") \
@@ -8474,6 +8591,7 @@ def admin_backup_status(admin: models.User = Depends(admin_user),
             if last_backup and last_backup.created_at else None,
         "last_backup_kind": (
             "download" if last_backup.action == "backup_download"
+            else "auto" if last_backup.action == "auto_backup_send"
             else "send") if last_backup else None,
         "last_restore_at": last_restore.created_at.isoformat()
             if last_restore and last_restore.created_at else None,
@@ -8509,6 +8627,7 @@ def admin_auto_backup_set(body: AutoBackupIn,
     """Phase 141: flip the weekly auto-backup on/off (admin-only).
     The setting lives in app_settings, so it rides the normal
     backup and survives restarts."""
+    _enforce_rate("admin_mutation", f"a{admin.telegram_id}")
     _set_app_setting(db, "auto_backup_enabled",
                      "1" if body.enabled else "0")
     _audit(db, admin,
@@ -8595,11 +8714,19 @@ async def media_proxy(file_id: str, request: Request,
         try:
             info = await client.get(f"{api}/getFile",
                                     params={"file_id": file_id})
+            if info.status_code != 200:
+                raise HTTPException(404, "File not found")
+            # Phase 181 (audit M6): the extraction sits INSIDE
+            # the try — a 200 with malformed JSON / ok:false / a
+            # missing result is a 404, not a 500 via KeyError /
+            # JSONDecodeError.
+            file_path = info.json()["result"]["file_path"]
+        except HTTPException:
+            raise
+        except (ValueError, KeyError, TypeError, AttributeError):
+            raise HTTPException(404, "File not found")
         except httpx.HTTPError:
             raise HTTPException(404, "File not found")
-        if info.status_code != 200:
-            raise HTTPException(404, "File not found")
-        file_path = info.json()["result"]["file_path"]
     fwd = {}
     if request.headers.get("range"):
         fwd["Range"] = request.headers["range"]
@@ -8610,7 +8737,15 @@ async def media_proxy(file_id: str, request: Request,
     # for every file, which is why posted photos never displayed.
     file_url = f"https://api.telegram.org/file/bot{settings.BOT_TOKEN}/{file_path}"
     req = stream_client.build_request("GET", file_url, headers=fwd)
-    resp = await stream_client.send(req, stream=True)
+    # Phase 181 (audit M6): a transport failure BEFORE headers
+    # is a clean 502, not a bare 500 from the generic handler.
+    # No retry, no resume — the client re-requests if it wants.
+    try:
+        resp = await stream_client.send(req, stream=True)
+    except httpx.HTTPError:
+        await stream_client.aclose()
+        raise HTTPException(
+            502, "Media upstream unavailable — please try again")
     if resp.status_code not in (200, 206):
         await resp.aclose()
         await stream_client.aclose()
@@ -8620,6 +8755,13 @@ async def media_proxy(file_id: str, request: Request,
         try:
             async for chunk in resp.aiter_bytes():
                 yield chunk
+        except httpx.HTTPError:
+            # Phase 181 (audit M6): a mid-stream failure cannot
+            # change the status (headers + 200/206 already sent),
+            # so the stream ends cleanly here instead of aborting
+            # the connection — the client sees a short body, not
+            # a reset. No retry, no resume.
+            return
         finally:
             await resp.aclose()
             await stream_client.aclose()

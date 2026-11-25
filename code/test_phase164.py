@@ -362,7 +362,13 @@ with TestClient(app) as c:
     data, fname, enc = _backup_pack(payload)
     assert enc is True and fname.endswith(".json.enc"), fname
     assert _backup_unpack(data) == payload
-    assert _backup_unpack(json.dumps(payload).encode()) == payload
+    # Phase 181 (audit M7): plaintext is rejected while a key is
+    # configured — restores are encrypted-only then.
+    try:
+        _backup_unpack(json.dumps(payload).encode())
+        raise AssertionError("plaintext must fail while a key is set")
+    except HTTPException as e:
+        assert e.status_code == 400, e.status_code
     settings.BACKUP_ENCRYPTION_KEY = Fernet.generate_key().decode()
     try:
         _backup_unpack(data)
@@ -380,9 +386,11 @@ with TestClient(app) as c:
                json={"confirm": "RESTORE", "backup_encrypted": data.decode()})
     assert r.status_code == 200, r.text
     assert r.json()["restored"]["users"] >= 6, r.json()
+    # Phase 181 (audit M7): the same plaintext dict is rejected
+    # over HTTP while a key is configured (400, encrypted-only).
     r = c.post("/admin/restore", headers=ADMIN,
                json={"confirm": "RESTORE", "backup": payload})
-    assert r.status_code == 200, r.text
+    assert r.status_code == 400, r.text
     enc_path = "/tmp/phase164_test_backup.json.enc"
     out_path = "/tmp/phase164_test_backup.json"
     open(enc_path, "wb").write(data)
@@ -392,12 +400,19 @@ with TestClient(app) as c:
     assert res.returncode == 0, res.stderr
     assert json.load(open(out_path)) == payload
     settings.BACKUP_ENCRYPTION_KEY = ""
+    # Phase 181 (audit M7): with no key configured, the plaintext
+    # dict restores again (backups are plaintext then).
+    r = c.post("/admin/restore", headers=ADMIN,
+               json={"confirm": "RESTORE", "backup": payload})
+    assert r.status_code == 200, r.text
+    assert r.json()["restored"]["users"] >= 6, r.json()
     data3, fname3, enc3 = _backup_pack(payload)
     assert enc3 is False and fname3.endswith(".json"), fname3
     r = c.get("/admin/backup", headers=ADMIN)
     assert r.status_code == 200, r.text
     assert "application/json" in r.headers["content-type"]
-    print("M2 backup encryption OK (pack/unpack/restore/helper/plain fallback)")
+    print("M2 backup encryption OK (pack/unpack/restore/helper/plain fallback; "
+          "Phase 181: plaintext rejected while keyed, accepted with no key)")
 
     # --- H1: TOTP (per-admin second factor) ---
     import pyotp  # noqa: E402
@@ -457,9 +472,9 @@ with TestClient(app) as c:
 
     # --- neighbours + version + routes ---
     html = c.get("/webapp/").text
-    assert html.count("?v=180") == 10, html.count("?v=180")
+    assert html.count("?v=181") == 10, html.count("?v=181")
     assert "?v=16" + "3" not in html
-    assert "app.js?v=180" in html and "style.css?v=180" in html
+    assert "app.js?v=181" in html and "style.css?v=181" in html
     js = c.get("/webapp/app.js").text
     for marker in ("vname-text", "fitVerifiedNames", "totpGateAdmin",
                    "refreshMediaToken", "bloodDistance", "photo_file_id",
@@ -478,7 +493,7 @@ with TestClient(app) as c:
               "/admin/totp/verify"):
         assert p in paths, p
     h = c.get("/admin/health", headers=ADMIN).json()
-    assert h["version"] == 180, h
-    print("neighbours + version + routes OK (166 routes, ?v=180)")
+    assert h["version"] == 181, h
+    print("neighbours + version + routes OK (166 routes, ?v=181)")
 
 print("PHASE 164 OK")

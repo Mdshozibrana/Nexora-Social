@@ -26,7 +26,7 @@ assert "<img" not in wrap, "mascot button must not contain an <img>"
 # 2. The 3D replacement is in place.
 assert 'id="mascot-canvas"' in HTML
 assert 'id="mascot-fallback"' in HTML
-assert "vendor/three/three.min.js?v=180" in HTML
+assert "vendor/three/three.min.js?v=181" in HTML
 assert os.path.exists("webapp/vendor/three/three.min.js")
 assert os.path.getsize("webapp/vendor/three/three.min.js") > 500 * 1024
 assert "Phase 156" in HTML and "Phase 156" in JS and "Phase 156" in CSS
@@ -34,7 +34,7 @@ assert "Phase 155" not in HTML and "Phase 155" not in JS \
     and "Phase 155" not in CSS
 
 # 3. Version.
-assert HTML.count("?v=180") == 10, HTML.count("?v=180")
+assert HTML.count("?v=181") == 10, HTML.count("?v=181")
 assert "?v=15" + "5" not in HTML
 
 print("PHASE 155 (removal guard) OK")
