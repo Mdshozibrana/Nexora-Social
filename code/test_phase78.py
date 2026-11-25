@@ -33,8 +33,8 @@ MAIN = open("app/main.py").read()
 
 # --- client + wiring contract ------------------------------------
 for bit in ('data-go="nearby"', 'id="view-nearby"', 'id="nearby-map"',
-            'id="nearby-toggle"', "vendor/leaflet/leaflet.js?v=181",
-            "vendor/leaflet/leaflet.css?v=181"):
+            'id="nearby-toggle"', "vendor/leaflet/leaflet.js?v=182",
+            "vendor/leaflet/leaflet.css?v=182"):
     assert bit in HTML, bit
 for bit in ("function openNearby()", "function stopNearby()",
             '"nearby") openNearby()', "nbLocate", "LocationManager",
@@ -45,7 +45,7 @@ for bit in ("function openNearby()", "function stopNearby()",
 assert "routing.openstreetmap.de" in MAIN  # CSP connect-src
 assert "share_location" in open("app/models.py").read()
 assert '"location": (300, 3600)' in open("app/config.py").read()
-assert "app.js?v=181" in HTML and "style.css?v=181" in HTML
+assert "app.js?v=182" in HTML and "style.css?v=182" in HTML
 import os.path
 assert os.path.getsize("webapp/vendor/leaflet/leaflet.js") > 100000
 print("client + wiring contract OK")
@@ -117,10 +117,12 @@ with TestClient(app) as c:
     ids = [q["id"] for q in r["people"]]
     assert ids == [222], ids  # Carol too far, Dave not sharing, Erin blocked
     bob = r["people"][0]
-    # Fuzz is a day-stable 50-100 m offset (see _fuzz in main.py),
-    # so the shown distance from Alice's ~200 m true distance can
-    # be anywhere in [100, 300]; the old [120, 320] bound failed
-    # on days the fuzz points toward Alice (119 m on 2026-11-20).
+    # Fuzz is a member-stable 50-100 m offset (see _fuzz in
+    # main.py — Phase 182: the same offset every day, no
+    # longer rotating daily), so the shown distance from
+    # Alice's ~200 m true distance can be anywhere in
+    # [100, 300]; the old [120, 320] bound failed when the
+    # fuzz pointed toward Alice (119 m on 2026-11-20).
     # [90, 310] is the guaranteed range plus rounding margin.
     assert 90 <= bob["distance_m"] <= 310, bob
     assert bob["mutual"] is False

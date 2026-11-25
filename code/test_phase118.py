@@ -204,7 +204,7 @@ with TestClient(app) as c:
         assert bit in js, bit
     for bit in (".repost-banner", ".comment-replies", ".reply-chip"):
         assert bit in css, bit
-    for asset in ("style.css?v=181", "app.js?v=181", "games.js?v=181"):
+    for asset in ("style.css?v=182", "app.js?v=182", "games.js?v=182"):
         assert asset in html, asset
     for bit in ("maybeLoadMoreDesigns", "loadRelatedDesigns",
                 "loadMyQr", "showTaskAd", "openPhotoViewer", "pvZoomIn"):

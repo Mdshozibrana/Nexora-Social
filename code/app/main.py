@@ -1245,6 +1245,7 @@ def suggested_users(limit: int = 10, user: models.User = Depends(current_user),
     _enforce_rate("suggested", f"u{user.telegram_id}")
     limit = max(1, min(int(limit or 10), 20))
     hidden = _block_related_ids(db, user.telegram_id)
+    muted = _muted_ids(db, user.telegram_id)
     following_ids = {f.following_id for f in db.query(models.Follow)
                      .filter_by(follower_id=user.telegram_id).all()}
     rows = db.query(models.User).filter_by(is_banned=False).all()
@@ -1255,6 +1256,8 @@ def suggested_users(limit: int = 10, user: models.User = Depends(current_user),
         if cand.telegram_id in following_ids:
             continue
         if cand.telegram_id in hidden:
+            continue
+        if cand.telegram_id in muted:
             continue
         followers = db.query(models.Follow).filter_by(
             following_id=cand.telegram_id).count()
@@ -3889,6 +3892,37 @@ def my_hashtags(user: models.User = Depends(current_user),
 BLOOD_GROUPS = ("A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-")
 
 
+# Phase 182 (audit H13): a phone number must never reach a
+# request card — the Blood page rule is "contact happens only
+# by DM, never by phone" (Phase 151). A value is phone-like
+# when one run of phone characters (digits, spaces, dashes,
+# parentheses, dots, optional leading +) holds 7+ digits.
+# Bengali digits ০-৯ are normalised first, so ০১৭১২৩৪৫৬৭৮
+# counts the same as 01712345678. Date-like substrings
+# (2026-11-25) are removed before the scan so a date in a
+# note is not mistaken for a number. Short fragments pass:
+# "DM me" (no digits), "ward 3", "bed 12" (under 7 digits).
+_BN_DIGIT_TRANS = str.maketrans("০১২৩৪৫৬৭৮৯", "0123456789")
+_DATE_LIKE_RE = re.compile(
+    r"\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2}[-/]\d{4}")
+_PHONE_RUN_RE = re.compile(r"\+?\d[\d\s\-().]*\d")
+
+
+def _looks_phone_like(value):
+    """True when a free-text value looks like a phone number
+    (see the note above _BN_DIGIT_TRANS). Used on CREATE to
+    reject, and on READ to mask values stored before the fix."
+    """
+    if not value:
+        return False
+    text = str(value).translate(_BN_DIGIT_TRANS)
+    text = _DATE_LIKE_RE.sub(" ", text)
+    for m in _PHONE_RUN_RE.finditer(text):
+        if sum(ch.isdigit() for ch in m.group(0)) >= 7:
+            return True
+    return False
+
+
 def _blood_donor_out(u, distance_km=None):
     """A directory row: name + group + country + profile photo —
     never a phone number, never a precise location. distance_km
@@ -3916,11 +3950,14 @@ def _blood_visible_donors(db, viewer_id):
     donors only to their followers (Phase 136), never anyone in
     a block pair (feed rule)."""
     hidden = _block_related_ids(db, viewer_id)
+    muted = _muted_ids(db, viewer_id)
     rows = db.query(models.User).filter(
         models.User.blood_donor == True,
-        models.User.blood_group.isnot(None)).all()
+        models.User.blood_group.isnot(None),
+        models.User.is_banned == False).all()
     visible = [u for u in rows
                if u.telegram_id not in hidden
+               and u.telegram_id not in muted
                and _can_see_posts(db, viewer_id, u.telegram_id)]
     visible.sort(key=lambda u: (u.created_at or datetime.min,
                                 u.telegram_id), reverse=True)
@@ -3938,7 +3975,12 @@ def _blood_request_out(db, r, viewer_id):
             "city": r.city,
             "units": r.units,
             "note": r.note or "",
-            "contact": r.contact or "",
+            # Phase 182 (audit H13): a phone-like contact
+            # stored before the CREATE rejection landed is
+            # masked to "" here, so it never renders on a
+            # request card. The stored row is untouched.
+            "contact": ("" if _looks_phone_like(r.contact)
+                        else (r.contact or "")),
             "status": r.status,
             "created_at": r.created_at.isoformat() if r.created_at else None,
             "fulfilled_at": (r.fulfilled_at.isoformat()
@@ -4033,6 +4075,9 @@ async def create_blood_request(body: BloodRequestIn,
         raise HTTPException(400, "Units must be 1-10")
     note = (body.note or "").strip()
     contact = (body.contact or "").strip() or None
+    if contact is not None and _looks_phone_like(contact):
+        raise HTTPException(
+            400, "phone numbers aren't allowed — contact happens by DM")
     bad = banned_word_in(db, " ".join(
         [hospital, city, note, contact or ""]))
     if bad:
@@ -4085,9 +4130,12 @@ def list_blood_requests(group: str = "", status: str = "open",
         q = q.filter(models.BloodRequest.blood_group == g)
     rows = q.order_by(models.BloodRequest.id.desc()).all()
     hidden = _block_related_ids(db, user.telegram_id)
+    muted = _muted_ids(db, user.telegram_id)
     out = []
     for r in rows:
         if r.author_id in hidden:
+            continue
+        if r.author_id in muted:
             continue
         if not _can_see_posts(db, user.telegram_id, r.author_id):
             continue
@@ -4110,6 +4158,16 @@ async def respond_blood_request(req_id: int,
         raise HTTPException(400, "You cannot respond to your own request")
     if req.status != "open":
         raise HTTPException(400, "This request is no longer open")
+    # Phase 182 (audit H12): the same checks Skill Connect
+    # uses — a person the author blocked (or who blocked the
+    # author), or a non-follower of a private author, is
+    # refused BEFORE any notification is sent. Donor status
+    # is NOT required to respond (matches Skill Connect).
+    if (_blocked_by(db, req.author_id, user.telegram_id)
+            or _blocked_by(db, user.telegram_id, req.author_id)):
+        raise HTTPException(403, "This member is not available")
+    if not _can_see_posts(db, user.telegram_id, req.author_id):
+        raise HTTPException(403, "This member is not available")
     await notify.notify_user(
         db, req.author_id, "blood_respond",
         f"🩸 {user.first_name} wants to donate {req.blood_group} "
@@ -4209,6 +4267,7 @@ def _skill_members(db, viewer_id, q=None, kind=None, skill=None):
     exact (case-insensitive) skill name; kind restricts to teach
     or learn entries. Returns [(user, [entries])]."""
     hidden = _block_related_ids(db, viewer_id)
+    muted = _muted_ids(db, viewer_id)
     rows = db.query(models.SkillEntry).order_by(
         models.SkillEntry.id.desc()).all()
     qlow = (q or "").strip().lower() or None
@@ -4226,10 +4285,14 @@ def _skill_members(db, viewer_id, q=None, kind=None, skill=None):
     for user_id, entries in by_user.items():
         if user_id in hidden:
             continue
+        if user_id in muted:
+            continue
         if not _can_see_posts(db, viewer_id, user_id):
             continue
         u = db.get(models.User, user_id)
         if u is None:
+            continue
+        if u.is_banned:
             continue
         out.append((u, entries))
     out.sort(key=lambda t: max(e.id for e in t[1]), reverse=True)
@@ -4382,6 +4445,10 @@ async def connect_skill_member(user_id: int,
     target = db.get(models.User, user_id)
     if target is None:
         raise HTTPException(404, "User not found")
+    # Phase 182 (audit M20): no connect notification is ever
+    # sent to a suspended account.
+    if target.is_banned:
+        raise HTTPException(403, "This member is not available")
     if _blocked_by(db, user_id, user.telegram_id) or _blocked_by(
             db, user.telegram_id, user_id):
         raise HTTPException(403, "This member is not available")
@@ -4716,8 +4783,11 @@ def search(q: str = "", user: models.User = Depends(current_user),
     users = db.query(models.User).filter(
         (models.User.first_name.ilike(like, escape="\\"))
         | (models.User.username.ilike(like, escape="\\"))).limit(20).all()
-    if hidden:
-        users = [u for u in users if u.telegram_id not in hidden]
+    muted = _muted_ids(db, user.telegram_id)
+    users = [u for u in users
+             if u.telegram_id not in hidden
+             and u.telegram_id not in muted
+             and not u.is_banned]
     return {
         "users": [{
             "telegram_id": u.telegram_id, "first_name": u.first_name,
@@ -4838,11 +4908,18 @@ def leaderboard(user: models.User = Depends(current_user),
             "pts")).filter(models.PointsLedger.amount > 0) \
         .group_by(models.PointsLedger.user_id).subquery()
     lp = func.coalesce(lifetime_sq.c.pts, 0)
-    rows = db.query(models.User, lp.label("lifetime")) \
+    # Phase 182 (audit L15): muted members are hidden from the
+    # viewer here too — the top-50 query and the outsider "me"
+    # rank below both exclude them.
+    muted = _muted_ids(db, user.telegram_id)
+    q = db.query(models.User, lp.label("lifetime")) \
         .outerjoin(lifetime_sq,
                    lifetime_sq.c.uid == models.User.telegram_id) \
-        .filter(models.User.is_banned == False) \
-        .order_by(lp.desc(), models.User.telegram_id).limit(50).all()
+        .filter(models.User.is_banned == False)
+    if muted:
+        q = q.filter(~models.User.telegram_id.in_(muted))
+    rows = q.order_by(lp.desc(),
+                      models.User.telegram_id).limit(50).all()
     out = []
     for u, lifetime in rows:
         pts = int(lifetime or 0)
@@ -4855,11 +4932,14 @@ def leaderboard(user: models.User = Depends(current_user),
     mine = next((r for r in out if r["telegram_id"] == user.telegram_id), None)
     if mine is None:
         my_points = _lifetime_points(db, user.telegram_id)
-        higher = db.query(models.User).join(
+        hq = db.query(models.User).join(
             lifetime_sq,
             lifetime_sq.c.uid == models.User.telegram_id).filter(
             models.User.is_banned == False,
-            lifetime_sq.c.pts > my_points).count()
+            lifetime_sq.c.pts > my_points)
+        if muted:
+            hq = hq.filter(~models.User.telegram_id.in_(muted))
+        higher = hq.count()
         mine = {"rank": higher + 1, "telegram_id": user.telegram_id,
                 "first_name": user.first_name, "username": user.username,
                 "points": my_points,
@@ -5936,8 +6016,19 @@ _NOTIF_PHRASES = {
 def my_notifications(cursor: int = 0, limit: int = 30,
                      user: models.User = Depends(current_user),
                      db: Session = Depends(get_db)):
+    # Phase 182 (audit L15): notifications from a muted actor
+    # are hidden from the viewer — the rows AND the unread
+    # count, so the bell badge cannot inflate from a member
+    # the viewer muted. (DMs are untouched: mute never
+    # changes DM delivery, Phase 174.)
+    muted = _muted_ids(db, user.telegram_id)
     unread = db.query(models.Notification).filter_by(
         user_id=user.telegram_id, is_read=False).count()
+    if muted:
+        unread -= db.query(models.Notification).filter(
+            models.Notification.user_id == user.telegram_id,
+            models.Notification.is_read == False,
+            models.Notification.actor_id.in_(muted)).count()
     q = db.query(models.Notification).filter_by(
         user_id=user.telegram_id)
     if cursor:
@@ -5946,6 +6037,8 @@ def my_notifications(cursor: int = 0, limit: int = 30,
         .limit(max(1, min(limit, 50))).all()
     out = []
     for n in rows:
+        if n.actor_id is not None and n.actor_id in muted:
+            continue
         actor = db.get(models.User, n.actor_id) if n.actor_id else None
         out.append({
             "id": n.id, "type": n.type, "post_id": n.post_id,
@@ -10010,11 +10103,18 @@ def _bearing_deg(lat1, lon1, lat2, lon2):
 
 
 def _fuzz(lat, lon, tid):
-    """A stable 50-100 m offset for one member for one day."""
+    """A stable 50-100 m offset for one member — the SAME
+    offset every day. Phase 182 (audit L20): the seed used
+    to rotate daily ("nx-fuzz:{tid}:{date}"), so averaging
+    positions across days converged toward the true spot.
+    The seed is now derived from the MEMBER id only, so the
+    displayed position is constant over time. One-time
+    effect: everyone's fuzzed position shifts once when
+    this lands. Mutual-exact location is unchanged."""
     import hashlib
     from math import cos, pi, radians, sin
     seed = int(hashlib.sha256(
-        f"nx-fuzz:{tid}:{datetime.utcnow():%Y-%m-%d}".encode()
+        f"nx-fuzz:{tid}".encode()
     ).hexdigest()[:8], 16)
     ang = (seed % 360) * pi / 180.0
     dist = 50 + (seed >> 9) % 51
@@ -10053,6 +10153,7 @@ def nearby(user: models.User = Depends(current_user),
             or user.loc_at is None or user.loc_at < fresh):
         return {"sharing": False, "people": []}
     blocked = _block_related_ids(db, user.telegram_id)
+    muted = _muted_ids(db, user.telegram_id)
     rows = (db.query(models.User)
             .filter(models.User.share_location.is_(True),
                     models.User.loc_at >= fresh,
@@ -10066,6 +10167,13 @@ def nearby(user: models.User = Depends(current_user),
     people = []
     for u in rows:
         if u.telegram_id in blocked or u.lat is None or u.lon is None:
+            continue
+        # Phase 182 (audit L15/L16): muted members never show
+        # on the viewer's map, and a private member shows
+        # only to their followers (same rule as posts).
+        if u.telegram_id in muted:
+            continue
+        if not _can_see_posts(db, user.telegram_id, u.telegram_id):
             continue
         if _haversine_m(user.lat, user.lon, u.lat, u.lon) > 500:
             continue

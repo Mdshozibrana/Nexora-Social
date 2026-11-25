@@ -17,7 +17,7 @@ no-wrap single line would overflow; all five controls present in
 index.html with labels; composer textarea, tip line and feed tabs
 unchanged; JS wiring for all five controls intact; Phase 123
 (drafts) and Phase 135 (scheduled) behaviour still works end to
-end; backup still 42 tables (no schema change); ?v=181 x5.
+end; backup still 42 tables (no schema change); ?v=182 x5.
 """
 import hashlib, hmac, json, os, re, time, urllib.parse
 from datetime import datetime, timedelta
@@ -147,9 +147,9 @@ for tid, tlabel in (("tab-explore", "Explore"),
     assert f'id="{tid}"' in HTML, tid
     assert tlabel in HTML, tlabel
 # Asset version.
-assert HTML.count("?v=181") == 10, HTML.count("?v=181")
+assert HTML.count("?v=182") == 10, HTML.count("?v=182")
 assert "?v=14" + "2" not in HTML
-print("composer HTML OK (5 controls + textarea + tip + tabs + ?v=181)")
+print("composer HTML OK (5 controls + textarea + tip + tabs + ?v=182)")
 
 # 4. JS wiring for all five controls + Phase 123/135 markers intact.
 for expr in ('$("composer-media").onclick',

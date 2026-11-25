@@ -589,6 +589,10 @@ function nbEnsureMap() {
 // silently: no token -> "not set up yet", no photo nearby
 // -> "no photo here yet", viewer fails -> static photo +
 // one honest line. Attribution is required (CC BY-SA 4.0):
+// Phase 182 (audit M21/L18): lookup budget is 9 s total
+// (radius, then bbox only with time left); 401/403 from a
+// bad/revoked token shows an honest "couldn't load" line,
+// not "no photo here"; fetches really abort on timeout.
 // "© Mapillary contributors" + the photo's creator/date +
 // a "View on Mapillary" link ride with every picture.
 const NB_SV_GRAPH = "https://graph.mapillary.com/images";
@@ -625,33 +629,71 @@ function nbSVPickNearest(lat, lon, imgs) {
   return best;
 }
 
+// Phase 182 (audit L18): the timeout ABORTS the fetch — the
+// old Promise.race only stopped waiting while the request
+// kept running in the background.
 function nbFetchTimeout(url, ms) {
-  return Promise.race([fetch(url),
-    new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), ms))]);
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), ms);
+  return fetch(url, { signal: ctl.signal })
+    .finally(() => clearTimeout(timer));
 }
 
+// Phase 182 (audit M21/L18): the lookup has ONE overall
+// budget (NB_SV_LOOKUP_BUDGET_MS) — a radius attempt first
+// (at most NB_SV_ATTEMPT_MS), then a bbox attempt only with
+// whatever budget is left, so the no-imagery answer lands
+// in ~9 s instead of ~16 s (two 8 s attempts). Returns the
+// nearest image, null when the API answered OK with no
+// imagery, {auth: true} on HTTP 401/403 (a bad/revoked
+// token is a setup problem, not an empty map), or
+// {error: true} when the lookup itself failed (timeout /
+// network / other HTTP error). The 10 s viewer race in
+// nbSVOpen is unchanged.
 async function nbSVLookup(lat, lon) {
+  // Lookup budget lives HERE (not at module scope) so the
+  // Phase 149 node harness, which extracts this function
+  // alone, still runs it.
+  const NB_SV_LOOKUP_BUDGET_MS = 9000;
+  const NB_SV_ATTEMPT_MS = 5000;
   const tok = nbSVToken();
   if (!tok) return null;
   const base = NB_SV_GRAPH + "?access_token=" + encodeURIComponent(tok) +
     "&fields=" + NB_SV_FIELDS;
+  const deadline = Date.now() + NB_SV_LOOKUP_BUDGET_MS;
+  const left = () => Math.max(0, deadline - Date.now());
+  const get = async (url) => {
+    const r = await nbFetchTimeout(
+      url, Math.min(NB_SV_ATTEMPT_MS, left()));
+    if (r.status === 401 || r.status === 403) return { auth: true };
+    // Explicit `ok === false` only: a Response-like without ok
+    // (the Phase 149 harness mock) must not read as an error;
+    // real fetch always sets ok.
+    if (r.ok === false) return { error: true };
+    return r.json();
+  };
   try {
-    let r = await nbFetchTimeout(base + "&lat=" + lat + "&lng=" + lon +
-      "&radius=50&limit=5", 8000);
-    let j = await r.json();
+    let j = await get(base + "&lat=" + lat + "&lng=" + lon +
+      "&radius=50&limit=5");
+    if (j && (j.auth || j.error)) return j;
     let imgs = (j && j.data) || [];
-    if (!imgs.length) {
+    if (!imgs.length && left() > 0) {
       // Radius search is capped at 50 m; widen to a small
       // bbox (0.003 deg square — far under the 0.01 deg API
       // limit) and take the nearest of those.
       const d = 0.0015;
       const bbox = [lon - d, lat - d, lon + d, lat + d].join(",");
-      r = await nbFetchTimeout(base + "&bbox=" + bbox + "&limit=10", 8000);
-      j = await r.json();
+      j = await get(base + "&bbox=" + bbox + "&limit=10");
+      if (j && (j.auth || j.error)) return j;
       imgs = (j && j.data) || [];
     }
     return nbSVPickNearest(lat, lon, imgs);
-  } catch (e) { return null; }
+  } catch (e) {
+    // Timeout / network failure: not "no photo here" — the
+    // lookup itself failed, so the caller shows the honest
+    // line instead.
+    return { error: true };
+  }
 }
 
 function nbSVAttribution(img) {
@@ -703,6 +745,16 @@ async function nbSVOpen(lat, lon, label) {
   }
   nbSVShowNote("Looking for a street-level photo…");
   const img = await nbSVLookup(lat, lon);
+  if (img && img.auth) {
+    nbSVShowNote("Couldn't load Street View — access was refused. "
+      + "The Mapillary token may be invalid or revoked.");
+    return;
+  }
+  if (img && img.error) {
+    nbSVShowNote("Couldn't load Street View right now — "
+      + "check your connection and try again.");
+    return;
+  }
   if (!img) {
     nbSVShowNote("No street-level photo here yet.");
     return;
@@ -988,8 +1040,11 @@ async function nbRefresh() {
 async function nbRoute(q, silent) {
   if (!nbPos || (!nbMap && !nbML)) return;
   nbTarget = q.id;
+  // Phase 182 (audit L17): the FOOT profile — the URL used
+  // to say driving on the routed-foot service while the label
+  // says "Walking route" and the PRD says foot routing.
   const url = "https://routing.openstreetmap.de/routed-foot/route/v1/" +
-    "driving/" + nbPos.lon + "," + nbPos.lat + ";" + q.lon + "," +
+    "foot/" + nbPos.lon + "," + nbPos.lat + ";" + q.lon + "," +
     q.lat + "?overview=full&geometries=geojson";
   let pts = null, dist = q.distance_m, dur = null;
   try {
