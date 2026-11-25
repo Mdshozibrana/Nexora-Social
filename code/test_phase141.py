@@ -13,7 +13,7 @@ logs a server_error security event + audit auto_backup_failed,
 leaves last_run unchanged, and retries fine on the next check;
 the auto run does NOT consume the manual backup 10/h budget
 (10 manual downloads still succeed, the 11th hits 429);
-backup-status reports last_auto_backup_at; ?v=177 x5;
+backup-status reports last_auto_backup_at; ?v=178 x5;
 auto-backup client markers + Phase 123-140 markers intact.
 
 Survey note: settings live in the AppSetting key-value table
@@ -224,7 +224,7 @@ with TestClient(app) as c:
 
     # 8. Client markers + asset version.
     html = open("webapp/index.html").read()
-    assert html.count("?v=177") == 10, html.count("?v=177")
+    assert html.count("?v=178") == 10, html.count("?v=178")
     assert "?v=14" + "0" not in html
     js = open("webapp/app.js").read()
     for m in ("loadAutoBackup", "auto-backup-toggle", "auto-backup-line",
@@ -256,6 +256,6 @@ with TestClient(app) as c:
               "search-tag-follow", "hashtag-card", "hashtag-row",
               "followedTags", "/me/hashtags", "/feed/hashtags"):
         assert m in js, m
-    print("client markers + ?v=177 OK")
+    print("client markers + ?v=178 OK")
 
 print("ALL PHASE 141 CHECKS PASSED")

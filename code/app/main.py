@@ -1268,12 +1268,15 @@ def post_dict(db, p, liked=False, saved=False, views=None,
         orig = db.get(models.Post, p.repost_of_id)
         if orig is None or orig.is_deleted:
             return None
-        # Phase 177: a repost must not leak a blocked author's
-        # post — either block direction hides the card. The
-        # repost row is never deleted; unblocking restores it.
-        if viewer_id is not None and (
-                _blocked_by(db, orig.user_id, viewer_id)
-                or _blocked_by(db, viewer_id, orig.user_id)):
+        # Phase 178 (audit H3): a repost must not leak a
+        # private or muted author's post either — the same
+        # three rules the /feed keep-loop already applies to
+        # repost originals (block either way, muted, private
+        # non-followed), now in the one place every display
+        # surface shares. The repost row is never deleted;
+        # unblocking / unmuting / following restores it.
+        if viewer_id is not None and not _post_visible_to(
+                db, viewer_id, orig):
             return None
         d = post_dict(db, orig, liked=liked, saved=saved,
                       views=views, reposted_by_me=reposted_by_me,
@@ -1506,6 +1509,32 @@ def _muted_by(db, muter_id, user_id):
     """Phase 174: True when muter_id has muted user_id."""
     return db.query(models.Mute).filter_by(
         muter_id=muter_id, muted_id=user_id).first() is not None
+
+
+def _post_visible_to(db, viewer_id, p):
+    """Phase 178: does viewer_id see this post card at all?
+    The EFFECTIVE author (a repost resolves to its
+    original) must not be block-related to the viewer in
+    either direction, must not be muted by the viewer, and
+    — for a private author — must be followed by the viewer.
+    viewer_id None means no viewer context (bot/admin echo
+    paths): visible. Own posts always pass: _can_see_posts
+    is True for self, and nobody blocks or mutes themself."""
+    if viewer_id is None:
+        return True
+    eff_id = getattr(p, "repost_of_id", None) or p.id
+    eff = db.get(models.Post, eff_id) if eff_id != p.id else p
+    if eff is None or eff.is_deleted:
+        return False
+    author_id = eff.user_id
+    if author_id == viewer_id:
+        return True
+    if (_blocked_by(db, author_id, viewer_id)
+            or _blocked_by(db, viewer_id, author_id)):
+        return False
+    if _muted_by(db, viewer_id, author_id):
+        return False
+    return _can_see_posts(db, viewer_id, author_id)
 
 
 class PollIn(BaseModel):
@@ -2678,6 +2707,14 @@ def my_saved(user: models.User = Depends(current_user),
         .filter(models.SavedPost.user_id == user.telegram_id,
                 models.Post.is_deleted == False) \
         .order_by(models.SavedPost.id.desc()).limit(50).all()
+    # Phase 178 (audit H5): saved ORIGINAL posts get the
+    # same visibility rules as the feed — blocked (either
+    # way), muted, or private-and-not-followed authors stay
+    # hidden. (Repost rows are covered by post_dict's own
+    # check; _media_visible alone is not relied on — it
+    # gates media, not text.)
+    rows = [p for p in rows
+            if _post_visible_to(db, user.telegram_id, p)]
     return {"posts": _post_list(db, rows, user.telegram_id)}
 
 
@@ -2778,6 +2815,11 @@ def get_collection(cid: int,
         .filter(models.SavedCollectionPost.collection_id == cid,
                 models.Post.is_deleted == False) \
         .order_by(models.SavedCollectionPost.id.desc()).limit(50).all()
+    # Phase 178 (audit H5): same visibility filter as Saved —
+    # a collection must not resurrect a post the viewer may
+    # no longer see (blocked / muted / private author).
+    rows = [p for p in rows
+            if _post_visible_to(db, user.telegram_id, p)]
     out = _collection_dict(db, coll)
     out["posts"] = _post_list(db, rows, user.telegram_id)
     return out
@@ -2954,6 +2996,19 @@ def comment_dict(db, cm, reply_count=0, replies=None,
 def list_comments(post_id: int, user: models.User = Depends(current_user),
                   db: Session = Depends(get_db)):
     p = get_live_post(db, post_id)
+    # Phase 178 (audit H5): comments are readable only when
+    # the post itself is visible to the viewer — a blocked
+    # author (either direction) or a private author the
+    # viewer does not follow 404s, exactly like the
+    # single-post view (effective author for repost rows).
+    eff_id = p.repost_of_id or p.id
+    eff = db.get(models.Post, eff_id) if eff_id != p.id else p
+    if (eff is None or eff.is_deleted
+            or _blocked_by(db, eff.user_id, user.telegram_id)
+            or _blocked_by(db, user.telegram_id, eff.user_id)
+            or not _can_see_posts(db, user.telegram_id,
+                                  eff.user_id)):
+        raise HTTPException(404, "Post not found")
     # Second-pass audit (R1): this was the one unbounded list in the
     # API — a post with tens of thousands of comments returned all
     # of them at once. Now the LATEST 500, in reading order.
@@ -2973,6 +3028,13 @@ def list_comments(post_id: int, user: models.User = Depends(current_user),
     if muted:
         tops = [cm for cm in tops if cm.user_id not in muted]
         replies = [r for r in replies if r.user_id not in muted]
+    # Phase 178: comments by a member block-related to the
+    # viewer (either direction) are hidden too — a blocked
+    # parent takes its replies with it, as muted parents do.
+    hidden = _block_related_ids(db, user.telegram_id)
+    if hidden:
+        tops = [cm for cm in tops if cm.user_id not in hidden]
+        replies = [r for r in replies if r.user_id not in hidden]
     by_parent = {}
     for r in replies:
         by_parent.setdefault(r.parent_id, []).append(r)
@@ -3107,7 +3169,17 @@ def public_profile(telegram_id: int, user: models.User = Depends(current_user),
         raise HTTPException(404, "User not found")
     # R5: a member who blocked you cannot be viewed by you — the
     # profile simply does not exist from your side.
-    if _blocked_by(db, telegram_id, user.telegram_id):
+    # Phase 178 (audit H1): same the other way — a viewer who
+    # blocked the target gets a plain 404, not the full
+    # profile (bio, points, blood group, skills, photo/cover
+    # all stay hidden). A minimal flag-only 200 was
+    # considered and rejected: openProfile reads first_name /
+    # followers / following_count unconditionally, so it
+    # would render a blank name and "undefined followers"
+    # before the Unblock button; Unblock stays available via
+    # Settings -> blocked list (GET /me/blocked).
+    if (_blocked_by(db, telegram_id, user.telegram_id)
+            or _blocked_by(db, user.telegram_id, telegram_id)):
         raise HTTPException(404, "User not found")
     followers = db.query(models.Follow).filter_by(following_id=telegram_id).count()
     if telegram_id == OFFICIAL_ID:
@@ -4334,8 +4406,12 @@ def create_report(body: ReportIn, user: models.User = Depends(current_user),
 def user_posts(telegram_id: int, cursor: int = 0,
                user: models.User = Depends(current_user),
                db: Session = Depends(get_db)):
+    # Phase 178 (audit H1): the guard was one-direction —
+    # a viewer who blocked the target still got the full
+    # post list. Both directions 404 now.
     if db.get(models.User, telegram_id) is None \
-            or _blocked_by(db, telegram_id, user.telegram_id):
+            or _blocked_by(db, telegram_id, user.telegram_id) \
+            or _blocked_by(db, user.telegram_id, telegram_id):
         raise HTTPException(404, "User not found")
     # Phase 136: a private account's posts are locked to
     # non-followers — the list comes back empty with a flag.
@@ -5035,6 +5111,13 @@ def get_post(post_id: int,
     eff_id = p.repost_of_id or p.id
     eff = db.get(models.Post, eff_id) if eff_id != p.id else p
     if eff is None or eff.is_deleted:
+        raise HTTPException(404, "Post not found")
+    # Phase 178 (audit H1): a blocked author's post 404s for
+    # both sides — the blocker and the blocked — same as a
+    # deleted post. Checked before the private rule so a
+    # blocked private author 404s instead of 403ing.
+    if (_blocked_by(db, eff.user_id, user.telegram_id)
+            or _blocked_by(db, user.telegram_id, eff.user_id)):
         raise HTTPException(404, "Post not found")
     if not _can_see_posts(db, user.telegram_id, eff.user_id):
         raise HTTPException(403, "This account is private")

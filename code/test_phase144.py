@@ -34,7 +34,7 @@ Covers:
   loadSettings with all six sections, notification toggle rows,
   themeCard/dataCard reuse, wallet form ids, neighbouring
   markers intact; backup still 42 tables (one TEXT column, no
-  new table); ?v=177 x5, no older shell version; source guard (no BOOLEAN
+  new table); ?v=178 x5, no older shell version; source guard (no BOOLEAN
   DEFAULT 0 anywhere in the new code).
 """
 import hashlib, hmac, json, os, re, time, urllib.parse
@@ -383,7 +383,7 @@ with TestClient(app) as c:
     HTML = open("webapp/index.html").read()
     JS = open("webapp/app.js").read()
     CSS = open("webapp/style.css").read()
-    assert HTML.count("?v=177") == 10, HTML.count("?v=177")
+    assert HTML.count("?v=178") == 10, HTML.count("?v=178")
     assert "?v=14" + "3" not in HTML
     for m in ("view-settings", "settings-box", "⚙️ Settings",
               'data-go="settings"', "Settings</span>"):
@@ -411,7 +411,7 @@ with TestClient(app) as c:
               "tab-hashtags", "loadAutoBackup", "openStoryViewers",
               "themeCard", "dataCard", "rainCard", "loadMe"):
         assert m in JS, m
-    print("client markers + ?v=177 OK")
+    print("client markers + ?v=178 OK")
 
     # 10b. SCOPE UPDATE (owner 2026-11-18 23:39): Me keeps only
     # name, photo, bio, cover and posts — nothing else renders there.

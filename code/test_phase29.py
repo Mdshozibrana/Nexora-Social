@@ -134,12 +134,12 @@ with TestClient(app) as c:
     # A third member is unaffected.
     feed_c = [p["id"] for p in c.get("/feed", headers=hC).json()["posts"]]
     assert pa["id"] in feed_c and pb["id"] in feed_c
-    # The follow was removed; the blocker still sees the profile
-    # (with the flag), the blocked side gets a plain 404.
+    # The follow was removed; BOTH sides get a plain 404 now
+    # (Phase 178, audit H1 — the blocker no longer gets the
+    # full profile; Unblock lives in Settings -> blocked list).
     prof = c.get("/users/622", headers=hA)
-    assert prof.status_code == 200, prof.status_code
-    assert prof.json()["blocked_by_me"] is True
-    assert prof.json()["following"] is False
+    assert prof.status_code == 404, prof.status_code
+    assert "Boris" not in prof.text, prof.text
     r = c.get("/users/611", headers=hB)
     assert r.status_code == 404, r.status_code
     r = c.get("/users/611/posts", headers=hB)

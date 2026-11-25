@@ -1929,3 +1929,84 @@ returning comments.
 Routes stay 183. Backup tables stay 51.
 Test: test_phase177.py (7 sections, green standalone).
 Full regression: 171/171 green.
+
+## Phase 178 — Visibility I: direct reads (Nov 25, 2026)
+
+The full-site audit (Nov 25) found the block / private / mute
+rules were enforced on the feed but not on direct-ID reads.
+This phase fixes the three High findings in that class (H1,
+H3, H5); the remaining High items (H2, H4, H6–H8, H9–H17)
+belong to later phases.
+
+Fix (server only, no schema change, no new routes, no client
+change except the version bump):
+- New helper `_post_visible_to(db, viewer_id, post)`: the
+  EFFECTIVE author (a repost resolves to its original) must
+  not be block-related to the viewer in either direction, must
+  not be muted by the viewer, and — for a private author —
+  must be followed by the viewer. No viewer context
+  (viewer_id None, bot/admin echo paths) means visible; own
+  posts always pass.
+- H1 — `GET /posts/{id}`: both-direction block check on the
+  effective author -> 404, placed BEFORE the private 403, so
+  a blocked private author 404s instead of 403ing. Private
+  non-follower still 403s, as before. `GET /users/{id}/posts`
+  and `public_profile`: the 404 guard gains the reverse
+  direction (viewer blocked target) — both directions 404 now.
+- H3 — `post_dict()` repost branch: the old block-only check
+  becomes `not _post_visible_to(...)` — private and muted join
+  block, matching the /feed keep-loop. One check covers every
+  display surface by construction: feed, saved, collections,
+  shared, profile posts, search results, Trending, and the
+  single-post view (which then 404s, as for a gone original).
+- H5 — `GET /posts/{id}/comments`: the post author's block
+  (either direction) and private state now 404, same as the
+  single-post view; comments by members block-related to the
+  viewer (either direction) are filtered out, keeping the
+  existing muted-commenter filter. A blocked parent takes its
+  replies with it, as muted parents do. `/me/saved` and
+  `/saved/collections/{id}`: saved ORIGINAL posts are filtered
+  through `_post_visible_to` before rendering (blocked either
+  way, muted, private non-followed). `_media_visible` alone is
+  NOT relied on — it gates media, not text.
+
+Decisions, recorded here:
+- `public_profile` returns a plain 404 for a viewer who
+  blocked the target — NOT a minimal flag-only 200 response.
+  Reasons: (a) symmetric with the existing direction, which
+  already 404s, and with `user_posts` (404 both ways) — one
+  rule, no direction-dependent shape; (b) a flag-only 200
+  payload renders a broken hero in the current client —
+  openProfile reads `first_name` / `followers` /
+  `following_count` unconditionally, so it would show a blank
+  name and "undefined followers" before the Unblock button,
+  and fixing that needs a client branch, out of this phase's
+  server scope; (c) the Unblock control is not lost —
+  Settings already lists blocked members with an Unblock
+  button (GET /me/blocked), and blocking from a profile keeps
+  the in-memory flag so the button paints without a refetch.
+- No profile content leaks either way: bio, points, blood
+  group, skills, photo/cover are all behind the 404.
+- The repost / saved / collection rows are NEVER deleted.
+  Blocking, muting, or going private hides the card;
+  unblocking / unmuting / following restores it exactly as
+  before. Your own repost of someone you later block hides
+  the same way.
+- test_phase29.py was updated for the intentional behaviour
+  change: it used to assert the blocker still saw the full
+  profile (200 + `blocked_by_me`); it now asserts a plain
+  404 with no name in the body.
+
+Out of scope, noted for a follow-up: accepting a SECOND
+follow request for the same pair 500s (IntegrityError on the
+follow_requests unique key — the old `accepted` row is never
+cleared, so re-requesting after an unfollow/block and then
+accepting collides with it). Found while testing §6 of
+test_phase178.py; the test restores visibility by going
+public instead. Not H1/H3/H5 — needs its own fix. Write
+paths (H2), share creation (H4), story view (H6), hashtag
+search / trending hashtags (H7/H8) are also untouched here.
+
+Routes stay 183. Backup tables stay 51. Shell ?v=178.
+Test: test_phase178.py (9 sections, green standalone).
+Full regression: 172/172 green (run.sh, .ok/.log cleared first).
