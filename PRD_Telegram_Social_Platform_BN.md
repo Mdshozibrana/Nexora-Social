@@ -2010,3 +2010,129 @@ search / trending hashtags (H7/H8) are also untouched here.
 Routes stay 183. Backup tables stay 51. Shell ?v=178.
 Test: test_phase178.py (9 sections, green standalone).
 Full regression: 172/172 green (run.sh, .ok/.log cleared first).
+
+## Phase 179 — Visibility II: actions & discovery (Nov 25, 2026)
+
+The full-site audit (Nov 25) found the block / private / mute
+rules were enforced on reads (Phase 178) but not on write
+paths, sharing, story views, hashtag search / trending
+hashtags, or the media / highlight / public-page mute gaps;
+read endpoints were unthrottled and cursor pagination was
+computed before visibility filtering. This phase fixes those
+High items (H2, H4, H6–H8) and Medium items (M1–M5); the
+remaining audit items (H9–H17, M6–M26) belong to later phases.
+
+Fix (server only, no schema change, no new routes, no client
+change except the version bump):
+- New helper `_require_post_visible(db, viewer_id, post)`: the
+  EFFECTIVE author (a repost resolves to its original) decides.
+  Blocked either way -> 403 "This member is not available"
+  (the write paths' existing convention); private-and-not-
+  followed or muted -> 403 "This post is not available". Own
+  posts always pass; a repost whose original is gone/deleted
+  404s, like the single-post view. The like / save / repost
+  rows are never deleted, so unblocking / unmuting / following
+  restores the toggle.
+- H2 — like, repost, poll vote, save, add-to-collection,
+  comment and view all call the helper on the effective post
+  before acting. A refused view records no PostView row, so
+  Trending velocity cannot be inflated by viewers who cannot
+  see the post. Self-like / self-comment stay allowed (own
+  posts are visible; notifications stay suppressed as before).
+- H4 — `share_post` gains the sharer's own visibility check: a
+  sharer who cannot see the post cannot share it. `my_shared`
+  gains the same `_post_visible_to` filter `/me/saved` uses —
+  the test caught that `post_dict` alone does NOT cover it:
+  `post_dict` hides only reposts of invisible originals, while
+  a shared ORIGINAL renders unconditionally, so a private post
+  shared by a follower to a non-follower displayed in full
+  until this filter landed.
+- H6 — `POST /stories/{sid}/view` gains block (either way) +
+  private (follower-only) + mute checks on the story author,
+  matching `reply_story` / `list_stories`. Blocked or muted ->
+  404 "Story not found"; private non-follower -> 403. Checked
+  before the rate limit and before any StoryView row is
+  written, so a refused viewer never lands in the owner's
+  viewer list. Own stories pass untouched.
+- H7 — hashtag search: mute filter added; the fetch-newest-100-
+  then-filter-in-Python window becomes a DB-level hashtag
+  predicate on the space-joined lowercase `hashtags` column
+  (whole-token match: start / middle / end / alone, so #art
+  never matches #artist; LIKE wildcards escaped with "!" so
+  "_" cannot match any character). Old tagged posts are
+  findable again; the 20-result cap and newest-first order
+  are unchanged.
+- H8 — `GET /trending/hashtags` applies the same exclusions
+  `_trending_ranked` uses for posts: muted authors never trend
+  for the muter, private accounts' posts never trend (Trending
+  is a public surface), so neither inflates tag counts.
+- M1 — `_media_visible` gains the muted check (viewer muted the
+  author -> media not visible) for posts, PostMedia, stories
+  and profile photos, matching the text-level mute rules.
+  Mute is one-directional: the muted author's own view of
+  their own media still passes (explicit self-guard; self-mute
+  is also rejected by the mute endpoint itself).
+- M2 — `_highlight_visible` and `_story_in_visible_highlight`
+  gain the muted check: a muted member's highlight circles and
+  story replays disappear for the muter (PRD Phase 174).
+- M3 — public page `/p/{id}`: an identified viewer who muted
+  the author gets the generic "This post isn't public."
+  notice. A PRESENT-but-invalid/expired `X-Init-Data` header
+  now returns 401 instead of silently falling back to
+  anonymous; an ABSENT header stays anonymous (public browsers
+  carry no identity).
+- M4 — new read/discovery rate buckets (config.py), generous on
+  purpose: feed 600/h (`/feed` + `/feed/hashtags` — the hottest
+  path: tabs, pull-to-refresh, paging, Videos tab), saved 240/h
+  (`/me/saved`, `/saved/collections*` reads, `/me/shared`),
+  post_read 600/h (`GET /posts/{id}` + comments), stories 240/h
+  (`GET /stories`), highlight_read 240/h, user_posts 240/h.
+  Collection / highlight WRITE endpoints are untouched here.
+  Client call patterns were checked before choosing the
+  numbers (feed loads per tab switch / refresh / page; comments
+  load per post open; highlights load per profile open); a
+  normal session stays far below every budget.
+- M5 — `/feed`, `/feed/hashtags`, `user_posts`: the cursor is
+  now computed AFTER visibility filtering — fetch-then-filter
+  in a loop until the page holds 20 kept posts or the source is
+  exhausted, keeping one row past the page as a peek: the
+  cursor is non-null ONLY when a 21st kept post exists, so the
+  client never gets an empty page (not even a trailing one when
+  the total is an exact multiple of 20). The peeked row is not
+  shown — it leads the next page. Ids strictly decrease, so the
+  loop always terminates. Cursor format is unchanged (a post
+  id, as the client already understands). Page one of
+  `user_posts` still leads with the pinned post (Phase 123);
+  later pages exclude it, as before.
+
+Decisions, recorded here:
+- Write-path refusals are 403, not 404: the write paths'
+  existing convention for a blocked author was already 403
+  ("This member is not available"), and the new private/muted
+  refusal reuses the 403 shape with "This post is not
+  available". The read paths keep their own shapes (single-
+  post view: blocked 404, private 403).
+- Story-view refusals split the same way the rest of the app
+  does: blocked / muted means the story does not exist for
+  that viewer (404, like an expired story); private means it
+  exists but is locked (403, like `reply_story`).
+- The public page returns a JSON 401 (FastAPI's HTTPException
+  shape) for a present-but-invalid header, not an HTML page:
+  the page is a share target, and a forged identity is an API
+  error, not a "post isn't public" notice. A legit in-app open
+  always carries fresh initData (Telegram issues it per open),
+  so the strictness costs honest viewers nothing.
+- The M4 budgets are deliberately generous. A too-tight bucket
+  that 429s normal scrolling would be worse than none; the
+  budgets exist to stop scripts, not people.
+
+Out of scope, noted for a follow-up: accepting a SECOND
+follow request for the same pair still 500s (IntegrityError on
+the follow_requests unique key — pre-existing bug documented
+in Phase 178; untouched here). The duplicate
+`_delete_post_cascade` (Phase 184) and the media proxy's
+second upstream call (Phase 181) are untouched here.
+
+Test: test_phase179.py (13 sections, green standalone).
+Full regression: 173/173 green (run.sh, .ok/.log cleared first).
+Routes stay 183. Backup tables stay 51. Shell ?v=179.

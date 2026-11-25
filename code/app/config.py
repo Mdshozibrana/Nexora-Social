@@ -136,6 +136,23 @@ RATE_LIMITS = {
     "payout_admin": (120, 3600),
     # Phase 172: story highlights — create/rename/delete/add.
     "highlights": (120, 3600),
+    # Phase 179 (audit M4): read/discovery budgets. Generous on
+    # purpose — the feed is the hottest path (Explore/Following/
+    # hashtag tabs, pull-to-refresh, "Load more" paging and the
+    # Videos tab all call /feed; comments load per post open;
+    # highlights load per profile open). A normal session stays
+    # far below these; they exist to stop scripts, not people.
+    # feed covers /feed + /feed/hashtags; saved covers /me/saved,
+    # /saved/collections* reads and /me/shared; post_read covers
+    # GET /posts/{id} + GET /posts/{id}/comments; stories covers
+    # GET /stories; highlight_read covers the highlight reads;
+    # user_posts covers GET /users/{id}/posts.
+    "feed": (600, 3600),
+    "saved": (240, 3600),
+    "post_read": (600, 3600),
+    "stories": (240, 3600),
+    "highlight_read": (240, 3600),
+    "user_posts": (240, 3600),
 }
 
 # Points economy (PRD section 5). PLACEHOLDER defaults — these are product

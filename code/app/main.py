@@ -581,12 +581,16 @@ def _story_in_visible_highlight(db, viewer_id, story_id):
     """Phase 172: True when the story sits in a highlight whose
     owner the viewer may see (private-account + block rules apply;
     the story author IS the highlight owner, and the block check
-    already ran in the caller)."""
+    already ran in the caller). Phase 179 (audit M2): a muted
+    highlight owner stays hidden too — muted members' stories
+    disappear from the muter's views (PRD Phase 174)."""
     rows = db.query(models.HighlightStory).filter_by(
         story_id=story_id).all()
     for row in rows:
         h = db.get(models.StoryHighlight, row.highlight_id)
-        if h is not None and _can_see_posts(db, viewer_id, h.user_id):
+        if (h is not None
+                and not _muted_by(db, viewer_id, h.user_id)
+                and _can_see_posts(db, viewer_id, h.user_id)):
             return True
     return False
 
@@ -596,8 +600,11 @@ def _media_visible(db, viewer_id: int, file_id: str) -> bool:
     The file's owner is resolved from the tables that hold it, and
     the same visibility rules the feed uses apply — private-account
     + block rules for posts/profiles, participants-only for DM
-    photos, live-only for stories. Unknown file_ids fail closed
-    (404): a token alone never opens a file."""
+    photos, live-only for stories. Phase 179 (audit M1): mute
+    joins them — a muted author's media never loads for the
+    muter (the muted author's own view of their own media still
+    passes: mute is one-directional). Unknown file_ids fail
+    closed (404): a token alone never opens a file."""
     if not file_id:
         return False
     post = db.query(models.Post).filter(
@@ -608,6 +615,10 @@ def _media_visible(db, viewer_id: int, file_id: str) -> bool:
         if _blocked_by(db, post.user_id, viewer_id) or _blocked_by(
                 db, viewer_id, post.user_id):
             return False
+        # Phase 179 (audit M1): muted author's media is hidden.
+        if (post.user_id != viewer_id
+                and _muted_by(db, viewer_id, post.user_id)):
+            return False
         return _can_see_posts(db, viewer_id, post.user_id)
     pm = db.query(models.PostMedia).filter_by(file_id=file_id).first()
     if pm is not None:
@@ -616,12 +627,22 @@ def _media_visible(db, viewer_id: int, file_id: str) -> bool:
             if _blocked_by(db, post.user_id, viewer_id) or _blocked_by(
                     db, viewer_id, post.user_id):
                 return False
+            # Phase 179 (audit M1): muted author's album media
+            # is hidden too (own media still passes).
+            if (post.user_id != viewer_id
+                    and _muted_by(db, viewer_id, post.user_id)):
+                return False
             return _can_see_posts(db, viewer_id, post.user_id)
     story = db.query(models.Story).filter_by(
         media_file_id=file_id).first()
     if story is not None:
         if _blocked_by(db, story.user_id, viewer_id) or _blocked_by(
                 db, viewer_id, story.user_id):
+            return False
+        # Phase 179 (audit M1): a muted author's story media is
+        # hidden too (own stories still pass).
+        if (story.user_id != viewer_id
+                and _muted_by(db, viewer_id, story.user_id)):
             return False
         if story.created_at is not None and (
                 datetime.utcnow() - story.created_at).total_seconds() > 86400:
@@ -643,6 +664,11 @@ def _media_visible(db, viewer_id: int, file_id: str) -> bool:
     if owner is not None:
         if _blocked_by(db, owner.telegram_id, viewer_id) or _blocked_by(
                 db, viewer_id, owner.telegram_id):
+            return False
+        # Phase 179 (audit M1): a muted member's profile photo /
+        # cover is hidden too (own photo still passes).
+        if (owner.telegram_id != viewer_id
+                and _muted_by(db, viewer_id, owner.telegram_id)):
             return False
         return _can_see_posts(db, viewer_id, owner.telegram_id)
     draft = db.query(models.Draft).filter_by(
@@ -870,6 +896,11 @@ async def auth(body: AuthIn, request: Request,
 @app.get("/feed")
 def feed(tab: str = "explore", type: str = "", cursor: int = 0,
          user: models.User = Depends(current_user), db: Session = Depends(get_db)):
+    # Phase 179 (audit M4): the feed is the hottest read path —
+    # tabs, pull-to-refresh, "Load more" paging and the Videos
+    # tab all call it. 600/h per member is far above a normal
+    # session; it exists to stop scripts, not people.
+    _enforce_rate("feed", f"u{user.telegram_id}")
     q = db.query(models.Post).filter_by(is_deleted=False)
     hidden = _block_related_ids(db, user.telegram_id)
     if hidden:
@@ -905,37 +936,63 @@ def feed(tab: str = "explore", type: str = "", cursor: int = 0,
         ids = [f.following_id for f in
                db.query(models.Follow).filter_by(follower_id=user.telegram_id)]
         q = q.filter(models.Post.user_id.in_(ids or [-1]))
-    if cursor:
-        q = q.filter(models.Post.id < cursor)
-    rows = q.order_by(models.Post.id.desc()).limit(20).all()
-    next_cursor = rows[-1].id if len(rows) == 20 else None
-    # Phase 118: a repost shows its original — and a repost of
-    # a video belongs on the Videos tab, not the main feed
-    # (the Phase 35 rule, applied to the original's type).
+    # Phase 179 (audit M5): the cursor used to be set from
+    # the pre-filter page, so a page could return 0 posts with a
+    # non-null cursor. Fetch-then-filter in a loop instead: keep
+    # pulling 20-row source batches until the page holds 20 kept
+    # posts or the source is exhausted — keeping one row past
+    # the page as a peek, so the cursor is non-null ONLY when a
+    # 21st kept post exists (the client never gets an empty page,
+    # not even a trailing one when the total is an exact multiple
+    # of 20; the peeked row is not shown, it leads the next page).
+    # Ids strictly decrease, so the loop always terminates.
+    # Cursor format is unchanged (a post id, as the client
+    # already understands).
     keep = []
-    for p in rows:
-        if not getattr(p, "repost_of_id", None):
-            keep.append(p)
-            continue
-        orig = db.get(models.Post, p.repost_of_id)
-        if orig is None or orig.is_deleted:
-            continue
-        # Phase 136: a repost must not leak a private author's post.
-        if orig.user_id in blocked_private:
-            continue
-        # Phase 174: nor a muted author's post, reposted by
-        # someone else.
-        if orig.user_id in muted:
-            continue
-        # Phase 177: nor a blocked author's post, reposted by
-        # someone else (either block direction).
-        if orig.user_id in hidden:
-            continue
-        if type in ("photo", "video", "text"):
-            if orig.type == type:
+    next_cursor = None
+    last_examined = cursor
+    exhausted = False
+    while len(keep) < 21 and not exhausted:
+        page_q = q
+        if last_examined:
+            page_q = page_q.filter(models.Post.id < last_examined)
+        batch = page_q.order_by(models.Post.id.desc()).limit(20).all()
+        if not batch:
+            break
+        if len(batch) < 20:
+            exhausted = True
+        # Phase 118: a repost shows its original — and a repost of
+        # a video belongs on the Videos tab, not the main feed
+        # (the Phase 35 rule, applied to the original's type).
+        for p in batch:
+            last_examined = p.id
+            if not getattr(p, "repost_of_id", None):
                 keep.append(p)
-        elif orig.type != "video":
-            keep.append(p)
+            else:
+                orig = db.get(models.Post, p.repost_of_id)
+                if orig is None or orig.is_deleted:
+                    continue
+                # Phase 136: a repost must not leak a private author's post.
+                if orig.user_id in blocked_private:
+                    continue
+                # Phase 174: nor a muted author's post, reposted by
+                # someone else.
+                if orig.user_id in muted:
+                    continue
+                # Phase 177: nor a blocked author's post, reposted by
+                # someone else (either block direction).
+                if orig.user_id in hidden:
+                    continue
+                if type in ("photo", "video", "text"):
+                    if orig.type == type:
+                        keep.append(p)
+                elif orig.type != "video":
+                    keep.append(p)
+            if len(keep) >= 21:
+                break
+    if len(keep) > 20:
+        next_cursor = keep[19].id
+        keep = keep[:20]
     rows = keep
     counts = _post_view_counts(db, rows)
     _warm_authors(db, rows)
@@ -954,6 +1011,9 @@ def hashtag_feed(cursor: int = 0,
     the #tag search. Private authors' posts reach only their
     followers (Phase 136); blocked authors stay hidden; videos
     are excluded, as on the main feed (Phase 35)."""
+    # Phase 179 (audit M4): same "feed" budget as /feed —
+    # the hashtag tab is the same loader, same call pattern.
+    _enforce_rate("feed", f"u{user.telegram_id}")
     tags = {f.tag for f in db.query(models.HashtagFollow).filter_by(
         user_id=user.telegram_id)}
     if not tags:
@@ -986,10 +1046,33 @@ def hashtag_feed(cursor: int = 0,
         q = q.filter(~models.Post.user_id.in_(muted))
     if blocked_private:
         q = q.filter(~models.Post.user_id.in_(blocked_private))
-    if cursor:
-        q = q.filter(models.Post.id < cursor)
-    rows = q.order_by(models.Post.id.desc()).limit(20).all()
-    next_cursor = rows[-1].id if len(rows) == 20 else None
+    # Phase 179 (audit M5): same fetch-then-filter loop as
+    # /feed, so the cursor reflects the post-filter page (with
+    # the same 21st-row peek: non-null only when another kept
+    # post exists). (No Python filter runs here — block/mute/
+    # private are all query-level — so the loop normally ends
+    # after one batch; the shape is kept uniform with /feed.)
+    rows = []
+    next_cursor = None
+    last_examined = cursor
+    exhausted = False
+    while len(rows) < 21 and not exhausted:
+        page_q = q
+        if last_examined:
+            page_q = page_q.filter(models.Post.id < last_examined)
+        batch = page_q.order_by(models.Post.id.desc()).limit(20).all()
+        if not batch:
+            break
+        if len(batch) < 20:
+            exhausted = True
+        for p in batch:
+            last_examined = p.id
+            rows.append(p)
+            if len(rows) >= 21:
+                break
+    if len(rows) > 20:
+        next_cursor = rows[19].id
+        rows = rows[:20]
     counts = _post_view_counts(db, rows)
     _warm_authors(db, rows)
     out = _post_list(db, rows, user.telegram_id, counts=counts)
@@ -1103,8 +1186,9 @@ def trending_hashtags(limit: int = 10,
                       db: Session = Depends(get_db)):
     """Phase 122: most-used hashtags on posts from the last
     7 days, most-used first (ties: alphabetical, so the order
-    is deterministic). Blocked authors and deleted posts are
-    excluded, repost rows carry no hashtags of their own."""
+    is deterministic). Blocked, muted and private authors are
+    excluded, as are deleted posts; repost rows carry no
+    hashtags of their own."""
     _enforce_rate("trending", f"u{user.telegram_id}")
     limit = max(1, min(int(limit or 10), 20))
     hidden = _block_related_ids(db, user.telegram_id)
@@ -1113,6 +1197,16 @@ def trending_hashtags(limit: int = 10,
         models.Post.created_at >= datetime.utcnow() - timedelta(days=7))
     if hidden:
         q = q.filter(~models.Post.user_id.in_(hidden))
+    # Phase 179 (audit H8): the same exclusions _trending_ranked
+    # applies to posts — muted authors never trend for the muter,
+    # and private accounts' posts never trend (Trending is a
+    # public surface), so neither inflates tag counts.
+    muted = _muted_ids(db, user.telegram_id)
+    if muted:
+        q = q.filter(~models.Post.user_id.in_(muted))
+    private_ids = _private_author_ids(db)
+    if private_ids:
+        q = q.filter(~models.Post.user_id.in_(private_ids))
     counts = {}
     for p in q.all():
         for tag in (p.hashtags or "").split():
@@ -1535,6 +1629,28 @@ def _post_visible_to(db, viewer_id, p):
     if _muted_by(db, viewer_id, author_id):
         return False
     return _can_see_posts(db, viewer_id, author_id)
+
+
+def _require_post_visible(db, viewer_id, p):
+    """Phase 179 (audit H2): refuse an ACTION on a post the
+    viewer may not see — the EFFECTIVE author (a repost resolves
+    to its original) decides. Blocked either way -> 403 "This
+    member is not available" (the write paths' existing
+    convention); private-and-not-followed or muted -> 403 "This
+    post is not available". Own posts always pass; a repost
+    whose original is gone/deleted 404s, like the single-post
+    view. The like/save/repost rows are never deleted, so
+    unblocking / unmuting / following restores the toggle."""
+    eff_id = getattr(p, "repost_of_id", None) or p.id
+    eff = db.get(models.Post, eff_id) if eff_id != p.id else p
+    if eff is None or eff.is_deleted:
+        raise HTTPException(404, "Post not found")
+    if eff.user_id != viewer_id and (
+            _blocked_by(db, eff.user_id, viewer_id)
+            or _blocked_by(db, viewer_id, eff.user_id)):
+        raise HTTPException(403, "This member is not available")
+    if not _post_visible_to(db, viewer_id, p):
+        raise HTTPException(403, "This post is not available")
 
 
 class PollIn(BaseModel):
@@ -2103,10 +2219,11 @@ async def toggle_like(post_id: int, user: models.User = Depends(current_user),
                       db: Session = Depends(get_db)):
     _enforce_rate("like", f"u{user.telegram_id}")
     p = get_live_post(db, post_id)
-    if p.user_id != user.telegram_id and (
-            _blocked_by(db, p.user_id, user.telegram_id)
-            or _blocked_by(db, user.telegram_id, p.user_id)):
-        raise HTTPException(403, "This member is not available")
+    # Phase 179 (audit H2): liking needs the same visibility as
+    # reading — blocked either way, muted, or private-and-not-
+    # followed (effective author: a repost resolves to its
+    # original). Self-likes still pass: own posts are visible.
+    _require_post_visible(db, user.telegram_id, p)
     existing = db.query(models.Like).filter_by(
         post_id=p.id, user_id=user.telegram_id).first()
     if existing:
@@ -2140,9 +2257,11 @@ async def toggle_repost(post_id: int, user: models.User = Depends(current_user),
         p = get_live_post(db, p.repost_of_id)
     if p.user_id == user.telegram_id:
         raise HTTPException(400, "You cannot repost your own post")
-    if _blocked_by(db, p.user_id, user.telegram_id) \
-            or _blocked_by(db, user.telegram_id, p.user_id):
-        raise HTTPException(403, "This member is not available")
+    # Phase 179 (audit H2): reposting needs the same visibility
+    # as reading — a private post cannot be reposted by a
+    # non-follower, nor a muted author's post (p is already
+    # resolved to the original above).
+    _require_post_visible(db, user.telegram_id, p)
     existing = db.query(models.Post).filter_by(
         user_id=user.telegram_id, repost_of_id=p.id,
         is_deleted=False).first()
@@ -2619,10 +2738,9 @@ def vote_poll(post_id: int, body: PollVoteIn,
     cannot change it once cast (documented in the PRD)."""
     _enforce_rate("poll_vote", f"u{user.telegram_id}")
     p = get_live_post(db, post_id)
-    if p.user_id != user.telegram_id and (
-            _blocked_by(db, p.user_id, user.telegram_id)
-            or _blocked_by(db, user.telegram_id, p.user_id)):
-        raise HTTPException(403, "This member is not available")
+    # Phase 179 (audit H2): voting needs the same visibility as
+    # reading — blocked, muted, or private-and-not-followed.
+    _require_post_visible(db, user.telegram_id, p)
     poll = db.query(models.Poll).filter_by(post_id=p.id).first()
     if poll is None:
         raise HTTPException(404, "This post has no poll")
@@ -2647,6 +2765,11 @@ def view_post(post_id: int, user: models.User = Depends(current_user),
     One row per (post, viewer): rewatches never inflate the count."""
     _enforce_rate("view", f"u{user.telegram_id}")
     p = get_live_post(db, post_id)
+    # Phase 179 (audit H2): a view is only recorded when the
+    # viewer may see the post — otherwise Trending velocity
+    # could be inflated by viewers who cannot see it. Checked
+    # before recording, so a refused view leaves no PostView row.
+    _require_post_visible(db, user.telegram_id, p)
     counted = _record_view(db, models.PostView, p.id, user.telegram_id)
     return {"views": db.query(models.PostView).filter_by(
         post_id=p.id).count(), "counted": counted}
@@ -2677,6 +2800,10 @@ def toggle_save(post_id: int, user: models.User = Depends(current_user),
                 db: Session = Depends(get_db)):
     """Bookmark toggle behind the video/post options menu (Save)."""
     p = get_live_post(db, post_id)
+    # Phase 179 (audit H2): saving needs the same visibility as
+    # reading — blocked, muted, or private-and-not-followed
+    # (effective author: a repost resolves to its original).
+    _require_post_visible(db, user.telegram_id, p)
     existing = db.query(models.SavedPost).filter_by(
         post_id=p.id, user_id=user.telegram_id).first()
     if existing:
@@ -2702,6 +2829,9 @@ def toggle_save(post_id: int, user: models.User = Depends(current_user),
 @app.get("/me/saved")
 def my_saved(user: models.User = Depends(current_user),
              db: Session = Depends(get_db)):
+    # Phase 179 (audit M4): 240/h per member — the Saved view
+    # loads once per visit, far below this.
+    _enforce_rate("saved", f"u{user.telegram_id}")
     rows = db.query(models.Post).join(
         models.SavedPost, models.SavedPost.post_id == models.Post.id) \
         .filter(models.SavedPost.user_id == user.telegram_id,
@@ -2788,6 +2918,9 @@ def list_collections(post_id: int = 0,
     """Phase 175: my collections, newest first. With ?post_id=N
     each entry also says whether that post is in it (the
     save-to-collection picker)."""
+    # Phase 179 (audit M4): "saved" budget, shared with /me/saved
+    # and /me/shared — the picker loads it per post open.
+    _enforce_rate("saved", f"u{user.telegram_id}")
     rows = db.query(models.SavedCollection).filter_by(
         user_id=user.telegram_id) \
         .order_by(models.SavedCollection.id.desc()).all()
@@ -2808,6 +2941,8 @@ def get_collection(cid: int,
                    db: Session = Depends(get_db)):
     """Phase 175: one collection with its posts (most recently
     added first, deleted posts excluded)."""
+    # Phase 179 (audit M4): "saved" budget (see list_collections).
+    _enforce_rate("saved", f"u{user.telegram_id}")
     coll = _get_my_collection(db, user.telegram_id, cid)
     rows = db.query(models.Post).join(
         models.SavedCollectionPost,
@@ -2861,6 +2996,10 @@ def add_to_collection(cid: int, body: CollectionPostIn,
     no-op, not an error)."""
     coll = _get_my_collection(db, user.telegram_id, cid)
     p = get_live_post(db, body.post_id)
+    # Phase 179 (audit H2): filing needs the same visibility as
+    # reading — checked before the already-filed early return,
+    # so an invisible post cannot be (re-)confirmed as saved.
+    _require_post_visible(db, user.telegram_id, p)
     existing = db.query(models.SavedCollectionPost).filter_by(
         collection_id=cid, post_id=p.id).first()
     if existing:
@@ -2918,6 +3057,11 @@ async def share_post(post_id: int, body: ShareIn,
     Oct 31): it lands in their 'Shared with me' inbox and they get a
     bot notification."""
     p = get_live_post(db, post_id)
+    # Phase 179 (audit H4): the SHARER must see the post too —
+    # sharing by ID was a complete bypass (only the sharer/
+    # recipient block was checked). A sharer who cannot see the
+    # post cannot share it, whatever the recipient may see.
+    _require_post_visible(db, user.telegram_id, p)
     if body.to_user_id == user.telegram_id:
         raise HTTPException(400, "You cannot share to yourself")
     target = db.get(models.User, body.to_user_id)
@@ -2943,6 +3087,12 @@ async def share_post(post_id: int, body: ShareIn,
 @app.get("/me/shared")
 def my_shared(user: models.User = Depends(current_user),
               db: Session = Depends(get_db)):
+    # Phase 179 (audit M4): "saved" budget (see list_collections).
+    # Phase 179 (audit H4): post_dict hides a shared repost of an
+    # invisible original, but a shared ORIGINAL renders
+    # unconditionally — hence the _post_visible_to filter below.
+    # The test proves it end to end.
+    _enforce_rate("saved", f"u{user.telegram_id}")
     shares = db.query(models.PostShare).filter_by(
         to_user_id=user.telegram_id) \
         .order_by(models.PostShare.id.desc()).limit(50).all()
@@ -2950,6 +3100,12 @@ def my_shared(user: models.User = Depends(current_user),
     for s in shares:
         p = db.get(models.Post, s.post_id)
         if p is None or p.is_deleted:
+            continue
+        # Phase 179 (audit H4): post_dict hides only reposts of
+        # invisible originals — a shared ORIGINAL needs the same
+        # visibility check here (as /me/saved does), or a private
+        # post shared by a follower to a non-follower displays.
+        if not _post_visible_to(db, user.telegram_id, p):
             continue
         sender = db.get(models.User, s.from_user_id)
         # Phase 177: resolve reposts with the viewer, so a
@@ -2995,6 +3151,9 @@ def comment_dict(db, cm, reply_count=0, replies=None,
 @app.get("/posts/{post_id}/comments")
 def list_comments(post_id: int, user: models.User = Depends(current_user),
                   db: Session = Depends(get_db)):
+    # Phase 179 (audit M4): "post_read" budget, shared with
+    # GET /posts/{id} — comments load once per post open.
+    _enforce_rate("post_read", f"u{user.telegram_id}")
     p = get_live_post(db, post_id)
     # Phase 178 (audit H5): comments are readable only when
     # the post itself is visible to the viewer — a blocked
@@ -3073,10 +3232,11 @@ async def add_comment(post_id: int, body: CommentIn,
                       db: Session = Depends(get_db)):
     _enforce_rate("comment", f"u{user.telegram_id}")
     p = get_live_post(db, post_id)
-    if p.user_id != user.telegram_id and (
-            _blocked_by(db, p.user_id, user.telegram_id)
-            or _blocked_by(db, user.telegram_id, p.user_id)):
-        raise HTTPException(403, "This member is not available")
+    # Phase 179 (audit H2): commenting needs the same visibility
+    # as reading — blocked, muted, or private-and-not-followed
+    # (effective author: a repost resolves to its original).
+    # Self-comments still pass: own posts are visible.
+    _require_post_visible(db, user.telegram_id, p)
     text = body.text.strip()
     if not text:
         raise HTTPException(400, "Comment text is empty")
@@ -4344,18 +4504,36 @@ def search(q: str = "", user: models.User = Depends(current_user),
         tag = q[1:].lower()
         if not tag:
             return {"users": [], "posts": []}
-        rows = db.query(models.Post).filter_by(is_deleted=False) \
-            .order_by(models.Post.id.desc()).limit(100).all()
-        # Phase 136: hashtag search shows only posts the
-        # viewer may see — a private author's posts stay hidden.
+        # Phase 179 (audit H7): the tag match is a DB-level
+        # predicate now, not a fetch-newest-100-then-filter in
+        # Python — a post with the tag older than the 100 newest
+        # was silently unfindable. hashtags is a space-joined,
+        # lowercased, deduped column (extract_hashtags), so the
+        # tag must match a whole token: start, middle, end, or
+        # alone — #art never matches #artist. LIKE wildcards in
+        # the tag are escaped with "!" so "_" cannot match any
+        # character. Muted authors are excluded too (the feed
+        # and hashtag feed already were); private stays
+        # follower-only (Phase 136).
         private_ids = _private_author_ids(db)
-        followed = {f.following_id for f in
-                    db.query(models.Follow).filter_by(
-                        follower_id=user.telegram_id)} \
-            if private_ids else set()
+        followed = set()
+        if private_ids:
+            followed = {f.following_id for f in
+                        db.query(models.Follow).filter_by(
+                            follower_id=user.telegram_id)}
+        muted = _muted_ids(db, user.telegram_id)
+        esc = tag.replace("!", "!!").replace("%", "!%").replace("_", "!_")
+        col = models.Post.hashtags
+        pred = or_(col == tag,
+                   col.like(esc + " %", escape="!"),
+                   col.like("% " + esc + " %", escape="!"),
+                   col.like("% " + esc, escape="!"))
+        rows = (db.query(models.Post).filter_by(is_deleted=False)
+                .filter(pred)
+                .order_by(models.Post.id.desc()).limit(100).all())
         matched = [p for p in rows
-                   if tag in (p.hashtags or "").split()
-                   and p.user_id not in hidden
+                   if p.user_id not in hidden
+                   and p.user_id not in muted
                    and (p.user_id not in private_ids
                         or p.user_id in followed
                         or p.user_id == user.telegram_id)][:20]
@@ -4406,6 +4584,9 @@ def create_report(body: ReportIn, user: models.User = Depends(current_user),
 def user_posts(telegram_id: int, cursor: int = 0,
                user: models.User = Depends(current_user),
                db: Session = Depends(get_db)):
+    # Phase 179 (audit M4): 240/h per member — profile browsing
+    # opens one list per profile view, far below this.
+    _enforce_rate("user_posts", f"u{user.telegram_id}")
     # Phase 178 (audit H1): the guard was one-direction —
     # a viewer who blocked the target still got the full
     # post list. Both directions 404 now.
@@ -4418,19 +4599,52 @@ def user_posts(telegram_id: int, cursor: int = 0,
     if telegram_id != user.telegram_id and not _can_see_posts(
             db, user.telegram_id, telegram_id):
         return {"posts": [], "next_cursor": None, "locked": True}
-    q = db.query(models.Post).filter_by(user_id=telegram_id, is_deleted=False)
-    if cursor:
-        # Later pages are plain newest-first, and the pinned
-        # post (already shown first on page one) is excluded
-        # so it never appears twice.
-        q = q.filter(models.Post.id < cursor,
-                     models.Post.is_pinned == False)
-        rows = q.order_by(models.Post.id.desc()).limit(20).all()
-    else:
-        # Phase 123: the author's pinned post leads their profile.
-        rows = q.order_by(models.Post.is_pinned.desc(),
-                          models.Post.id.desc()).limit(20).all()
-    next_cursor = rows[-1].id if len(rows) == 20 else None
+    # Phase 179 (audit M5): fetch-then-filter loop, as in
+    # /feed — the cursor used to come from the pre-filter page,
+    # so a page could return 0 posts with a non-null cursor when
+    # post_dict dropped reposts of invisible originals. One row
+    # past the page is kept as a peek: the cursor is non-null
+    # ONLY when a 21st kept post exists. Ids strictly decrease,
+    # so the loop always terminates. Page one still leads with
+    # the pinned post (Phase 123); later pages exclude it, as
+    # before.
+    rows = []
+    next_cursor = None
+    last_examined = cursor
+    exhausted = False
+    while len(rows) < 21 and not exhausted:
+        qq = db.query(models.Post).filter_by(
+            user_id=telegram_id, is_deleted=False)
+        if cursor == 0 and last_examined == 0:
+            # Phase 123: the author's pinned post leads page one.
+            qq = qq.order_by(models.Post.is_pinned.desc(),
+                             models.Post.id.desc())
+        else:
+            # Later pages are plain newest-first, and the pinned
+            # post (already shown first on page one) is excluded
+            # so it never appears twice.
+            qq = qq.filter(models.Post.id < last_examined,
+                           models.Post.is_pinned == False)
+            qq = qq.order_by(models.Post.id.desc())
+        batch = qq.limit(20).all()
+        if not batch:
+            break
+        if len(batch) < 20:
+            exhausted = True
+        for p in batch:
+            last_examined = p.id
+            if getattr(p, "repost_of_id", None):
+                orig = db.get(models.Post, p.repost_of_id)
+                if orig is None or orig.is_deleted:
+                    continue
+                if not _post_visible_to(db, user.telegram_id, orig):
+                    continue
+            rows.append(p)
+            if len(rows) >= 21:
+                break
+    if len(rows) > 20:
+        next_cursor = rows[19].id
+        rows = rows[:20]
     counts = _post_view_counts(db, rows)
     _warm_authors(db, rows)
     return {"posts": _post_list(db, rows, user.telegram_id, counts=counts),
@@ -5099,6 +5313,9 @@ def my_insights(user: models.User = Depends(current_user),
 def get_post(post_id: int,
              user: models.User = Depends(current_user),
              db: Session = Depends(get_db)):
+    # Phase 179 (audit M4): "post_read" budget, shared with
+    # GET /posts/{id}/comments — a single-post view per tap.
+    _enforce_rate("post_read", f"u{user.telegram_id}")
     """One post as a feed-shaped card (Phase 134: the My-insights
     top-posts tap target — the app has no single-post view, so
     the card itself is the view). Any signed-in member may read
@@ -5228,9 +5445,15 @@ def public_post_page(post_id: int, request: Request,
         return _public_not_found(post_id, post_url, image_url)
     viewer_id = None
     if x_init_data:
+        # Phase 179 (audit M3): a PRESENT-but-invalid/expired
+        # header is a 401, not a silent fall back to anonymous —
+        # a forged or stale identity must not degrade to the
+        # anonymous path. An ABSENT header stays anonymous
+        # (public browsers carry no identity).
         tg = validate_init_data(x_init_data, settings.BOT_TOKEN)
-        if tg:
-            viewer_id = tg.get("id")
+        if tg is None:
+            raise HTTPException(401, "Invalid Telegram login")
+        viewer_id = tg.get("id")
     if not _can_see_posts(db, viewer_id or -1, author.telegram_id):
         return _public_notice(post_id, post_url, image_url)
     # Phase 177: either block direction hides the post on the
@@ -5238,6 +5461,11 @@ def public_post_page(post_id: int, request: Request,
     # notice too, same as an author who blocked the viewer.
     if viewer_id and (_blocked_by(db, author.telegram_id, viewer_id)
                       or _blocked_by(db, viewer_id, author.telegram_id)):
+        return _public_notice(post_id, post_url, image_url)
+    # Phase 179 (audit M3): an identified viewer who muted the
+    # author gets the generic notice too — mute hides the post
+    # for the muter on every surface, including this one.
+    if viewer_id and _muted_by(db, viewer_id, author.telegram_id):
         return _public_notice(post_id, post_url, image_url)
     name = html.escape(author.first_name or "Nexora member")
     caption = html.escape(eff.caption or "")
@@ -8600,6 +8828,9 @@ def my_stories(user: models.User = Depends(current_user),
 @app.get("/stories")
 def list_stories(user: models.User = Depends(current_user),
                  db: Session = Depends(get_db)):
+    # Phase 179 (audit M4): 240/h per member — the strip loads
+    # once per Messages view, far below this.
+    _enforce_rate("stories", f"u{user.telegram_id}")
     me = user.telegram_id
     cutoff = datetime.utcnow() - STORY_TTL
     author_ids = {me, OFFICIAL_ID}
@@ -8638,6 +8869,20 @@ def view_story(sid: int, user: models.User = Depends(current_user),
     s = db.get(models.Story, sid)
     if s is None or s.created_at <= datetime.utcnow() - STORY_TTL:
         raise HTTPException(404, "Story not found")
+    # Phase 179 (audit H6): a story is only view-countable when
+    # its author is visible to the viewer — blocked either way
+    # or muted -> 404 (the story does not exist for that viewer),
+    # private-and-not-followed -> 403, matching reply_story /
+    # list_stories. Checked BEFORE the rate limit and before any
+    # StoryView row is written, so a refused viewer never lands
+    # in the owner's viewer list. Own stories pass untouched.
+    if s.user_id != user.telegram_id:
+        if (_blocked_by(db, s.user_id, user.telegram_id)
+                or _blocked_by(db, user.telegram_id, s.user_id)
+                or _muted_by(db, user.telegram_id, s.user_id)):
+            raise HTTPException(404, "Story not found")
+        if not _can_see_posts(db, user.telegram_id, s.user_id):
+            raise HTTPException(403, "This account is private")
     _enforce_rate("view", f"u{user.telegram_id}")
     counted = False
     if s.user_id != user.telegram_id:
@@ -8749,6 +8994,11 @@ def _highlight_visible(db, viewer_id, owner_id):
     if _blocked_by(db, owner_id, viewer_id) or _blocked_by(
             db, viewer_id, owner_id):
         return False
+    # Phase 179 (audit M2): a muted member's highlight circles
+    # disappear for the muter — highlights are a story view
+    # (PRD Phase 174). Own highlights pass: nobody mutes self.
+    if _muted_by(db, viewer_id, owner_id):
+        return False
     return _can_see_posts(db, viewer_id, owner_id)
 
 
@@ -8815,6 +9065,9 @@ def create_highlight(body: HighlightIn,
 def list_highlights(user_id: int,
                     user: models.User = Depends(current_user),
                     db: Session = Depends(get_db)):
+    # Phase 179 (audit M4): "highlight_read" budget — circles
+    # load once per profile open.
+    _enforce_rate("highlight_read", f"u{user.telegram_id}")
     if not _highlight_visible(db, user.telegram_id, user_id):
         return {"highlights": []}
     rows = db.query(models.StoryHighlight).filter_by(
@@ -8827,6 +9080,9 @@ def list_highlights(user_id: int,
 @app.get("/highlights/{hid}")
 def get_highlight(hid: int, user: models.User = Depends(current_user),
                   db: Session = Depends(get_db)):
+    # Phase 179 (audit M4): "highlight_read" budget (see
+    # list_highlights) — one replay load per tap.
+    _enforce_rate("highlight_read", f"u{user.telegram_id}")
     h = db.get(models.StoryHighlight, hid)
     if h is None:
         raise HTTPException(404, "Highlight not found")
