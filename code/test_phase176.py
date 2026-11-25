@@ -206,14 +206,14 @@ print("7. share-link OK")
 # 8. Client markers, version, routes, backup tables.
 assert "Copy public link" in JS, "missing Copy public link row"
 assert "share-link" in JS, "missing share-link call"
-assert HTML.count("?v=183") == 10, HTML.count("?v=183")
+assert HTML.count("?v=184") == 10, HTML.count("?v=184")
 assert "?v=17" + "5" not in HTML
-assert "/?v=183" in BOT and "/?v=17" + "5" not in BOT
+assert "/?v=184" in BOT and "/?v=17" + "5" not in BOT
 paths = set()
 for route in app.routes:
     paths.add(route.path)
 # 2 new unique paths this phase.
-assert len(paths) == 181, len(paths)
+assert len(paths) == 183, len(paths)
 for want in ("/p/{post_id}", "/posts/{post_id}/share-link"):
     assert want in paths, want
 r = c.get("/admin/backup", headers=ADMIN)

@@ -3291,18 +3291,34 @@ async function openSharePicker(p) {
   updateBackButton();
 }
 
-async function loadShared() {
+async function loadShared(more) {
   const box = $("shared-list");
-  box.innerHTML = "Loading…";
+  if (!more) {
+    box.innerHTML = "Loading…";
+    sharedCursor = null;
+  } else {
+    const old = $("shared-more");
+    if (old) old.remove();
+  }
   try {
-    const data = await api("/me/shared");
-    box.innerHTML = "";
+    const data = await api("/me/shared"
+      + (sharedCursor ? "?cursor=" + sharedCursor : ""));
+    if (!more) box.innerHTML = "";
     data.posts.forEach(p => {
       const head = document.createElement("div");
       head.className = "shared-by";
       head.textContent = "📤 Shared by " + p.shared_by_name;
       box.append(head, postCard(p));
     });
+    sharedCursor = data.next_cursor;
+    if (sharedCursor) {
+      const mb = document.createElement("button");
+      mb.id = "shared-more";
+      mb.className = "wide";
+      mb.textContent = "Load more";
+      mb.onclick = () => loadShared(true);
+      box.appendChild(mb);
+    }
     // Phase 66: designs shared via the long-press popup.
     const dd = await api("/me/design-shared");
     const grid = $("shared-designs");
@@ -3318,11 +3334,89 @@ async function loadShared() {
     $("shared-designs-title").hidden = dd.designs.length === 0;
     $("shared-empty").hidden =
       data.posts.length > 0 || dd.designs.length > 0;
-  } catch (e) { box.textContent = "Could not load shared posts."; }
+  } catch (e) {
+    if (!more) box.textContent = "Could not load shared posts.";
+    else setStatus("Could not load more shared posts.");
+  }
+}
+
+// Phase 184 (audit L9): tappable followers / following lists.
+// The profile counts open this sheet (the shared reel-sheet
+// container): avatar + name + follow state per member; tapping
+// a row opens their profile. Private lists stay followers-only
+// and blocked pairs 404 on the server.
+async function openFollowList(userId, kind) {
+  const sheet = $("reel-sheet");
+  sheet.innerHTML = "";
+  const title = document.createElement("div");
+  title.className = "sheet-title";
+  title.textContent = kind === "followers" ? "👥 Followers"
+    : "➡️ Following";
+  sheet.appendChild(title);
+  const list = document.createElement("div");
+  list.id = "follow-list";
+  list.dataset.kind = kind;
+  list.dataset.userId = userId;
+  sheet.appendChild(list);
+  const show = users => {
+    list.innerHTML = "";
+    if (!users.length) {
+      const em = document.createElement("div");
+      em.className = "sheet-row";
+      em.textContent = "Nobody here yet.";
+      list.appendChild(em);
+    }
+    users.forEach(u => {
+      const row = document.createElement("button");
+      row.className = "sheet-row follow-list-row";
+      row.type = "button";
+      row.append(avatarEl(u.first_name, u.telegram_id, false,
+        u.photo_file_id));
+      const nm = document.createElement("span");
+      nm.className = "follow-list-name";
+      nm.textContent = (u.first_name || "Member")
+        + (u.username ? " @" + u.username : "");
+      const st = document.createElement("span");
+      st.className = "follow-list-state";
+      st.textContent = u.telegram_id === (me && me.telegram_id)
+        ? "You" : u.following ? "Following ✓" : "Follow";
+      row.append(nm, st);
+      row.onclick = () => { closeReelMenu(); openProfile(u.telegram_id); };
+      list.appendChild(row);
+    });
+    const cancel = document.createElement("button");
+    cancel.className = "sheet-row";
+    const ic = document.createElement("span");
+    ic.className = "ic";
+    ic.textContent = "✕";
+    cancel.append(ic, document.createTextNode("Cancel"));
+    cancel.onclick = closeReelMenu;
+    sheet.appendChild(cancel);
+    fitVerifiedNames(sheet);
+  };
+  try {
+    const data = await api("/users/" + userId + "/" + kind);
+    show(data.users || []);
+  } catch (e) {
+    list.innerHTML = "";
+    const em = document.createElement("div");
+    em.className = "sheet-row";
+    em.textContent = "Could not load this list.";
+    list.appendChild(em);
+    const cancel = document.createElement("button");
+    cancel.className = "sheet-row";
+    cancel.textContent = "✕ Cancel";
+    cancel.onclick = closeReelMenu;
+    sheet.appendChild(cancel);
+  }
+  $("reel-sheet-wrap").hidden = false;
+  updateBackButton();
 }
 
 // ---------------------------------------------------------------- saved ---
 let savedCollectionOpen = null; // Phase 175: open collection id, or null = All saved
+let savedCursor = null; // Phase 184 (audit L3): Saved "Load more" cursor
+let sharedCursor = null; // Phase 184 (audit L3): Shared "Load more" cursor
 async function loadSavedCollections() {
   const bar = $("saved-collections");
   if (!bar) return;
@@ -3373,20 +3467,37 @@ async function loadSavedCollections() {
     });
   } catch (e) { /* collections stay hidden; All saved still works */ }
 }
-async function loadSaved() {
+async function loadSaved(more) {
   const box = $("saved-list");
-  box.innerHTML = "Loading…";
-  await loadSavedCollections();
+  if (!more) {
+    box.innerHTML = "Loading…";
+    savedCursor = null;
+    await loadSavedCollections();
+  } else {
+    const old = $("saved-more");
+    if (old) old.remove();
+  }
   let shownPosts = 0;
   try {
     if (savedCollectionOpen === null) {
-      const data = await api("/me/saved");
-      box.innerHTML = "";
+      const data = await api("/me/saved"
+        + (savedCursor ? "?cursor=" + savedCursor : ""));
+      if (!more) box.innerHTML = "";
       data.posts.forEach(p => box.appendChild(postCard(p)));
       shownPosts = data.posts.length;
+      savedCursor = data.next_cursor;
+      if (savedCursor) {
+        const mb = document.createElement("button");
+        mb.id = "saved-more";
+        mb.className = "wide";
+        mb.textContent = "Load more";
+        mb.onclick = () => loadSaved(true);
+        box.appendChild(mb);
+      }
     } else {
-      const data = await api("/saved/collections/" + savedCollectionOpen);
-      box.innerHTML = "";
+      const data = await api("/saved/collections/" + savedCollectionOpen
+        + (savedCursor ? "?cursor=" + savedCursor : ""));
+      if (!more) box.innerHTML = "";
       const head = document.createElement("div");
       head.className = "saved-coll-head";
       const nm = document.createElement("span");
@@ -3414,6 +3525,8 @@ async function loadSaved() {
         inp.focus();
       };
       head.appendChild(ren);
+      // Phase 184 (audit L3): on "Load more" the collection head
+      // (name + Rename/Delete) is built but not re-appended.
       const del = document.createElement("button");
       del.textContent = "Delete";
       del.onclick = async () => {
@@ -3431,9 +3544,18 @@ async function loadSaved() {
         }
       };
       head.appendChild(del);
-      box.appendChild(head);
+      if (!more) box.appendChild(head);
       data.posts.forEach(p => box.appendChild(postCard(p)));
       shownPosts = data.posts.length;
+      savedCursor = data.next_cursor;
+      if (savedCursor) {
+        const mb = document.createElement("button");
+        mb.id = "saved-more";
+        mb.className = "wide";
+        mb.textContent = "Load more";
+        mb.onclick = () => loadSaved(true);
+        box.appendChild(mb);
+      }
     }
     // Phase 66: designs saved via the long-press popup's 📌.
     const dd = await api("/me/design-saved");
@@ -3443,7 +3565,10 @@ async function loadSaved() {
     $("saved-designs-title").hidden = dd.designs.length === 0;
     $("saved-empty").hidden =
       shownPosts > 0 || dd.designs.length > 0;
-  } catch (e) { box.textContent = "Could not load your saved posts."; }
+  } catch (e) {
+    if (!more) box.textContent = "Could not load your saved posts.";
+    else setStatus("Could not load more saved posts.");
+  }
 }
 
 async function loadVideos(reset) {
@@ -4462,8 +4587,23 @@ async function openProfile(userId) {
     // Phase 57 (owner): no posts count and no points in this
     // line — posts are listed below and points have their own
     // card. Followers / following only.
-    stats.textContent = u.followers + " followers · " +
-      u.following_count + " following";
+    // Phase 184 (audit L9): the counts are tappable — they open
+    // the followers / following list sheet.
+    const refreshStats = () => {
+      stats.textContent = "";
+      const mkStat = (label, kind) => {
+        const b = document.createElement("button");
+        b.className = "stats-link";
+        b.type = "button";
+        b.textContent = label;
+        b.onclick = () => openFollowList(userId, kind);
+        return b;
+      };
+      stats.append(mkStat(u.followers + " followers", "followers"),
+        document.createTextNode(" · "),
+        mkStat(u.following_count + " following", "following"));
+    };
+    refreshStats();
     hero.append(headWrap, bio, stats);
     // Phase 151: blood-donor badge — only when the member opted
     // in (the API sends blood_group only for opted-in donors).
@@ -4547,8 +4687,7 @@ async function openProfile(userId) {
           u.following = r.following;
           u.has_pending_request = !!r.requested;
           u.followers = r.followers;
-          stats.textContent = u.followers + " followers · " +
-            u.following_count + " following";
+          refreshStats();
           paint();
           if (r.requested) setStatus("Follow request sent — you'll see their posts once it's accepted 👥");
         } catch (e) { setStatus("Could not update follow."); }
@@ -6669,11 +6808,19 @@ function toggleSidebar() {
   else openSidebar();
 }
 function syncSidebarActive() {
+  // Phase 184 (audit L22): admin / chat / assistant / settings /
+  // blood / skills all have sidebar entries (data-go) but were
+  // missing here, so the sidebar wrongly highlighted Feed.
   const current = ["feed", "videos", "designs", "search", "tasks",
     "leaderboard", "profile", "saved", "shared", "games", "game",
-    "nearby", "messages", "notifications", "qr", "trending"]
+    "nearby", "messages", "notifications", "qr", "trending",
+    "admin", "chat", "assistant", "settings", "blood", "skills"]
     .find(v => !$("view-" + v).hidden) || "feed";
-  const key = current === "game" ? "games" : current;
+  // Phase 184 (audit L22): "chat" has no sidebar entry of its
+  // own — it opens from Messages — so Messages stays highlighted
+  // while chatting (same idea as "game" -> "games" above).
+  const key = current === "game" ? "games"
+    : current === "chat" ? "messages" : current;
   document.querySelectorAll(".gb-item[data-go]").forEach(b =>
     b.classList.toggle("active", b.dataset.go === key));
 }
@@ -8240,6 +8387,20 @@ async function loadBackupStatus() {
         } else {
           warn.hidden = true;
         }
+      }
+    }
+    // Phase 184 (audit L6): a backup taken while the key is
+    // absent/malformed is PLAINTEXT — say so on the panel,
+    // not just in the server log.
+    const pw = $("backup-plaintext-warn");
+    if (pw) {
+      if (s.plaintext_warning) {
+        pw.hidden = false;
+        pw.textContent = "⚠️ Backups are currently PLAINTEXT — "
+          + "BACKUP_ENCRYPTION_KEY is not set on the server. "
+          + "Set it in Render before the next backup.";
+      } else {
+        pw.hidden = true;
       }
     }
   } catch (e) {

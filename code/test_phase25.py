@@ -2,8 +2,8 @@
 nav, Pinterest-style premium). Posting rule updated in Phase 34:
 ONLY the admin's own account posts (acting as Official no longer
 can); members browse and like. Covers the permission matrix,
-image-only rule, listing, like toggling, removal by the official
-identity and by the admin moderation route, and the frontend
+image-only rule, listing, like toggling, removal by the admin's
+own account and by the admin moderation route, and the frontend
 wiring (7th nav tab, masonry CSS, detail sheet with Copy Prompt).
 """
 import hashlib, hmac, json, os, urllib.parse
@@ -109,12 +109,18 @@ with TestClient(app) as c:
     assert r.status_code == 404, r.status_code
     print("design listing + likes OK")
 
-    # --- removal: member no; official identity yes; admin route yes ------------
+    # --- removal: member no; official identity no; admin-own yes ---------------
+    # Phase 184 (audit L19): DELETE /designs/{id} uses the same
+    # admin-own rule as upload/edit (Phase 34) — acting as Official
+    # no longer deletes; the admin deletes from his own account.
+    # The /admin/designs/{id} path is unchanged.
     r = c.request("DELETE", f"/designs/{did}", headers=MEMBER)
     assert r.status_code == 403, r.status_code
     r = c.request("DELETE", f"/admin/designs/{did}", headers=MEMBER)
     assert r.status_code == 403, r.status_code
     r = c.request("DELETE", f"/designs/{did}", headers=OFFICIAL)
+    assert r.status_code == 403, r.text
+    r = c.request("DELETE", f"/designs/{did}", headers=OWNER)
     assert r.status_code == 200, r.text
     r = c.get("/designs", headers=MEMBER)
     assert r.json()["designs"] == [], r.json()

@@ -1485,45 +1485,6 @@ def _post_list(db, rows, viewer_id, counts=None):
     return out
 
 
-def _eff_id(p):
-    """The post a card actually shows: a repost resolves to
-    its original, so likes/saves/views/repost state all key
-    off the original's id."""
-    return getattr(p, "repost_of_id", None) or p.id
-
-
-def reposted_ids(db, viewer_id, posts):
-    """Which of these posts (by original id) the viewer
-    reposted — the 🔁 button's active state."""
-    ids = [_eff_id(p) for p in posts]
-    if not ids:
-        return set()
-    rows = db.query(models.Post.repost_of_id).filter(
-        models.Post.user_id == viewer_id,
-        models.Post.repost_of_id.in_(ids),
-        models.Post.is_deleted == False).all()
-    return {r[0] for r in rows}
-
-
-def _post_list(db, rows, viewer_id, counts=None):
-    """post_dict for a page of rows: reposts resolve to their
-    originals, and reposts whose original is gone are dropped."""
-    liked = liked_ids(db, viewer_id, rows)
-    saved = saved_ids(db, viewer_id, rows)
-    reposted = reposted_ids(db, viewer_id, rows)
-    out = []
-    for p in rows:
-        d = post_dict(db, p, liked=_eff_id(p) in liked,
-                      saved=_eff_id(p) in saved,
-                      views=(counts.get(_eff_id(p), 0)
-                             if counts is not None else None),
-                      reposted_by_me=_eff_id(p) in reposted,
-                      viewer_id=viewer_id)
-        if d is not None:
-            out.append(d)
-    return out
-
-
 def _post_view_counts(db, posts):
     """Phase 38 (speed): ONE grouped query returns the unique-view
     counts for a whole page of posts, instead of one count query
@@ -2223,20 +2184,6 @@ async def upload_post(caption: str = Form(""),
     body = post_dict(db, post)
     _dedupe_put(user.telegram_id, x_upload_id, 200, body)
     return body
-
-
-def _delete_post_cascade(db, p):
-    """Phase 118: deleting a repost takes one off the
-    original's count; deleting an original takes its live
-    reposts with it, so no orphan card can surface."""
-    if getattr(p, "repost_of_id", None):
-        orig = db.get(models.Post, p.repost_of_id)
-        if orig is not None:
-            orig.repost_count = max(0, (orig.repost_count or 0) - 1)
-    else:
-        for rp in db.query(models.Post).filter_by(
-                repost_of_id=p.id, is_deleted=False).all():
-            rp.is_deleted = True
 
 
 def _delete_post_cascade(db, p):
@@ -3068,26 +3015,67 @@ def toggle_save(post_id: int, user: models.User = Depends(current_user),
     return {"saved": saved, "post_id": p.id}
 
 
+def _visible_post_page(db, viewer_id, fetch_batch, cursor, page=50):
+    """Phase 184 (audit L3): cursor paging over saved/shared rows.
+    fetch_batch(last_id, limit) returns [(source_id, post, ...), ...]
+    newest-first. Fetch-then-filter, like /feed (Phase 179): keep
+    pulling source batches until page+1 kept rows or exhaustion, so
+    a page is full unless the source is done. The (page+1)th kept
+    row is only a peek — its source id is next_cursor and it leads
+    the next page, so nothing is shown twice and no page is empty.
+    No cursor returns the first page, exactly as before."""
+    keep = []
+    last = cursor
+    exhausted = False
+    while len(keep) < page + 1 and not exhausted:
+        batch = fetch_batch(last, page)
+        if not batch:
+            break
+        if len(batch) < page:
+            exhausted = True
+        for row in batch:
+            last = row[0]
+            p = row[1]
+            if p is None or p.is_deleted:
+                continue
+            if not _post_visible_to(db, viewer_id, p):
+                continue
+            keep.append(row)
+            if len(keep) >= page + 1:
+                break
+    # The cursor is the LAST SHOWN row's source id (like /feed):
+    # the next page filters id < cursor, so the peek row leads it.
+    # (The peek only proves a next page exists.)
+    next_cursor = keep[page - 1][0] if len(keep) > page else None
+    return keep[:page], next_cursor
+
+
 @app.get("/me/saved")
 def my_saved(user: models.User = Depends(current_user),
+             cursor: int = 0,
              db: Session = Depends(get_db)):
     # Phase 179 (audit M4): 240/h per member — the Saved view
     # loads once per visit, far below this.
     _enforce_rate("saved", f"u{user.telegram_id}")
-    rows = db.query(models.Post).join(
-        models.SavedPost, models.SavedPost.post_id == models.Post.id) \
-        .filter(models.SavedPost.user_id == user.telegram_id,
-                models.Post.is_deleted == False) \
-        .order_by(models.SavedPost.id.desc()).limit(50).all()
-    # Phase 178 (audit H5): saved ORIGINAL posts get the
-    # same visibility rules as the feed — blocked (either
-    # way), muted, or private-and-not-followed authors stay
-    # hidden. (Repost rows are covered by post_dict's own
-    # check; _media_visible alone is not relied on — it
-    # gates media, not text.)
-    rows = [p for p in rows
-            if _post_visible_to(db, user.telegram_id, p)]
-    return {"posts": _post_list(db, rows, user.telegram_id)}
+
+    def _batch(last, limit):
+        q = db.query(models.SavedPost).filter_by(
+            user_id=user.telegram_id)
+        if last:
+            q = q.filter(models.SavedPost.id < last)
+        rows = q.order_by(models.SavedPost.id.desc()) \
+            .limit(limit).all()
+        return [(r.id, db.get(models.Post, r.post_id)) for r in rows]
+    # Phase 178 (audit H5): saved ORIGINAL posts get the same
+    # visibility rules as the feed — blocked (either way), muted,
+    # or private-and-not-followed authors stay hidden. The check
+    # lives in _visible_post_page now (via _post_visible_to);
+    # repost rows are covered by post_dict's own check.
+    kept, next_cursor = _visible_post_page(
+        db, user.telegram_id, _batch, cursor)
+    return {"posts": _post_list(
+        db, [p for _, p in kept], user.telegram_id),
+        "next_cursor": next_cursor}
 
 
 class CollectionIn(BaseModel):
@@ -3125,8 +3113,14 @@ def _clean_collection_name(db, user_id, name, exclude_id=None):
 
 
 def _collection_dict(db, coll, has_post=None):
-    n = db.query(models.SavedCollectionPost).filter_by(
-        collection_id=coll.id).count()
+    # Phase 184 (audit L2): the count joins Post.is_deleted, so it
+    # matches the list get_collection shows (deleted posts are
+    # filtered there — the chip used to count them too).
+    n = db.query(models.SavedCollectionPost).join(
+        models.Post,
+        models.SavedCollectionPost.post_id == models.Post.id).filter(
+        models.SavedCollectionPost.collection_id == coll.id,
+        models.Post.is_deleted == False).count()
     d = {"id": coll.id, "name": coll.name, "post_count": n,
          "created_at": coll.created_at.isoformat()
          if coll.created_at else None}
@@ -3179,6 +3173,7 @@ def list_collections(post_id: int = 0,
 
 @app.get("/saved/collections/{cid}")
 def get_collection(cid: int,
+                   cursor: int = 0,
                    user: models.User = Depends(current_user),
                    db: Session = Depends(get_db)):
     """Phase 175: one collection with its posts (most recently
@@ -3186,19 +3181,25 @@ def get_collection(cid: int,
     # Phase 179 (audit M4): "saved" budget (see list_collections).
     _enforce_rate("saved", f"u{user.telegram_id}")
     coll = _get_my_collection(db, user.telegram_id, cid)
-    rows = db.query(models.Post).join(
-        models.SavedCollectionPost,
-        models.SavedCollectionPost.post_id == models.Post.id) \
-        .filter(models.SavedCollectionPost.collection_id == cid,
-                models.Post.is_deleted == False) \
-        .order_by(models.SavedCollectionPost.id.desc()).limit(50).all()
+
+    def _batch(last, limit):
+        q = db.query(models.SavedCollectionPost).filter_by(
+            collection_id=cid)
+        if last:
+            q = q.filter(models.SavedCollectionPost.id < last)
+        rows = q.order_by(models.SavedCollectionPost.id.desc()) \
+            .limit(limit).all()
+        return [(r.id, db.get(models.Post, r.post_id)) for r in rows]
     # Phase 178 (audit H5): same visibility filter as Saved —
     # a collection must not resurrect a post the viewer may
-    # no longer see (blocked / muted / private author).
-    rows = [p for p in rows
-            if _post_visible_to(db, user.telegram_id, p)]
+    # no longer see (blocked / muted / private author) — now
+    # inside _visible_post_page (Phase 184, audit L3).
+    kept, next_cursor = _visible_post_page(
+        db, user.telegram_id, _batch, cursor)
     out = _collection_dict(db, coll)
-    out["posts"] = _post_list(db, rows, user.telegram_id)
+    out["posts"] = _post_list(
+        db, [p for _, p in kept], user.telegram_id)
+    out["next_cursor"] = next_cursor
     return out
 
 
@@ -3286,6 +3287,73 @@ def my_following(user: models.User = Depends(current_user),
     } for u in rows]}
 
 
+def _follow_list_visible(db, viewer_id, target_id):
+    """Phase 184 (audit L9): who may see target's follow lists —
+    blocked either way -> 404 (same hiding as public_profile);
+    a private account's lists are followers-only; your own lists
+    are always visible. Returns the target user, or raises 404."""
+    target = db.get(models.User, target_id)
+    if target is None:
+        raise HTTPException(404, "User not found")
+    if (_blocked_by(db, target_id, viewer_id)
+            or _blocked_by(db, viewer_id, target_id)):
+        raise HTTPException(404, "User not found")
+    if (getattr(target, "is_private", False)
+            and target_id != viewer_id
+            and db.query(models.Follow).filter_by(
+                follower_id=viewer_id,
+                following_id=target_id).first() is None):
+        raise HTTPException(404, "User not found")
+    return target
+
+
+def _follow_list_user(db, viewer_id, u):
+    """One list member: avatar + name + follow state (whether the
+    viewer follows them)."""
+    return {"telegram_id": u.telegram_id, "first_name": u.first_name,
+            "username": u.username, "is_verified": bool(u.is_verified),
+            "verified": bool(u.is_verified),
+            "photo_file_id": u.photo_file_id,
+            "following": db.query(models.Follow).filter_by(
+                follower_id=viewer_id,
+                following_id=u.telegram_id).first() is not None,
+            "is_self": u.telegram_id == viewer_id}
+
+
+@app.get("/users/{telegram_id}/followers")
+def user_followers(telegram_id: int,
+                   user: models.User = Depends(current_user),
+                   db: Session = Depends(get_db)):
+    """Phase 184 (audit L9): who follows this member — avatar +
+    name + follow state, name-sorted, capped at 100 like the
+    existing following endpoint. Private -> followers only;
+    blocked either way -> 404 (see _follow_list_visible)."""
+    _follow_list_visible(db, user.telegram_id, telegram_id)
+    rows = db.query(models.User).join(
+        models.Follow,
+        models.Follow.follower_id == models.User.telegram_id) \
+        .filter(models.Follow.following_id == telegram_id) \
+        .order_by(models.User.first_name).limit(100).all()
+    return {"users": [_follow_list_user(db, user.telegram_id, u)
+                      for u in rows]}
+
+
+@app.get("/users/{telegram_id}/following")
+def user_following(telegram_id: int,
+                   user: models.User = Depends(current_user),
+                   db: Session = Depends(get_db)):
+    """Phase 184 (audit L9): who this member follows — same
+    shape and visibility rules as /followers."""
+    _follow_list_visible(db, user.telegram_id, telegram_id)
+    rows = db.query(models.User).join(
+        models.Follow,
+        models.Follow.following_id == models.User.telegram_id) \
+        .filter(models.Follow.follower_id == telegram_id) \
+        .order_by(models.User.first_name).limit(100).all()
+    return {"users": [_follow_list_user(db, user.telegram_id, u)
+                      for u in rows]}
+
+
 class ShareIn(BaseModel):
     to_user_id: int
 
@@ -3328,6 +3396,7 @@ async def share_post(post_id: int, body: ShareIn,
 
 @app.get("/me/shared")
 def my_shared(user: models.User = Depends(current_user),
+              cursor: int = 0,
               db: Session = Depends(get_db)):
     # Phase 179 (audit M4): "saved" budget (see list_collections).
     # Phase 179 (audit H4): post_dict hides a shared repost of an
@@ -3335,20 +3404,27 @@ def my_shared(user: models.User = Depends(current_user),
     # unconditionally — hence the _post_visible_to filter below.
     # The test proves it end to end.
     _enforce_rate("saved", f"u{user.telegram_id}")
-    shares = db.query(models.PostShare).filter_by(
-        to_user_id=user.telegram_id) \
-        .order_by(models.PostShare.id.desc()).limit(50).all()
+
+    def _batch(last, limit):
+        q = db.query(models.PostShare).filter_by(
+            to_user_id=user.telegram_id)
+        if last:
+            q = q.filter(models.PostShare.id < last)
+        rows = q.order_by(models.PostShare.id.desc()) \
+            .limit(limit).all()
+        return [(r.id, db.get(models.Post, r.post_id), r)
+                for r in rows]
+    # Phase 179 (audit H4): post_dict hides only reposts of
+    # invisible originals — a shared ORIGINAL needs the same
+    # visibility check here (as /me/saved does), or a private
+    # post shared by a follower to a non-follower displays.
+    # The check now lives in _visible_post_page (Phase 184,
+    # audit L3); post_dict's own repost check still applies
+    # per row below.
+    kept, next_cursor = _visible_post_page(
+        db, user.telegram_id, _batch, cursor)
     out = []
-    for s in shares:
-        p = db.get(models.Post, s.post_id)
-        if p is None or p.is_deleted:
-            continue
-        # Phase 179 (audit H4): post_dict hides only reposts of
-        # invisible originals — a shared ORIGINAL needs the same
-        # visibility check here (as /me/saved does), or a private
-        # post shared by a follower to a non-follower displays.
-        if not _post_visible_to(db, user.telegram_id, p):
-            continue
+    for _sid, p, s in kept:
         sender = db.get(models.User, s.from_user_id)
         # Phase 177: resolve reposts with the viewer, so a
         # shared repost of a blocked author stays hidden.
@@ -3363,7 +3439,7 @@ def my_shared(user: models.User = Depends(current_user),
         d["shared_by_name"] = sender.first_name if sender else ""
         d["shared_at"] = s.created_at.isoformat() if s.created_at else None
         out.append(d)
-    return {"posts": out}
+    return {"posts": out, "next_cursor": next_cursor}
 
 
 class CommentIn(BaseModel):
@@ -5503,6 +5579,12 @@ async def create_tip(body: TipCreateIn,
         orig = db.get(models.Post, _eff_id(post))
         if orig is None or orig.is_deleted:
             raise HTTPException(404, "Unknown post")
+        # Phase 184 (audit L25): the user_id branch rejects banned
+        # targets — the post branch must too (resolved to the
+        # original author for reposts, as elsewhere).
+        orig_author = db.get(models.User, orig.user_id)
+        if orig_author is not None and orig_author.is_banned:
+            raise HTTPException(400, "That member is unavailable")
         to_id = orig.user_id
         post_id = orig.id
     else:
@@ -7827,9 +7909,15 @@ def my_design_shared(user: models.User = Depends(current_user),
 def delete_design(design_id: int,
                   user: models.User = Depends(current_user),
                   db: Session = Depends(get_db)):
-    if user.telegram_id != OFFICIAL_ID:
+    # Phase 184 (audit L19): delete uses the same admin-own rule
+    # as upload/edit (Phase 34) — the admin's own account, no
+    # act-as. The old rule needed the Official identity, so the
+    # admin had to act-as Official (or use /admin/designs/{id}).
+    real_id = getattr(user, "_real_id", user.telegram_id)
+    if user.telegram_id not in settings.ADMIN_IDS \
+            or real_id != user.telegram_id:
         raise HTTPException(
-            403, "Only the Official account can remove designs")
+            403, "Designs can be removed only from the admin account")
     design = db.get(models.Design, design_id)
     if design is None:
         raise HTTPException(404, "Design not found")
@@ -8776,6 +8864,12 @@ def admin_backup_status(admin: models.User = Depends(admin_user),
         "last_auto_backup_at": (
             _auto_backup_last_run(db).isoformat()
             if _auto_backup_last_run(db) else None),
+        # Phase 184 (audit L6): a backup taken while the key is
+        # absent/malformed is PLAINTEXT — the Admin Panel shows
+        # this flag as a warning card (the download audit log
+        # already said so, but the admin could not see it).
+        # Backup behaviour itself is unchanged.
+        "plaintext_warning": _backup_fernet() is None,
     }
 
 
@@ -9068,21 +9162,6 @@ def conversations(user: models.User = Depends(current_user),
         if m.recipient_id == me and m.read_at is None:
             c["unread"] += 1
     return {"conversations": [convs[o] for o in order]}
-
-
-@app.get("/me/following")
-def my_following(user: models.User = Depends(current_user),
-                 db: Session = Depends(get_db)):
-    """The people the member follows — the Messages view's
-    start-a-chat list."""
-    ids = [f.following_id for f in db.query(models.Follow).filter_by(
-        follower_id=user.telegram_id).all()]
-    out = []
-    for i in ids:
-        u = db.get(models.User, i)
-        if u is not None:
-            out.append(_brief_user(u))
-    return {"users": out}
 
 
 @app.get("/messages/{uid}")
@@ -9751,6 +9830,7 @@ def get_highlight(hid: int, user: models.User = Depends(current_user),
 def rename_highlight(hid: int, body: HighlightIn,
                      user: models.User = Depends(current_user),
                      db: Session = Depends(get_db)):
+    _enforce_rate("highlights", f"u{user.telegram_id}")
     h = db.get(models.StoryHighlight, hid)
     if h is None:
         raise HTTPException(404, "Highlight not found")
@@ -9767,6 +9847,7 @@ def rename_highlight(hid: int, body: HighlightIn,
 @app.delete("/highlights/{hid}")
 def delete_highlight(hid: int, user: models.User = Depends(current_user),
                      db: Session = Depends(get_db)):
+    _enforce_rate("highlights", f"u{user.telegram_id}")
     h = db.get(models.StoryHighlight, hid)
     if h is None:
         raise HTTPException(404, "Highlight not found")
@@ -9786,6 +9867,7 @@ def delete_highlight(hid: int, user: models.User = Depends(current_user),
 def add_highlight_stories(hid: int, body: HighlightIn,
                           user: models.User = Depends(current_user),
                           db: Session = Depends(get_db)):
+    _enforce_rate("highlights", f"u{user.telegram_id}")
     h = db.get(models.StoryHighlight, hid)
     if h is None:
         raise HTTPException(404, "Highlight not found")
@@ -9819,6 +9901,7 @@ def add_highlight_stories(hid: int, body: HighlightIn,
 def remove_highlight_story(hid: int, sid: int,
                            user: models.User = Depends(current_user),
                            db: Session = Depends(get_db)):
+    _enforce_rate("highlights", f"u{user.telegram_id}")
     h = db.get(models.StoryHighlight, hid)
     if h is None:
         raise HTTPException(404, "Highlight not found")
@@ -10374,4 +10457,5 @@ def assistant_chat(body: AssistantChatIn,
 # /assistant/speak are REMOVED entirely — Nexa is TEXT-ONLY
 # (owner order, Phase 75). The client never called them
 # (it uses only /assistant/chat); the routes now answer 404.
-# Routes 183 -> 181.
+# Routes 183 -> 181 (Phase 183); 181 -> 183 (Phase 184: L9
+# follow-list routes).

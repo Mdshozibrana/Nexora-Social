@@ -3024,3 +3024,10 @@ html[data-theme] .suggest-follow.on { background: var(--t-chip, #F3DCE7);
 .hl-manage-list { display: flex; flex-direction: column; gap: 8px; margin: 6px 0 12px; }
 .hl-manage-row { display: flex; gap: 8px; }
 .hl-manage-row input { flex: 1; min-width: 0; padding: 8px 10px; border: 1px solid #E5D5DC; border-radius: 10px; font-size: 14px; }
+
+/* Phase 184 (audit L9): tappable profile counts + follow lists. */
+.stats-link { background: none; border: none; padding: 0; font: inherit;
+  color: inherit; text-decoration: underline; cursor: pointer; }
+.follow-list-name { flex: 1; text-align: left; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+.follow-list-state { font-size: 13px; opacity: .75; white-space: nowrap; }

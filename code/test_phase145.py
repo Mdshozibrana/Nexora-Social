@@ -117,7 +117,14 @@ with TestClient(app) as c:
     # Everything else on the profile is intact.
     for m in ("profile-hero", "profile-cover", "profile-head",
               "profile-name", "profile-sub", "verifiedBadge",
-              " followers · ", "loadProfilePosts", "wave-div",
+              # Phase 184 (audit L9): the stats line is now built
+              # by refreshStats() from two tappable buttons —
+              # "N followers" + " · " + "M following" — so the
+              # single literal " followers · " is gone, but the
+              # rendered line is identical.
+              'u.followers + " followers"',
+              'u.following_count + " following"', '" · "',
+              "refreshStats", "loadProfilePosts", "wave-div",
               '"Unfollow"', '"Follow"', "⭐ Tip ", "openTipSheet",
               "🚫 Block this member", "profile-file", "cover-file"):
         assert m in prof, m
@@ -139,13 +146,13 @@ with TestClient(app) as c:
 
     # 6. Client markers + asset version.
     HTML = open("webapp/index.html").read()
-    assert HTML.count("?v=183") == 10, HTML.count("?v=183")
+    assert HTML.count("?v=184") == 10, HTML.count("?v=184")
     assert "?v=14" + "4" not in HTML
     for m in ("loadSettings", "renderLevelBlock", "openTipSheet",
               "loadProfilePosts", "openProfile", "loadMe",
               "loadDrafts", "loadScheduled", "loadFollowRequests",
               "themeCard", "dataCard", "loadBlocked"):
         assert m in JS, m
-    print("client markers + ?v=183 OK")
+    print("client markers + ?v=184 OK")
 
 print("PHASE-145 TESTS PASSED")
