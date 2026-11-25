@@ -716,6 +716,14 @@ async def _startup():
 
     _sweeper_task = asyncio.create_task(_scheduled_posts_loop())
     _auto_backup_task = asyncio.create_task(_auto_backup_loop())
+    # Phase 183 (audit M18): screening must never be silently
+    # off — with no Gemini key, classify_image returns "clean"
+    # for everything and both DM paths pass media unscreened.
+    if not moderation.active():
+        sec_log.warning(
+            "GEMINI_API_KEY is NOT set — media screening is OFF "
+            "and Nexa runs on the fallback brain; set the key "
+            "to turn screening on")
 
 
 @app.on_event("shutdown")
@@ -1800,6 +1808,67 @@ def _screen_file_id(kind, file_id):
             os.unlink(path)
         except OSError:
             pass
+
+
+# Phase 183 (audit H15/H16): voice verification + duration.
+# Render has NO ffprobe — imageio-ffmpeg ships an ffmpeg
+# binary only — so durations are probed with the bundled
+# ffmpeg's `-i` output, via videoutil.probe_duration (the
+# same helper video probing already uses). No separate
+# ffprobe binary is assumed anywhere.
+_VOICE_MAX_SECONDS = 120
+_VOICE_MAX_BYTES = 5 * 1024 * 1024
+
+
+def _probe_audio_duration(data):
+    """Seconds (float) of audio bytes, or None when ffmpeg
+    cannot read them (not audio, corrupt, or no ffmpeg).
+    The caller decides the refusal — this never guesses."""
+    ffmpeg = videoutil.find_ffmpeg()
+    if not ffmpeg:
+        return None
+    with tempfile.NamedTemporaryFile(delete=False,
+                                     suffix=".aud") as f:
+        f.write(data)
+        path = f.name
+    try:
+        return videoutil.probe_duration(path, ffmpeg)
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+
+def _verify_voice_file_id(file_id):
+    """Fetch a Telegram file_id claimed to be a voice note
+    and verify it server-side (audit H15): it must exist,
+    be within the 5 MB voice cap, start with the OggS magic
+    of a real OGG voice note, and probe to 1-120 s (H16).
+    Returns the SERVER-probed whole seconds. Raises a clean
+    400 otherwise — the caller's media_duration is never
+    trusted, and a non-existent / non-audio file_id never
+    becomes a broken bubble."""
+    data = moderation.fetch_file_bytes(file_id)
+    if data is None:
+        raise HTTPException(
+            400, "That voice message could not be found — "
+                 "please record it again")
+    if len(data) > _VOICE_MAX_BYTES:
+        raise HTTPException(
+            400, "Voice message is too large (max 5 MB)")
+    if not data.startswith(b"OggS"):
+        raise HTTPException(
+            400, "That file is not a voice message")
+    dur = _probe_audio_duration(data)
+    if dur is None or dur <= 0:
+        raise HTTPException(
+            400, "That voice message could not be checked — "
+                 "please record it again")
+    if dur > _VOICE_MAX_SECONDS:
+        raise HTTPException(
+            400, "Voice messages are 1–120 seconds")
+    return max(1, int(round(dur)))
 
 
 def _send_chat_id(user):
@@ -3761,10 +3830,13 @@ async def accept_follow_request(request_id: int,
         _record_follow_task_event(db, req.requester_id, user.telegram_id)
     req.status = "accepted"
     db.commit()
+    # Phase 183 (audit M19): the acceptance notifies under
+    # "follow_request", so the follow_requests toggle gates
+    # it — the same type the request itself already uses.
     await notify.notify_user(
-        db, req.requester_id, "follow",
+        db, req.requester_id, "follow_request",
         f"\u2705 {user.first_name} accepted your follow request.")
-    notify.record(db, req.requester_id, "follow",
+    notify.record(db, req.requester_id, "follow_request",
                   actor_id=user.telegram_id,
                   text="accepted your follow request")
     return {"accepted": True, "request_id": req.id}
@@ -6022,13 +6094,18 @@ def my_notifications(cursor: int = 0, limit: int = 30,
     # the viewer muted. (DMs are untouched: mute never
     # changes DM delivery, Phase 174.)
     muted = _muted_ids(db, user.telegram_id)
+    # Phase 183 (audit L13): a later-blocked actor is hidden
+    # too — same as muted (Phase 182), either direction.
+    # Muted + blocked are unioned before subtracting, so an
+    # actor who is both is never counted twice.
+    hidden = muted | _block_related_ids(db, user.telegram_id)
     unread = db.query(models.Notification).filter_by(
         user_id=user.telegram_id, is_read=False).count()
-    if muted:
+    if hidden:
         unread -= db.query(models.Notification).filter(
             models.Notification.user_id == user.telegram_id,
             models.Notification.is_read == False,
-            models.Notification.actor_id.in_(muted)).count()
+            models.Notification.actor_id.in_(hidden)).count()
     q = db.query(models.Notification).filter_by(
         user_id=user.telegram_id)
     if cursor:
@@ -6037,7 +6114,7 @@ def my_notifications(cursor: int = 0, limit: int = 30,
         .limit(max(1, min(limit, 50))).all()
     out = []
     for n in rows:
-        if n.actor_id is not None and n.actor_id in muted:
+        if n.actor_id is not None and n.actor_id in hidden:
             continue
         actor = db.get(models.User, n.actor_id) if n.actor_id else None
         out.append({
@@ -8017,6 +8094,14 @@ def admin_health(admin: models.User = Depends(admin_user),
         "uptime_seconds": int(time.time() - _STARTED_AT),
         "db_size_bytes": _health_db_size_bytes(),
         "tables": tables,
+        # Phase 183 (audit M18): screening must never be
+        # silently off — the Admin Panel shows this warning
+        # whenever the Gemini key is absent.
+        "screening_active": moderation.active(),
+        "screening_warning": (
+            None if moderation.active() else
+            "Media screening is OFF — GEMINI_API_KEY is not set; "
+            "photos are posted without safety checks"),
         "errors_24h": errors,
         "recent_errors": [{
             "id": e.id, "detail": e.detail,
@@ -8943,10 +9028,17 @@ def _message_dict(m, me_id, reactions=None, stories=None):
 @app.get("/messages/unread")
 def messages_unread(user: models.User = Depends(current_user),
                     db: Session = Depends(get_db)):
-    n = db.query(models.Message).filter_by(
+    # Phase 183 (audit L11): unread from a blocked sender
+    # does not count — the conversation list already hides
+    # those threads, so the badge must not inflate after a
+    # block.
+    hidden = _block_related_ids(db, user.telegram_id)
+    q = db.query(models.Message).filter_by(
         recipient_id=user.telegram_id).filter(
-        models.Message.read_at.is_(None)).count()
-    return {"count": n}
+        models.Message.read_at.is_(None))
+    if hidden:
+        q = q.filter(~models.Message.sender_id.in_(hidden))
+    return {"count": q.count()}
 
 
 @app.get("/messages")
@@ -8994,19 +9086,28 @@ def my_following(user: models.User = Depends(current_user),
 
 
 @app.get("/messages/{uid}")
-def message_thread(uid: int,
+def message_thread(uid: int, before_id: int = 0,
                    user: models.User = Depends(current_user),
                    db: Session = Depends(get_db)):
     me = user.telegram_id
     other = db.get(models.User, uid)
     if other is None or uid in _block_related_ids(db, me):
         raise HTTPException(404, "User not found")
-    rows = db.query(models.Message).filter(
+    # Phase 183 (audit L12): cursor pagination — before_id
+    # pages backwards through older messages (newest-first
+    # pages of 200). No cursor returns the last 200,
+    # exactly as before. The conversation list keeps its
+    # 1000-row scan with a documented cap (PRD Phase 183):
+    # one thread's history is what members actually scroll,
+    # and the scan is bounded.
+    q = db.query(models.Message).filter(
         or_((models.Message.sender_id == me) &
             (models.Message.recipient_id == uid),
             (models.Message.sender_id == uid) &
-            (models.Message.recipient_id == me))
-    ).order_by(models.Message.id.desc()).limit(200).all()
+            (models.Message.recipient_id == me)))
+    if before_id:
+        q = q.filter(models.Message.id < before_id)
+    rows = q.order_by(models.Message.id.desc()).limit(200).all()
     rows.reverse()
     db.query(models.Message).filter_by(
         sender_id=uid, recipient_id=me).filter(
@@ -9018,7 +9119,11 @@ def message_thread(uid: int,
         db, [m.story_id for m in rows if m.story_id is not None])
     return {"user": _brief_user(other),
             "messages": [_message_dict(m, me, react.get(m.id), previews)
-                         for m in rows]}
+                         for m in rows],
+            # Phase 183 (audit L12): the oldest id on this
+            # page (rows are ascending after the reverse),
+            # or None when this is the whole history.
+            "next_cursor": rows[0].id if len(rows) == 200 else None}
 
 
 class MessageIn(BaseModel):
@@ -9029,9 +9134,18 @@ class MessageIn(BaseModel):
 
 
 @app.post("/messages/{uid}")
-def send_message(uid: int, body: MessageIn,
-                 user: models.User = Depends(current_user),
-                 db: Session = Depends(get_db)):
+async def send_message(uid: int, body: MessageIn,
+                       x_upload_id: Optional[str] = Header(None),
+                       user: models.User = Depends(current_user),
+                       db: Session = Depends(get_db)):
+    # Phase 183 (audit L10): the JSON text-DM path replays on
+    # X-Upload-Id, exactly like the upload endpoints — a
+    # retry / double-tap with the same id returns the first
+    # message instead of posting twice. (async since Phase
+    # 183: the DM bot push below awaits notify_user.)
+    hit = _dedupe_get(user.telegram_id, x_upload_id)
+    if hit:
+        return JSONResponse(status_code=hit[0], content=hit[1])
     me = user.telegram_id
     if uid == me:
         raise HTTPException(400, "You can't message yourself")
@@ -9045,6 +9159,10 @@ def send_message(uid: int, body: MessageIn,
     media_type = (body.media_type or "").strip() or None
     if not text and not media_file_id:
         raise HTTPException(400, "Message is empty")
+    # Phase 183 (audit M18): the rate check runs BEFORE any
+    # screening, so Gemini screening calls are throttled
+    # (the upload paths already rate-limit first).
+    _enforce_rate("message", f"u{me}")
     secs = None
     if media_file_id:
         # Phase 173: DMs carry photos and voice notes. A video
@@ -9054,10 +9172,11 @@ def send_message(uid: int, body: MessageIn,
         if media_type is None:
             media_type = "photo"
         if media_type == "voice":
-            secs = body.media_duration or 0
-            if secs < 1 or secs > 120:
-                raise HTTPException(
-                    400, "Voice messages are 1–120 seconds")
+            # Phase 183 (audit H15/H16): the file_id is
+            # fetched and verified server-side, and the
+            # duration is the SERVER-probed one — the
+            # client-sent media_duration is ignored.
+            secs = _verify_voice_file_id(media_file_id)
         elif media_type == "photo":
             if moderation.active():
                 verdict = _screen_file_id("photo", media_file_id)
@@ -9070,7 +9189,6 @@ def send_message(uid: int, body: MessageIn,
         else:
             raise HTTPException(
                 400, "DMs support photos and voice only")
-    _enforce_rate("message", f"u{me}")
     m = models.Message(sender_id=me, recipient_id=uid, text=text,
                        media_file_id=media_file_id,
                        media_type=media_type if media_file_id else None,
@@ -9078,13 +9196,22 @@ def send_message(uid: int, body: MessageIn,
     db.add(m)
     db.commit()
     db.refresh(m)
-    notify.record(db, uid, "message", actor_id=me,
-                  text=(f"{user.first_name} sent you a voice message"
-                        if media_type == "voice" and media_file_id else
-                        f"{user.first_name} sent you a photo"
-                        if media_file_id else
-                        f"{user.first_name} sent you a message"))
-    return _message_dict(m, me, {"reactions": {}, "my_reaction": None})
+    # Phase 183 (audit H17): a DM is a bot push too, not just
+    # an in-app row — a recipient with the app closed gets a
+    # Telegram ping. notify_user enforces the "messages"
+    # toggle and the 20/h cap; the push text names only the
+    # KIND of message, never its content.
+    push_text = (f"{user.first_name} sent you a voice message"
+                 if media_type == "voice" and media_file_id else
+                 f"{user.first_name} sent you a photo"
+                 if media_file_id else
+                 f"{user.first_name} sent you a message")
+    notify.record(db, uid, "message", actor_id=me, text=push_text)
+    await notify.notify_user(
+        db, uid, "message", "💬 " + push_text)
+    body = _message_dict(m, me, {"reactions": {}, "my_reaction": None})
+    _dedupe_put(user.telegram_id, x_upload_id, 200, body)
+    return body
 
 
 @app.post("/messages/{uid}/upload")
@@ -9126,6 +9253,10 @@ async def upload_dm_photo(uid: int, request: Request,
     db.refresh(m)
     notify.record(db, uid, "message", actor_id=me,
                   text=f"{user.first_name} sent you a photo")
+    # Phase 183 (audit H17): photo DMs get the bot push too.
+    await notify.notify_user(
+        db, uid, "message",
+        f"💬 {user.first_name} sent you a photo")
     body = _message_dict(m, me, {"reactions": {}, "my_reaction": None})
     _dedupe_put(user.telegram_id, x_upload_id, 200, body)
     return body
@@ -9153,12 +9284,12 @@ async def upload_dm_voice(uid: int, request: Request,
         raise HTTPException(404, "User not found")
     if uid in _block_related_ids(db, me):
         raise HTTPException(403, "You can't message this user")
-    try:
-        secs = int((duration or "").strip())
-    except (TypeError, ValueError):
-        raise HTTPException(400, "Voice duration is missing")
-    if secs < 1 or secs > 120:
-        raise HTTPException(400, "Voice messages are 1–120 seconds")
+    # Phase 183 (audit H16): the client-sent `duration` form
+    # field is IGNORED — the cap is enforced on the
+    # server-probed duration after the bytes arrive (below).
+    # A missing or lying value can no longer smuggle in a
+    # note longer than 120 s. The field stays accepted so
+    # older clients keep working.
     ctype = (file.content_type or "").lower()
     name = (file.filename or "").lower()
     if not (ctype.startswith("audio/") or name.endswith(
@@ -9178,6 +9309,20 @@ async def upload_dm_voice(uid: int, request: Request,
     data = b"".join(chunks)
     if not data:
         raise HTTPException(400, "Empty recording")
+    # Phase 183 (audit H16): probe the uploaded bytes BEFORE
+    # sending them on — a low-bitrate file under 5 MB can be
+    # far longer than 120 s, and the bytes cap alone cannot
+    # catch it. Unprobeable audio is refused rather than
+    # stored with a guessed duration.
+    _dur = _probe_audio_duration(data)
+    if _dur is None or _dur <= 0:
+        raise HTTPException(
+            400, "That recording could not be checked — "
+                 "please try again")
+    if _dur > _VOICE_MAX_SECONDS:
+        raise HTTPException(
+            400, "Voice messages are 1–120 seconds")
+    secs = max(1, int(round(_dur)))
     file_id = await _send_voice_to_telegram(user, data, ctype, name)
     m = models.Message(sender_id=me, recipient_id=uid, text="",
                        media_file_id=file_id, media_type="voice",
@@ -9187,6 +9332,10 @@ async def upload_dm_voice(uid: int, request: Request,
     db.refresh(m)
     notify.record(db, uid, "message", actor_id=me,
                   text=f"{user.first_name} sent you a voice message")
+    # Phase 183 (audit H17): voice DMs get the bot push too.
+    await notify.notify_user(
+        db, uid, "message",
+        f"💬 {user.first_name} sent you a voice message")
     body = _message_dict(m, me, {"reactions": {}, "my_reaction": None})
     _dedupe_put(user.telegram_id, x_upload_id, 200, body)
     return body
@@ -9430,7 +9579,7 @@ class StoryReplyIn(BaseModel):
 
 
 @app.post("/stories/{sid}/reply")
-def reply_story(sid: int, body: StoryReplyIn,
+async def reply_story(sid: int, body: StoryReplyIn,
                 user: models.User = Depends(current_user),
                 db: Session = Depends(get_db)):
     """Phase 139: a text reply to a story lands as a DM to the
@@ -9457,6 +9606,12 @@ def reply_story(sid: int, body: StoryReplyIn,
     db.refresh(m)
     notify.record(db, s.user_id, "message", actor_id=me,
                   text=f"{user.first_name} replied to your story")
+    # Phase 183 (audit H17): story replies are DMs — the
+    # author gets a bot push too, under the "messages"
+    # toggle + 20/h cap.
+    await notify.notify_user(
+        db, s.user_id, "message",
+        f"💬 {user.first_name} replied to your story")
     previews = _story_previews(db, [sid])
     return _message_dict(m, me, {"reactions": {}, "my_reaction": None},
                          previews)
@@ -9683,18 +9838,14 @@ def remove_highlight_story(hid: int, sid: int,
 # returns no audio, so the client uses the phone's own voice. The
 # key never leaves the server.
 # ---------------------------------------------------------------------------
-import base64 as _b64
+# Phase 183 (audit M15): _b64/_wave went with the TTS helper —
+# Nexa is TEXT-ONLY. _io stays (used by the design renderer).
 import io as _io
-import wave as _wave
 
 
 class AssistantChatIn(BaseModel):
     message: str = Field(default="", max_length=500)
     history: list = Field(default_factory=list)
-
-
-class AssistantSpeakIn(BaseModel):
-    text: str = Field(default="", max_length=700)
 
 
 _NEXA_SYSTEM = (
@@ -9750,20 +9901,22 @@ _NEXA_SYSTEM = (
     "POINTS: daily tasks on the Tasks page — check-in 20 "
     "points, the follow task 10, the comment task 5, the react "
     "task 10, the ad task 20, each once a day, press Claim. The "
-    "balance and history are on the profile in the My Points "
-    "card. A referral earns 20 points when the friend makes "
+    "balance and history are in Settings, under From your "
+    "profile. A referral earns 20 points when the friend makes "
     "their first post. "
-    "REFERRALS: your invite link is on your profile. A "
+    "REFERRALS: your invite link is in Settings, under From "
+    "your profile. A "
     "referral is qualified when the friend joins AND makes a "
     "first post. "
-    "MONETIZATION: the profile card shows 6 targets — 500 "
+    "MONETIZATION: Settings shows 6 targets — 500 "
     "followers, 12 qualified referrals, 25 posts, an account "
     "14 days old, 5000 lifetime points, and a 30-day check-in "
     "streak (one missed day resets it). Once unlocked, the member "
-    "can request a crypto payout from the same card. "
+    "can request a crypto payout from Settings. "
     "PAYOUT: once monetization is unlocked, save your crypto "
-    "wallet (TON, Gram or USDT) in the Monetization card on your "
-    "profile, then request a payout in points — one request at a "
+    "wallet (TON, Gram or USDT) in the Payout wallet section "
+    "of Settings, then request a payout in points — one "
+    "request at a "
     "time. The admin reviews it, sets the crypto amount, pays it "
     "manually in crypto and records the transaction; the points "
     "leave your balance when the request is approved. Never quote "
@@ -9775,7 +9928,8 @@ _NEXA_SYSTEM = (
     "there, not inside the app. Stars land in the bot's balance; "
     "creators are paid out through the crypto payout flow. "
     "VERIFICATION: the blue badge. Members with at least 1000 "
-    "followers can apply from their profile; the admin "
+    "followers can apply from Settings, under From your "
+    "profile; the admin "
     "approves applications. "
     "MESSAGES AND STORIES: the message button opens chats and "
     "stories; members can message anyone from their profile. "
@@ -9799,8 +9953,8 @@ _NEXA_SYSTEM = (
     "change once every 60 days; the @username belongs to "
     "Telegram and cannot be changed here. Profiles show "
     "followers and following counts. "
-    "THEME COLOURS: on your own profile, the Theme Colours "
-    "card lets you pick a colour shade — one shade can "
+    "THEME COLOURS: in Settings, the Theme section lets you "
+    "pick a colour shade — one shade can "
     "recolour the whole app, or you can assign different "
     "shades to the background, the cards and the accent "
     "buttons. Text colours adjust automatically so they "
@@ -9818,7 +9972,7 @@ _NEXA_SYSTEM = (
     "from their menu. The official account Nexora Social "
     "(@nexora, verified) is followed by everyone and cannot "
     "be unfollowed or blocked. "
-    "ACCOUNT: your profile has a Data Control card — there "
+    "ACCOUNT: Settings has a Data Control section — there "
     "you can download everything Nexora holds about you as a "
     "JSON file, or have the bot send that file to your Telegram "
     "chat (best on phones). Deleting your account is asked "
@@ -9865,17 +10019,17 @@ def _nexa_fallback(text):
                 "find me whenever you open the sidebar.")
     if has("point", "পয়েন্ট", "স্টার", "star"):
         return ("প্রতিদিনের টাস্কে পয়েন্ট মেলে: চেক-ইনে ২০, ফলো "
-                "টাস্কে ৫, কমেন্ট টাস্কে ৫। Tasks পেজে গিয়ে Claim "
+                "টাস্কে ১০, কমেন্ট টাস্কে ৫। Tasks পেজে গিয়ে Claim "
                 "করো!" if bn else
                 "You earn points from daily tasks: 20 for check-in, "
-                "5 for the follow task and 5 for the comment task. "
+                "10 for the follow task and 5 for the comment task. "
                 "Open the Tasks page and claim yours!")
     if has("verif", "ব্যাজ", "badge", "ভেরিফাই", "নীল টিক"):
         return ("নীল ব্যাজ পেতে কমপক্ষে ১০০০ ফলোয়ার লাগে — "
-                "প্রোফাইল থেকে আবেদন করো, অ্যাডমিন অনুমোদন "
+                "Settings থেকে আবেদন করো, অ্যাডমিন অনুমোদন "
                 "দেবে।" if bn else
                 "The blue badge needs at least 1000 followers — "
-                "apply from your profile and the admin approves "
+                "apply from Settings and the admin approves "
                 "it.")
     if has("story", "স্টোরি"):
         return ("স্টোরি হলো ২৪ ঘণ্টার ছবি — Messages পেজ থেকে "
@@ -9917,11 +10071,11 @@ def _nexa_fallback(text):
         return ("মনিটাইজেশন খুলতে ৬টা লক্ষ্য লাগে: ৫০০ ফলোয়ার, "
                 "১২ জন যোগ্য রেফারেল, ২৫ পোস্ট, ১৪ দিন বয়স, "
                 "৫০০০ পয়েন্ট আর টানা ৩০ দিনের চেক-ইন স্ট্রিক। "
-                "নিজের অগ্রগতি প্রোফাইলেই দেখতে পারো!" if bn else
+                "নিজের অগ্রগতি Settings-এ দেখতে পারো!" if bn else
                 "Monetization unlocks at 6 targets: 500 followers, "
                 "12 qualified referrals, 25 posts, 14 days old, "
                 "5000 points and a 30-day check-in streak. Track "
-                "your progress on your profile!")
+                "your progress in Settings!")
     if has("game", "গেম", "খেল"):
         return ("Games পেজে ১১টা গেম আছে — Snake, 2048, "
                 "Pac-Man, Archery আরো অনেক! ল্যাম্পটা টেনে আলো জ্বালাও "
@@ -9938,10 +10092,10 @@ def _nexa_fallback(text):
                 "Suggested for you card shows people to follow "
                 "— just tap Follow on anyone there!")
     if has("refer", "রেফার", "invite", "বন্ধু"):
-        return ("তোমার রেফারেল লিংক প্রোফাইল থেকে শেয়ার করো — "
+        return ("তোমার রেফারেল লিংক Settings থেকে শেয়ার করো — "
                 "বন্ধু যোগ দিয়ে প্রথম পোস্ট করলেই তুমি ২০ "
                 "পয়েন্ট পাবে!" if bn else
-                "Share your referral link from your profile — when "
+                "Share your referral link from Settings — when "
                 "a friend joins and makes their first post, you "
                 "earn 20 points!")
     if has("thank", "ধন্যবাদ", "শুকরিয়া"):
@@ -9974,17 +10128,31 @@ def _nexa_fallback(text):
 # 3.8-flash intermittently 503) — try in order, first win works.
 _NEXA_CHAT_MODELS = ("gemini-3-flash-preview", "gemini-3.8-flash",
                      "gemini-flash-latest")
-_NEXA_TTS_MODELS = ("gemini-2.5-flash-preview-tts",
-                    "gemini-3.8-flash-tts")
+# Phase 183 (audit M15): the TTS models are gone with the
+# voice routes — Nexa is TEXT-ONLY.
+
+
+# Phase 183 (audit M17): ONE overall budget for the whole
+# Gemini chain — 25 s across all models and retries, not
+# 20 s per attempt (up to ~120 s of "thinking…" while a
+# server worker sits blocked). The client aborts at 30 s.
+_NEXA_CHAT_BUDGET_SECONDS = 25
 
 
 def _gemini_chat(message, history):
     key = settings.GEMINI_API_KEY
     if not key:
         return None
+    deadline = time.monotonic() + _NEXA_CHAT_BUDGET_SECONDS
     contents = []
     for h in (history or [])[-6:]:
         if not isinstance(h, dict):
+            continue
+        # Phase 183 (audit L14): only "user" and "nexa"
+        # roles are accepted — anything else (a
+        # client-claimed "model" / "system" / "assistant"
+        # turn) is dropped, never trusted as model output.
+        if h.get("role") not in ("user", "nexa"):
             continue
         txt = str(h.get("text", ""))[:500].strip()
         if txt:
@@ -10007,6 +10175,11 @@ def _gemini_chat(message, history):
     for model in _NEXA_CHAT_MODELS:
         for attempt in (gen, {"maxOutputTokens": 1500,
                               "temperature": 0.7}):
+            # The budget is shared across every attempt: a
+            # slow model eats the time the next one would use.
+            left = deadline - time.monotonic()
+            if left <= 0:
+                return None
             body["generationConfig"] = attempt
             try:
                 r = httpx.post(
@@ -10014,7 +10187,7 @@ def _gemini_chat(message, history):
                     "v1beta/"
                     f"models/{model}:generateContent",
                     headers={"x-goog-api-key": key}, json=body,
-                    timeout=20)
+                    timeout=min(20, left))
             except Exception:
                 break
             if r.status_code == 400 and attempt is gen:
@@ -10033,40 +10206,9 @@ def _gemini_chat(message, history):
     return None
 
 
-def _gemini_tts(text):
-    """Gemini TTS with the youthful 'Leda' voice. Returns base64
-    WAV bytes, or None (client then uses the phone's own voice)."""
-    key = settings.GEMINI_API_KEY
-    if not key:
-        return None
-    body = {
-        "contents": [{"parts": [{"text": text}]}],
-        "generationConfig": {
-            "responseModalities": ["AUDIO"],
-            "speechConfig": {"voiceConfig": {"prebuiltVoiceConfig": {
-                "voiceName": "Leda"}}},
-        },
-    }
-    for model in _NEXA_TTS_MODELS:
-        try:
-            r = httpx.post(
-                "https://generativelanguage.googleapis.com/v1beta/"
-                f"models/{model}:generateContent",
-                headers={"x-goog-api-key": key}, json=body, timeout=25)
-            if r.status_code != 200:
-                continue
-            data = r.json()["candidates"][0]["content"]["parts"][0]
-            pcm = _b64.b64decode(data["inlineData"]["data"])
-            buf = _io.BytesIO()
-            with _wave.open(buf, "wb") as w:
-                w.setnchannels(1)
-                w.setsampwidth(2)
-                w.setframerate(24000)
-                w.writeframes(pcm)
-            return _b64.b64encode(buf.getvalue()).decode()
-        except Exception:
-            continue
-    return None
+# Phase 183 (audit M15): the Gemini TTS helper is REMOVED with the
+# voice routes — Nexa is TEXT-ONLY (owner order). Any
+# authed caller could previously get TTS from these routes.
 
 
 
@@ -10207,42 +10349,29 @@ def assistant_status(user: models.User = Depends(current_user)):
 
 @app.post("/assistant/chat")
 def assistant_chat(body: AssistantChatIn,
-                   user: models.User = Depends(current_user)):
+                   user: models.User = Depends(current_user),
+                   db: Session = Depends(get_db)):
     _enforce_rate("assistant_chat", f"u{user.telegram_id}")
     msg = (body.message or "").strip()
     if not msg:
         raise HTTPException(400, "Say something first")
-    reply = _gemini_chat(msg, body.history) or _nexa_fallback(msg)
-    return {"reply": reply, "ai": bool(settings.GEMINI_API_KEY)}
+    # Phase 183 (audit L14): Nexa prompts go through the same
+    # banned-word list as posts and comments — a banned word
+    # is refused with the standard message, the word never
+    # echoed. Replies need no output check (prompt-side only).
+    if banned_word_in(db, msg):
+        raise HTTPException(400, BANNED_WORD_MESSAGE)
+    # Phase 183 (audit M16): "ai" is True ONLY when the reply
+    # actually came from Gemini. The old code returned
+    # bool(GEMINI_API_KEY) even for the canned fallback, so
+    # the client showed "AI mode · Gemini" for a non-AI answer.
+    ai_reply = _gemini_chat(msg, body.history)
+    reply = ai_reply if ai_reply is not None else _nexa_fallback(msg)
+    return {"reply": reply, "ai": ai_reply is not None}
 
 
-@app.post("/assistant/reply")
-def assistant_reply(body: AssistantChatIn,
-                    user: models.User = Depends(current_user)):
-    """Phase 71: chat + voice in ONE call. Two sequential calls
-    (chat, then speak) made playback start seconds after the
-    member's tap, and the WebView then refused to play the audio
-    at all — Nexa seemed to answer in text only."""
-    _enforce_rate("assistant_chat", f"u{user.telegram_id}")
-    _enforce_rate("assistant_speak", f"u{user.telegram_id}")
-    msg = (body.message or "").strip()
-    if not msg:
-        raise HTTPException(400, "Say something first")
-    reply = _gemini_chat(msg, body.history) or _nexa_fallback(msg)
-    audio = _gemini_tts(reply[:650])
-    return {"reply": reply, "audio": audio,
-            "mime": "audio/wav" if audio else None,
-            "ai": bool(settings.GEMINI_API_KEY)}
-
-
-@app.post("/assistant/speak")
-def assistant_speak(body: AssistantSpeakIn,
-                    user: models.User = Depends(current_user)):
-    _enforce_rate("assistant_speak", f"u{user.telegram_id}")
-    text = (body.text or "").strip()[:650]
-    if not text:
-        raise HTTPException(400, "Nothing to say")
-    audio = _gemini_tts(text)
-    if audio is None:
-        return {"audio": None}
-    return {"audio": audio, "mime": "audio/wav"}
+# Phase 183 (audit M15): /assistant/reply and
+# /assistant/speak are REMOVED entirely — Nexa is TEXT-ONLY
+# (owner order, Phase 75). The client never called them
+# (it uses only /assistant/chat); the routes now answer 404.
+# Routes 183 -> 181.

@@ -43,5 +43,5 @@ for bit in (".nb-ring.r0", "conic-gradient(from 210deg",
 assert ".nb-wrap { background: transparent !important;" in CSS
 print("style OK")
 
-assert "app.js?v=182" in HTML and "style.css?v=182" in HTML
+assert "app.js?v=183" in HTML and "style.css?v=183" in HTML
 print("PHASE 80 OK")

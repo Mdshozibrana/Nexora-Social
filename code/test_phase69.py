@@ -86,7 +86,7 @@ for bit in (".gb-nexa-img", ".nexa-stage", "@keyframes nexaTalk",
     assert bit in CSS, bit
 for pose in ("idle", "talk", "wave", "think"):
     assert os.path.exists(f"webapp/nexa/{pose}.webp"), pose
-assert "style.css?v=182" in HTML and "app.js?v=182" in HTML
+assert "style.css?v=183" in HTML and "app.js?v=183" in HTML
 print("client markers OK")
 
 # --- auth + fallback brain (no key) ------------------------------------
@@ -113,8 +113,13 @@ assert "Nexa" in r.json()["reply"]
 r = client.post("/assistant/chat", headers=h,
                 json={"message": "zqx wobble nonsense"})
 assert "learning" in r.json()["reply"]
+# Phase 183 (audit M15): the voice routes are GONE — Nexa is
+# TEXT-ONLY. Both answer 404, with or without a key.
 r = client.post("/assistant/speak", headers=h, json={"text": "Hello!"})
-assert r.status_code == 200 and r.json() == {"audio": None}
+assert r.status_code == 404, r.status_code
+r = client.post("/assistant/reply", headers=h,
+                json={"message": "How do I earn points?"})
+assert r.status_code == 404, r.status_code
 print("fallback brain OK")
 
 # --- Gemini brain + voice (stubbed HTTP) --------------------------------
@@ -139,13 +144,6 @@ def fake_post(url, headers=None, json=None, timeout=None):
             .startswith("You are Nexa")
         return FakeResp({"candidates": [{"content": {"parts": [
             {"text": "Hello! I am so happy to chat with you."}]}}]})
-    if "tts" in url and url.endswith(":generateContent"):
-        vc = json["generationConfig"]["speechConfig"]["voiceConfig"]
-        assert vc["prebuiltVoiceConfig"]["voiceName"] == "Leda"
-        pcm = b"\x00\x01" * 2400  # 0.1 s of 24 kHz 16-bit mono
-        return FakeResp({"candidates": [{"content": {"parts": [
-            {"inlineData": {"data": base64.b64encode(pcm).decode(),
-                            "mimeType": "audio/L16;rate=24000"}}]}}]})
     raise AssertionError("unexpected url " + url)
 
 
@@ -160,16 +158,10 @@ try:
                                       {"role": "nexa", "text": "hello"}]})
     j = r.json()
     assert j["ai"] is True and j["reply"].startswith("Hello!"), j
-    r = client.post("/assistant/speak", headers=h,
-                    json={"text": "Hello friend"})
-    j = r.json()
-    assert j["mime"] == "audio/wav" and j["audio"]
-    raw = base64.b64decode(j["audio"])
-    assert raw[:4] == b"RIFF" and raw[8:12] == b"WAVE", raw[:12]
-    assert len(calls) == 2
+    assert len(calls) == 1  # chat only — no TTS call any more
 finally:
     main_mod.httpx.post = real_post
     settings.GEMINI_API_KEY = ""
-print("gemini brain + voice OK")
+print("gemini brain OK (text only)")
 
 print("PHASE 69 OK")

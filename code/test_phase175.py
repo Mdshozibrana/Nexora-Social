@@ -243,15 +243,15 @@ for m in JS_MARKS:
     assert m in JS, f"missing JS marker: {m}"
 assert 'id="saved-collections"' in HTML
 assert ".saved-collections" in CSS and ".saved-chip" in CSS
-assert HTML.count("?v=182") == 10, HTML.count("?v=182")
+assert HTML.count("?v=183") == 10, HTML.count("?v=183")
 assert "?v=17" + "4" not in HTML
 BOT = open(os.path.join(ROOT, "code/app/bot.py")).read()
-assert "/?v=182" in BOT and "/?v=17" + "4" not in BOT
+assert "/?v=183" in BOT and "/?v=17" + "4" not in BOT
 paths = set()
 for route in app.routes:
     paths.add(route.path)
 # 7 endpoints, 4 new unique paths (methods share paths).
-assert len(paths) == 183, len(paths)
+assert len(paths) == 181, len(paths)
 for want in ("/saved/collections", "/saved/collections/{cid}",
              "/saved/collections/{cid}/posts",
              "/saved/collections/{cid}/posts/{post_id}"):

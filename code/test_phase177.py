@@ -288,14 +288,14 @@ assert "Bob&#x27;s post for 177" in r.text, r.text
 print("6. public page both directions OK")
 
 # 7. Client markers, version, routes, backup tables, health.
-assert HTML.count("?v=182") == 10, HTML.count("?v=182")
+assert HTML.count("?v=183") == 10, HTML.count("?v=183")
 assert "?v=17" + "7" not in HTML
 BOT = open(os.path.join(ROOT, "code/app/bot.py")).read()
-assert "/?v=182" in BOT and "/?v=17" + "7" not in BOT
+assert "/?v=183" in BOT and "/?v=17" + "7" not in BOT
 paths = set()
 for route in app.routes:
     paths.add(route.path)
-assert len(paths) == 183, len(paths)
+assert len(paths) == 181, len(paths)
 r = c.get("/admin/backup", headers=ADMIN)
 assert r.status_code == 200, r.text
 b = r.json()
@@ -304,7 +304,7 @@ assert len(_BACKUP_TABLES) == 52, len(_BACKUP_TABLES)
 r = c.get("/health")
 assert r.status_code == 200, r.text
 h = c.get("/admin/health", headers=ADMIN).json()
-assert h["version"] == 182, h
+assert h["version"] == 183, h
 print("7. version + routes + backup + health OK")
 
 print("PHASE 177 OK")

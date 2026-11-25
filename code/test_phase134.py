@@ -6,7 +6,7 @@ days, 15-day-old activity outside the window); best_day is the
 highest-view day; author 200 / other member 403 / unknown 404 /
 unauthenticated 401; /me/insights totals + top-5 ordering;
 GET /posts/{id} single-post fetch; backup still 39 tables;
-?v=182 x5, no ?v=133; insights client markers + Phase 123-133
+?v=183 x5, no ?v=133; insights client markers + Phase 123-133
 markers intact.
 """
 import hashlib, hmac, json, os, time, urllib.parse
@@ -204,7 +204,7 @@ with TestClient(app) as c:
 
     # 7. Client markers + asset version.
     html = open("webapp/index.html").read()
-    assert html.count("?v=182") == 10, html.count("?v=182")
+    assert html.count("?v=183") == 10, html.count("?v=183")
     assert "?v=133" not in html
     js = open("webapp/app.js").read()
     for m in ("openInsights", "openTopPost", "My insights",
@@ -221,6 +221,6 @@ with TestClient(app) as c:
               "loadBackupStatus", "openTipSheet", "My tips",
               "loadMyQr"):
         assert m in js, m
-    print("client markers + ?v=182 OK")
+    print("client markers + ?v=183 OK")
 
 print("PHASE-134 TESTS PASSED")

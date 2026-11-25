@@ -77,6 +77,14 @@ def classify_image(data, mime="image/jpeg"):
     """Classify one image's bytes. Returns a verdict string;
     "error" when every model failed or refused to answer."""
     if not active():
+        # Phase 183 (audit M18): screening invoked while the
+        # Gemini key is absent is LOUD, never silent — the
+        # caller gets "clean" only because there is no
+        # classifier to run, and the server log + Admin
+        # Health say so.
+        log.warning("media screening is OFF — GEMINI_API_KEY "
+                    "is not set; classify_image returning "
+                    "clean without classifying")
         return "clean"
     if mime not in _SUPPORTED_MIME:
         mime = "image/jpeg"
@@ -152,6 +160,12 @@ def _frame_jpegs(path):
 def screen_video(path):
     """Classify a video file by three of its frames."""
     if not active():
+        # Phase 183 (audit M18): see classify_image — a
+        # video that cannot be screened must not pass
+        # silently either.
+        log.warning("media screening is OFF — GEMINI_API_KEY "
+                    "is not set; screen_video returning "
+                    "clean without classifying")
         return "clean"
     frames = _frame_jpegs(path)
     if not frames:

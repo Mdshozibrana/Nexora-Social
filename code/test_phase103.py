@@ -40,7 +40,7 @@ assert "#rain-fx" in CSS
 print("phase 101 rain intact OK")
 
 # --- asset version ----------------------------------------------------------
-assert "app.js?v=182" in HTML and "style.css?v=182" in HTML
+assert "app.js?v=183" in HTML and "style.css?v=183" in HTML
 print("asset version OK")
 
 print("PHASE 103 OK")

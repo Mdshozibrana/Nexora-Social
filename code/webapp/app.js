@@ -34,12 +34,25 @@ const $ = id => document.getElementById(id);
 function actAsId() { return sessionStorage.getItem("nx_actas") || ""; }
 
 async function api(path, options = {}) {
-  const res = await fetch(path, {
-    ...options,
-    headers: { "X-Init-Data": initData, "Content-Type": "application/json",
-               ...(actAsId() ? { "X-Act-As": actAsId() } : {}),
-               ...(options.headers || {}) },
-  });
+  // Phase 183 (audit M17): opt-in client timeout — pass
+  // timeoutMs and the request aborts instead of hanging.
+  // Only the assistant call uses it today; other calls keep
+  // no timeout (uploads go through XHR).
+  const { timeoutMs, ...rest } = options;
+  const ctrl = timeoutMs ? new AbortController() : null;
+  const timer = ctrl ? setTimeout(() => ctrl.abort(), timeoutMs) : null;
+  let res;
+  try {
+    res = await fetch(path, {
+      ...rest,
+      ...(ctrl ? { signal: ctrl.signal } : {}),
+      headers: { "X-Init-Data": initData, "Content-Type": "application/json",
+                 ...(actAsId() ? { "X-Act-As": actAsId() } : {}),
+                 ...(options.headers || {}) },
+    });
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
   if (!res.ok) {
     // Phase 164: surface the server's message (the admin step-up
     // 401 tells the admin to reopen the app — "API 401" would not).
@@ -5453,7 +5466,17 @@ async function loadSettings() {
   if (!box || !me) return;
   box.innerHTML = "Loading…";
   try {
-    const u = await api("/users/" + me.telegram_id);
+    // Phase 183 (audit L13): sections render independently
+    // — the profile fetch failing must not kill the whole
+    // page. A failed fetch leaves u null: the Profile
+    // section shows its own inline error and the other
+    // sections still load.
+    let u = null;
+    try {
+      u = await api("/users/" + me.telegram_id);
+    } catch (e) {
+      u = null;
+    }
     box.innerHTML = "";
     const sec = (title) => {
       const s = document.createElement("div");
@@ -5474,13 +5497,13 @@ async function loadSettings() {
     nameIn.type = "text";
     nameIn.maxLength = 128;
     nameIn.placeholder = "Your name";
-    nameIn.value = u.first_name || "";
-    if (u.name_locked_days > 0) nameIn.disabled = true;
+    nameIn.value = u ? u.first_name || "" : "";
+    if (u && u.name_locked_days > 0) nameIn.disabled = true;
     const bioIn = document.createElement("textarea");
     bioIn.rows = 3;
     bioIn.maxLength = 500;
     bioIn.placeholder = "Write something about yourself…";
-    bioIn.value = u.bio || "";
+    bioIn.value = u ? u.bio || "" : "";
     const saveBtn = document.createElement("button");
     saveBtn.className = "wide";
     saveBtn.textContent = "Save profile";
@@ -5494,7 +5517,15 @@ async function loadSettings() {
       } catch (e) { setStatus("Could not save the profile."); }
     };
     prof.append(nameIn, bioIn, saveBtn);
-    if (u.name_locked_days > 0) {
+    if (!u) {
+      const err = document.createElement("p");
+      err.className = "hint";
+      err.textContent = "Could not load your profile — your name "
+        + "and bio are unavailable right now, but the rest of "
+        + "Settings still works.";
+      prof.appendChild(err);
+    }
+    if (u && u.name_locked_days > 0) {
       const note = document.createElement("div");
       note.className = "hint";
       note.textContent = "🔒 Name can be changed once every 60 days — available again in " + u.name_locked_days + " day" + (u.name_locked_days === 1 ? "" : "s") + ". Your bio can still be edited anytime.";
@@ -5529,12 +5560,12 @@ async function loadSettings() {
       o.textContent = g;
       bloodSel.appendChild(o);
     });
-    bloodSel.value = u.blood_group || "";
+    bloodSel.value = u ? u.blood_group || "" : "";
     const bloodRow = document.createElement("label");
     bloodRow.className = "privacy-row";
     const bloodChk = document.createElement("input");
     bloodChk.type = "checkbox";
-    bloodChk.checked = !!u.blood_donor;
+    bloodChk.checked = !!(u && u.blood_donor);
     const bloodTx = document.createElement("span");
     bloodTx.textContent = "আমি রক্ত দিতে চাই — show me as a donor of this group.";
     bloodRow.append(bloodChk, bloodTx);
@@ -5612,7 +5643,7 @@ async function loadSettings() {
     privRow.className = "privacy-row";
     const privChk = document.createElement("input");
     privChk.type = "checkbox";
-    privChk.checked = !!u.is_private;
+    privChk.checked = !!(u && u.is_private);
     const privTx = document.createElement("span");
     privTx.textContent = "🔒 Private account — only approved followers will see your posts.";
     privRow.append(privChk, privTx);
@@ -5620,10 +5651,10 @@ async function loadSettings() {
       try {
         const r = await api("/me/privacy", { method: "POST",
           body: JSON.stringify({ is_private: privChk.checked }) });
-        u.is_private = r.is_private;
+        if (u) u.is_private = r.is_private;
         setStatus(r.is_private ? "Your account is now private 🔒" : "Your account is now public.");
       } catch (e) {
-        privChk.checked = !!u.is_private;
+        privChk.checked = !!(u && u.is_private);
         setStatus("Could not change privacy.");
       }
     };
@@ -5803,7 +5834,14 @@ async function loadSettings() {
     moreHint.className = "hint";
     moreHint.textContent = "Everything that used to live on your profile — same cards, same buttons, now gathered here.";
     more.appendChild(moreHint);
-    more.appendChild(await myExtras());
+    try {
+      more.appendChild(await myExtras());
+    } catch (e) {
+      const err = document.createElement("p");
+      err.className = "hint";
+      err.textContent = "Could not load the rest of your profile cards.";
+      more.appendChild(err);
+    }
     box.appendChild(more);
     // 8. My QR — rendered inline (same loader as the QR view).
     const qrSec = sec("🔳 My QR");
@@ -5811,7 +5849,14 @@ async function loadSettings() {
     qrBox.id = "settings-qr-box";
     qrSec.appendChild(qrBox);
     box.appendChild(qrSec);
-    await loadMyQrInto("settings-qr-box");
+    try {
+      await loadMyQrInto("settings-qr-box");
+    } catch (e) {
+      const err = document.createElement("p");
+      err.className = "hint";
+      err.textContent = "Could not load your QR code.";
+      qrSec.appendChild(err);
+    }
   } catch (e) { box.textContent = "Could not load Settings."; }
 }
 
@@ -8577,6 +8622,15 @@ async function loadHealth() {
     grid.appendChild(statCard("⏱️ Uptime", fmtUptime(h.uptime_seconds)));
     grid.appendChild(statCard("🗄️ Database", fmtBytes(h.db_size_bytes)));
     box.appendChild(grid);
+    // Phase 183 (audit M18): screening must never be silently
+    // off — the Admin Panel says so when the Gemini key is absent.
+    if (h.screening_active === false) {
+      const warn = document.createElement("div");
+      warn.className = "admin-title";
+      warn.textContent = "⚠️ " + (h.screening_warning ||
+        "Media screening is OFF — GEMINI_API_KEY is not set.");
+      box.appendChild(warn);
+    }
     const title = document.createElement("div");
     title.className = "admin-title";
     title.textContent = "📊 Rows";
@@ -9831,6 +9885,9 @@ async function loadPeople() {
 
 // ------------------------------------------------------------- chat thread --
 let chatWith = null;
+// Phase 183 (audit L12): the oldest id on the loaded thread
+// page, or null when the whole history is loaded.
+let threadCursor = null;
 let voicePlaying = null; // Phase 173: the audio now playing
 let chatTimer = null;
 function stopChatPoll() {
@@ -9846,27 +9903,9 @@ async function openChat(uid) {
     if (chatWith === uid && !voicePlaying) loadThread(false);
   }, 8000);
 }
-async function loadThread(scroll) {
-  if (!chatWith) return;
-  try {
-    const r = await api("/messages/" + chatWith);
-    const ct = $("chat-title");
-    ct.classList.add("vname");
-    ct.innerHTML = "";
-    const ctText = document.createElement("span");
-    ctText.className = "vname-text";
-    ctText.textContent = r.user.first_name;
-    ct.appendChild(ctText);
-    if (r.user.verified) ct.appendChild(verifiedBadge());
-    fitVerifiedNames(ct);
-    const av = $("chat-avatar");
-    av.innerHTML = "";
-    av.appendChild(avatarEl(r.user.first_name, r.user.telegram_id,
-                            false, r.user.photo_file_id));
-    const box = $("chat-thread");
-    box.innerHTML = "";
-    $("chat-empty").hidden = r.messages.length > 0;
-    r.messages.forEach(m => {
+// Phase 183 (audit L12): one chat bubble, shared by the
+// thread load and the older-pages load below.
+function buildChatBubble(m) {
       const b = document.createElement("div");
       b.className = "bubble " + (m.mine ? "mine" : "theirs");
       if (m.media_file_id && m.media_type === "voice") {
@@ -9942,8 +9981,43 @@ async function loadThread(scroll) {
       t.textContent = relTime(m.created_at) +
         (m.mine && m.read ? " · seen" : "");
       b.appendChild(t);
-      box.appendChild(b);
-    });
+      return b;
+}
+
+
+async function loadThread(scroll) {
+  if (!chatWith) return;
+  try {
+    const r = await api("/messages/" + chatWith);
+    // Phase 183 (audit L12): the thread is cursor-paged —
+    // next_cursor is the oldest id on this page, or null
+    // when this is the whole history.
+    threadCursor = r.next_cursor || null;
+    const ct = $("chat-title");
+    ct.classList.add("vname");
+    ct.innerHTML = "";
+    const ctText = document.createElement("span");
+    ctText.className = "vname-text";
+    ctText.textContent = r.user.first_name;
+    ct.appendChild(ctText);
+    if (r.user.verified) ct.appendChild(verifiedBadge());
+    fitVerifiedNames(ct);
+    const av = $("chat-avatar");
+    av.innerHTML = "";
+    av.appendChild(avatarEl(r.user.first_name, r.user.telegram_id,
+                            false, r.user.photo_file_id));
+    const box = $("chat-thread");
+    box.innerHTML = "";
+    if (threadCursor) {
+      const older = document.createElement("button");
+      older.className = "btn";
+      older.id = "chat-load-older";
+      older.textContent = "↑ Load older messages";
+      older.onclick = () => loadOlderThread();
+      box.appendChild(older);
+    }
+    $("chat-empty").hidden = r.messages.length > 0;
+    r.messages.forEach(m => box.appendChild(buildChatBubble(m)));
     refreshMsgBadge();
     if (scroll) {
       const sc = $("app-scroll");
@@ -9951,18 +10025,63 @@ async function loadThread(scroll) {
     }
   } catch (e) { setStatus("Could not load the chat."); }
 }
+// Phase 183 (audit L12): load the next older page (before_id
+// = the oldest id on screen) and prepend it, keeping the
+// scroll position so the view does not jump.
+async function loadOlderThread() {
+  if (!chatWith || !threadCursor) return;
+  const btn = $("chat-load-older");
+  if (btn) btn.disabled = true;
+  try {
+    const r = await api("/messages/" + chatWith +
+      "?before_id=" + threadCursor);
+    threadCursor = r.next_cursor || null;
+    const box = $("chat-thread");
+    const sc = $("app-scroll");
+    const oldH = sc ? sc.scrollHeight : 0;
+    const frag = document.createDocumentFragment();
+    (r.messages || []).forEach(m => frag.appendChild(buildChatBubble(m)));
+    if (btn) {
+      if (threadCursor) {
+        btn.disabled = false;
+        box.insertBefore(frag, btn.nextSibling);
+      } else {
+        btn.remove();
+        box.insertBefore(frag, box.firstChild);
+      }
+    } else {
+      box.insertBefore(frag, box.firstChild);
+    }
+    if (sc) sc.scrollTop += sc.scrollHeight - oldH;
+  } catch (e) {
+    if (btn) btn.disabled = false;
+    setStatus("Could not load older messages.");
+  }
+}
+
+
+let chatSending = false;
 async function sendChat() {
   const inp = $("chat-input");
   const text = inp.value.trim();
-  if (!text || !chatWith) return;
+  // Phase 183 (audit L10): a send already in flight ignores
+  // a second tap/Enter, and every attempt carries its own
+  // X-Upload-Id — a retry of the same attempt replays the
+  // first message instead of double-posting.
+  if (!text || !chatWith || chatSending) return;
+  chatSending = true;
   inp.value = "";
   try {
     await api("/messages/" + chatWith,
-      { method: "POST", body: JSON.stringify({ text }) });
+      { method: "POST",
+        headers: { "X-Upload-Id": newUploadId() },
+        body: JSON.stringify({ text }) });
     loadThread(true);
   } catch (e) {
     inp.value = text;
     setStatus("Message could not be sent.");
+  } finally {
+    chatSending = false;
   }
 }
 $("chat-send").onclick = sendChat;
@@ -10437,9 +10556,8 @@ $("story-viewers-close").onclick = closeStoryViewers;
 
 // ---------- Phase 69: Nexa, the AI assistant ----------
 // She lives behind the sidebar: her chat opens only from her
-// sidebar card. Replies are spoken aloud (Gemini voice when the
-// server has a key, otherwise the phone's own speech voice at a
-// cute high pitch) while her picture switches to the talking
+// sidebar card. Replies are TEXT ONLY (Phase 183: the voice
+// routes are gone) while her picture switches to the talking
 // pose.
 let nexaHist = [];
 let nexaGreeted = false;
@@ -10534,8 +10652,13 @@ async function sendNexa(prefill) {
   if (st) st.textContent = "Nexa is thinking…";
   const typing = nexaBubble("…", "bot typing");
   try {
+    // Phase 183 (audit M17): 30 s client budget (the server
+    // caps the whole Gemini chain at 25 s) — a slow Gemini
+    // fails fast into an honest "slow" state instead of
+    // hanging on "thinking…" for a minute or more.
     const r = await api("/assistant/chat", {
       method: "POST",
+      timeoutMs: 30000,
       body: JSON.stringify({ message: text,
                              history: nexaHist.slice(0, -1) }) });
     if (typing) typing.remove();
@@ -10551,9 +10674,17 @@ async function sendNexa(prefill) {
     nexaPose("idle");
   } catch (e) {
     if (typing) typing.remove();
-    if (st) st.textContent = "Your AI friend — ask me anything!";
-    nexaBubble("Hmm, I can't think right now. Please try again "
-      + "in a moment!", "bot");
+    // Phase 183 (audit M17): an aborted fetch is Nexa being
+    // slow, not a dead chat — say so honestly instead of
+    // the generic line.
+    const slow = e && e.name === "AbortError";
+    if (st) st.textContent = slow
+      ? "Nexa is slow right now — please try again in a moment."
+      : "Your AI friend — ask me anything!";
+    nexaBubble(slow
+      ? "Nexa is slow right now — please try again in a moment."
+      : "Hmm, I can't think right now. Please try again "
+        + "in a moment!", "bot");
     nexaPairShown = true;
     nexaBusy = false;
     nexaPose("idle");

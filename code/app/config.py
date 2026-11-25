@@ -85,11 +85,12 @@ RATE_LIMITS = {
     "heartbeat": (240, 3600),
     "ad_shown": (60, 3600),
     "view": (300, 3600),
-    # Phase 69: Nexa's chat + voice budgets (a Gemini key is shared
-    # by the whole platform, so per-member caps protect the quota).
+    # Phase 69: Nexa's chat budget (a Gemini key is shared by
+    # the whole platform, so a per-member cap protects the
+    # quota). Phase 183 (audit M15): the assistant_speak
+    # bucket is gone with the voice routes — Nexa is TEXT-ONLY.
     "assistant_chat": (30, 3600),
     "location": (300, 3600),
-    "assistant_speak": (60, 3600),
     # Phase 97 (audit): the two newest endpoints get budgets too —
     # suggestions run the heaviest read queries in the app, and a
     # theme save writes the member's row.

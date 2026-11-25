@@ -70,19 +70,28 @@ HTML = open("webapp/index.html").read()
 
 # --- the truncation fix is in the source ------------------------------
 assert '"maxOutputTokens": 1500' in MAIN
-assert '"/assistant/reply"' in MAIN
-assert "max_length=700" in MAIN
+# Phase 183 (audit M15): the voice routes are GONE — the reply
+# endpoint no longer exists, and the speak input model with it.
+assert '"/assistant/reply"' not in MAIN
+assert '"/assistant/speak"' not in MAIN
+assert "_gemini_tts" not in MAIN
+assert "max_length=700" not in MAIN
 print("server config OK")
 
-# --- fallback mode: reply endpoint answers text, audio null -----------
+# --- fallback mode: voice routes answer 404; chat is text-only -------
 r = client.post("/assistant/reply", headers=h,
+                json={"message": "How do I earn points?"})
+assert r.status_code == 404, r.status_code
+r = client.post("/assistant/speak", headers=h, json={"text": "Hello!"})
+assert r.status_code == 404, r.status_code
+r = client.post("/assistant/chat", headers=h,
                 json={"message": "How do I earn points?"})
 assert r.status_code == 200, r.text
 j = r.json()
-assert j["ai"] is False and j["audio"] is None and "20" in j["reply"]
-r = client.post("/assistant/reply", headers=h, json={"message": " "})
+assert j["ai"] is False and "20" in j["reply"]
+r = client.post("/assistant/chat", headers=h, json={"message": " "})
 assert r.status_code == 400
-print("reply fallback OK")
+print("chat fallback OK")
 
 # --- Gemini mode (stubbed): one call, text + WAV together --------------
 class FakeResp:
@@ -100,11 +109,6 @@ seen = []
 
 def fake_post(url, headers=None, json=None, timeout=None):
     seen.append(url)
-    if "tts" in url:
-        pcm = b"\x00\x01" * 2400
-        return FakeResp({"candidates": [{"content": {"parts": [
-            {"inlineData": {"data": base64.b64encode(pcm).decode(),
-                            "mimeType": "audio/L16;rate=24000"}}]}}]})
     assert json["generationConfig"]["maxOutputTokens"] == 1500
     return FakeResp({"candidates": [{"content": {"parts": [
         {"text": "Full answer, every word of it."}]}}]})
@@ -114,25 +118,23 @@ settings.GEMINI_API_KEY = "test-key-71"
 main_mod.httpx.post = fake_post
 try:
     long_text = "Please say this whole long sentence. " * 14  # 504 chars
-    r = client.post("/assistant/speak", headers=h,
-                    json={"text": long_text})
-    assert r.status_code == 200 and r.json()["audio"], r.status_code
-    r = client.post("/assistant/reply", headers=h,
+    # (chat caps messages at 500 chars, so the Gemini call uses
+    # the short prompt — the long text belonged to the old
+    # 700-char speak endpoint, removed in Phase 183.)
+    r = client.post("/assistant/chat", headers=h,
                     json={"message": "Tell me everything"})
     j = r.json()
     assert j["ai"] is True
     assert j["reply"] == "Full answer, every word of it."
-    raw = base64.b64decode(j["audio"])
-    assert raw[:4] == b"RIFF" and j["mime"] == "audio/wav"
-    assert len(seen) == 3  # speak(1) + reply chat(1) + reply tts(1)
+    assert len(seen) == 1  # chat only — no TTS call any more
 finally:
     main_mod.httpx.post = real_post
     settings.GEMINI_API_KEY = ""
-print("reply gemini OK")
+print("chat gemini OK")
 
 # --- client: replies render as text bubbles -------------------
 assert '"/assistant/chat"' in JS
 print("client markers OK")
 
-assert "app.js?v=182" in HTML and "style.css?v=182" in HTML
+assert "app.js?v=183" in HTML and "style.css?v=183" in HTML
 print("PHASE 71 OK")

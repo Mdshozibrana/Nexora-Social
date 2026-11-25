@@ -5,8 +5,9 @@ This supersedes the Phase 70/71 voice work at the owner's
 word: the client no longer speaks, has no voice toggle, no
 tap-to-hear bubbles and no audio unlock machinery; asking her
 something is a single text chat call, after which she returns
-to her day. The server endpoints stay in place (dormant) —
-nothing in the client calls speak/reply any more.
+to her day. Phase 183 removed the server endpoints entirely —
+nothing in the client calls speak/reply any more, and the
+routes answer 404.
 """
 JS = open("webapp/app.js").read()
 HTML = open("webapp/index.html").read()
@@ -33,11 +34,18 @@ seg = JS[JS.index("function openAssistant()"):JS.index("function nexaStop()")]
 assert "nexaSpeak" not in seg and "nexaBubble(hello" in seg
 print("text path OK")
 
-# --- server endpoints remain (dormant) ---------------------------
-assert '"/assistant/speak"' in MAIN and '"/assistant/reply"' in MAIN
+# --- server voice routes are GONE (Phase 183, audit M15) ---------
+# The Phase 75 compromise ("endpoints stay, dormant") is over:
+# the owner TEXT-ONLY order now removes the routes entirely.
+assert '"/assistant/speak"' not in MAIN
+assert '"/assistant/reply"' not in MAIN
+assert "_gemini_tts" not in MAIN
+assert "assistant_speak" not in MAIN
 # and her self-description matches the text-only reality
 assert "members chat with you by text" in MAIN
-print("server dormant OK")
+# the stale "spoken aloud" comment is gone from the client
+assert "spoken aloud" not in JS
+print("server voice routes gone OK")
 
-assert "app.js?v=182" in HTML and "style.css?v=182" in HTML
+assert "app.js?v=183" in HTML and "style.css?v=183" in HTML
 print("PHASE 75 OK")

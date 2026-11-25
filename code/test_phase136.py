@@ -13,7 +13,7 @@ GET /posts/{id} (403), visible to a follower and to self; going
 private keeps existing followers; trending excludes private
 posts; hashtag search hides private posts but user search still
 finds the account; public accounts unaffected; backup 39 tables
-incl. follow_requests rows; ?v=182 x5, no ?v=135; private-account
+incl. follow_requests rows; ?v=183 x5, no ?v=135; private-account
 client markers + Phase 123-135 markers intact.
 """
 import hashlib, hmac, json, os, time, urllib.parse
@@ -152,13 +152,15 @@ with TestClient(app) as c:
     assert rows[0]["requester_id"] == 333, rows
     assert rows[0]["first_name"] == "Carol", rows
     req_id = rows[0]["id"]
-    n0 = notif_count(333, "follow")
+    # Phase 183 (audit M19): acceptance notifies under
+    # "follow_request", not "follow".
+    n0 = notif_count(333, "follow_request")
     r = c.post(f"/follow-requests/{req_id}/accept", headers=ALICE)
     assert r.status_code == 200, r.text
     assert r.json()["accepted"] is True, r.json()
     assert follows(333, 111), "accept must create the follow"
     assert req_status(333, 111) == "accepted"
-    assert notif_count(333, "follow") > n0, \
+    assert notif_count(333, "follow_request") > n0, \
         "the requester must be told the request was accepted"
     r = c.post(f"/follow-requests/{req_id}/accept", headers=ALICE)
     assert r.status_code == 404, r.text
@@ -278,7 +280,7 @@ with TestClient(app) as c:
 
     # 13. Client markers + asset version.
     html = open("webapp/index.html").read()
-    assert html.count("?v=182") == 10, html.count("?v=182")
+    assert html.count("?v=183") == 10, html.count("?v=183")
     assert "?v=135" not in html
     js = open("webapp/app.js").read()
     for m in ("loadFollowRequests", "Follow requests", "Private account",
@@ -300,6 +302,6 @@ with TestClient(app) as c:
         assert m in js, m
     css = open("webapp/style.css").read()
     assert ".private-lock" in css and ".privacy-row" in css
-    print("client markers + ?v=182 OK")
+    print("client markers + ?v=183 OK")
 
 print("PHASE-136 TESTS PASSED")

@@ -13,7 +13,7 @@ points, over balance, gate locked, second pending); admin list +
 decide (approve needs amount + currency, deducts points, notifies,
 audits; reject costs nothing; non-admin 403; paid only from
 approved); backup carries 35 tables incl. payout_requests with a
-restore round-trip; ?v=182 (x5), ?v=182 gone; client markers; the
+restore round-trip; ?v=183 (x5), ?v=183 gone; client markers; the
 monetization endpoint still works after the gate-helper refactor.
 """
 import hashlib
@@ -357,9 +357,9 @@ with TestClient(app) as c:
     print("backup restore round-trip: payout rows back identical OK")
 
     # ------------------------------------------------------------- client --
-    assert HTML.count("?v=182") == 10, HTML.count("?v=182")
+    assert HTML.count("?v=183") == 10, HTML.count("?v=183")
     assert "?v=126" not in HTML
-    assert "app.js?v=182" in HTML and "style.css?v=182" in HTML
+    assert "app.js?v=183" in HTML and "style.css?v=183" in HTML
     for marker in ("loadPayoutBox", "loadPayoutList", "loadPayouts",
                    "decidePayout", "markPayoutPaid", "payout-network",
                    "payout-address", "payout-points", "payout-request",
@@ -372,6 +372,6 @@ with TestClient(app) as c:
     for marker in ("topScroller", "pollBlock", "loadDrafts",
                    "renderPh", "goFeedTo", "loadTrending"):
         assert marker in JS, marker
-    print("client: ?v=182 + payout markers + 123-126 markers OK")
+    print("client: ?v=183 + payout markers + 123-126 markers OK")
 
 print("phase127: wallet + request + admin + backup + client OK")
