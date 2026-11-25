@@ -309,22 +309,22 @@ for marker in ("renderRichText", "attachMentionAutocomplete",
                'mention: "📣"', "loadSkills", "loadBlood",
                "MASCOT_TIPS_BY_VIEW", "totp-card"):
     assert marker in js, marker
-assert "app.js?v=179" in HTML
+assert "app.js?v=180" in HTML
 assert ("?v=16" + "9") not in HTML
-assert "style.css?v=179" in HTML
-assert "games.js?v=179" in HTML
+assert "style.css?v=180" in HTML
+assert "games.js?v=180" in HTML
 assert ".mention" in CSS
 paths = {rt.path for rt in app.routes}
 assert len(paths) == 183, len(paths)
 assert "/posts" in paths
 h = c.get("/admin/health", headers=ADMIN).json()
-assert h["version"] == 179, h
+assert h["version"] == 180, h
 r = c.get("/admin/backup", headers=ADMIN)
 assert r.status_code == 200, r.text
-assert len(r.json()["tables"]) == 51, len(r.json()["tables"])
+assert len(r.json()["tables"]) == 52, len(r.json()["tables"])
 assert "mentions" in r.json()["tables"]
-assert len(_BACKUP_TABLES) == 51, len(_BACKUP_TABLES)
-print("client + version + routes + backup OK (174 routes, 48 tables, ?v=179)")
+assert len(_BACKUP_TABLES) == 52, len(_BACKUP_TABLES)
+print("client + version + routes + backup OK (174 routes, 48 tables, ?v=180)")
 
 # 13. Phase 170 rider: stale /media token recovery.
 # (a) Foreground return refreshes the token (the 45-min tick

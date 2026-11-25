@@ -101,16 +101,16 @@ with TestClient(app) as c:
                    "Write in the box at the top",
                    "Write something for Nexora Inbox"):
         assert marker not in JS and marker not in HTML, marker
-    assert HTML.count("?v=179") == 10, HTML.count("?v=179")
+    assert HTML.count("?v=180") == 10, HTML.count("?v=180")
     assert "?v=16" + "8" not in HTML
-    assert "app.js?v=179" in HTML and "style.css?v=179" in HTML
+    assert "app.js?v=180" in HTML and "style.css?v=180" in HTML
     assert "/inbox-posts" not in MAIN_SRC
     assert "via_inbox: bool = Field" not in MAIN_SRC
     assert '"via_inbox": bool(getattr' not in MAIN_SRC
     assert "via_inbox BOOLEAN DEFAULT FALSE" in MAIN_SRC, \
         "column DDL must be retained (data safety)"
     assert "BOOLEAN DEFAULT 0" not in MAIN_SRC
-    print("box removal OK (?v=179, no box/code/endpoint, column retained)")
+    print("box removal OK (?v=180, no box/code/endpoint, column retained)")
 
     # 3. Functional: /inbox-posts 404; via_inbox ignored on POST /posts.
     r = c.get("/inbox-posts", headers=H(115, "Dana"))
@@ -199,10 +199,10 @@ with TestClient(app) as c:
     assert len(paths) == 183, len(paths)
     assert "/inbox-posts" not in paths and "/posts" in paths, paths
     h = c.get("/admin/health", headers=ADMIN).json()
-    assert h["version"] == 179, h
+    assert h["version"] == 180, h
     r = c.get("/admin/backup", headers=ADMIN)
     assert r.status_code == 200, r.text
-    assert len(r.json()["tables"]) == 51, len(r.json()["tables"])
-    print("neighbours + version + routes OK (174 routes, 48 tables, ?v=179)")
+    assert len(r.json()["tables"]) == 52, len(r.json()["tables"])
+    print("neighbours + version + routes OK (174 routes, 48 tables, ?v=180)")
 
 print("PHASE 168 REMOVAL GUARDS OK")

@@ -16,7 +16,7 @@ Members browse, admin detail, Nearby list, story author +
 viewers); the old text-" ✓" ticks are gone (blue badge
 everywhere); 360px geometry for the 6 main sites with the
 owner's long name; Trending reuses postCard; neighbours; backup
-44 tables; routes 163; ?v=179 x10, no old-version literals.
+44 tables; routes 163; ?v=180 x10, no old-version literals.
 """
 import hashlib, hmac, json, os, re, subprocess, time, urllib.parse
 
@@ -291,19 +291,19 @@ print("neighbours OK")
 with TestClient(app) as c:
     r = c.get("/admin/backup", headers=ALICE)
     assert r.status_code == 200, r.text
-    assert len(r.json()["tables"]) == 51, len(r.json()["tables"])
+    assert len(r.json()["tables"]) == 52, len(r.json()["tables"])
     print("backup: 44 tables OK")
 paths = {rt.path for rt in app.routes}
 assert len(paths) == 183, len(paths)
 print("routes: 163 OK (no new endpoints)")
 
 # 12. Version.
-assert HTML.count("?v=179") == 10, HTML.count("?v=179")
+assert HTML.count("?v=180") == 10, HTML.count("?v=180")
 assert "?v=15" + "9" not in HTML
-assert "app.js?v=179" in HTML and "games.js?v=179" in HTML
-assert 'menu_url.rstrip("/") + "/?v=179"' in BOT
+assert "app.js?v=180" in HTML and "games.js?v=180" in HTML
+assert 'menu_url.rstrip("/") + "/?v=180"' in BOT
 assert "Phase 160" in CSS and "Phase 160" in JS and "Phase 160" in HTML
-print("version OK (?v=179 x10, no old-version literals)")
+print("version OK (?v=180 x10, no old-version literals)")
 
 # 13. Phase 162: the tick HUGS the name (owner: "blu tick naam
 # theke dure keno?"). Phase 160's .vname-text had flex-grow 1,
@@ -358,8 +358,8 @@ assert size == 12, size
 assert tick_left == 139, tick_left
 # Resize re-fit: a wider line re-grows the name to its base size.
 assert fit_size(em_width(LONG), 16, 300) == 16, "re-grow on resize"
-# Version: shell on ?v=179, no ?v=179 literal left anywhere.
-assert HTML.count("?v=179") == 10, HTML.count("?v=179")
+# Version: shell on ?v=180, no ?v=180 literal left anywhere.
+assert HTML.count("?v=180") == 10, HTML.count("?v=180")
 assert "?v=16" + "1" not in HTML
 print("Phase 162 hug OK (tick 5px after the name at all 6 sites)")
 

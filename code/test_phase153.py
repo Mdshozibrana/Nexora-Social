@@ -238,7 +238,7 @@ with TestClient(app) as c:
     # backup still 43 tables.
     r = c.get("/admin/backup", headers=ALICE)
     assert r.status_code == 200, r.text
-    assert len(r.json()["tables"]) == 51, len(r.json()["tables"])
+    assert len(r.json()["tables"]) == 52, len(r.json()["tables"])
     paths = {rt.path for rt in app.routes}
     assert len(paths) == 183, len(paths)
     assert len([p for p in paths if "blood" in p]) == 6, paths
@@ -254,7 +254,7 @@ assert "museum" not in JS.lower() and "museum" not in HTML.lower()
 print("neighbours OK (Nearby toggle, Blood flows, no museum)")
 
 # 9. Version.
-assert HTML.count("?v=179") == 10, HTML.count("?v=179")
+assert HTML.count("?v=180") == 10, HTML.count("?v=180")
 assert "?v=15" + "2" not in HTML
-assert 'menu_url.rstrip("/") + "/?v=179"' in BOT
+assert 'menu_url.rstrip("/") + "/?v=180"' in BOT
 print("PHASE 153 OK")

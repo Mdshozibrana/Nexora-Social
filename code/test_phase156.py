@@ -118,7 +118,7 @@ assert not os.path.exists("webapp/assets/mascot-head.webp")
 wrap = HTML[HTML.index('id="mascot-wrap"'):]
 wrap = wrap[:wrap.index("</div>\n</div>") + len("</div>\n</div>")]
 assert "<img" not in wrap
-assert "vendor/three/three.min.js?v=179" in HTML
+assert "vendor/three/three.min.js?v=180" in HTML
 three = open("webapp/vendor/three/three.min.js").read()
 assert len(three) > 500 * 1024, len(three)
 assert "WebGLRenderer" in three and "REVISION" in three
@@ -280,7 +280,7 @@ with TestClient(app) as c:
     # backup still 43 tables.
     r = c.get("/admin/backup", headers=ALICE)
     assert r.status_code == 200, r.text
-    assert len(r.json()["tables"]) == 51, len(r.json()["tables"])
+    assert len(r.json()["tables"]) == 52, len(r.json()["tables"])
     paths = {rt.path for rt in app.routes}
     assert len(paths) == 183, len(paths)
     assert not any("mascot" in p for p in paths), paths
@@ -297,7 +297,7 @@ assert "museum" not in JS.lower() and "museum" not in HTML.lower()
 print("neighbours OK (Blood, Nearby, composer, glassbar, feed photos)")
 
 # 10. Version.
-assert HTML.count("?v=179") == 10, HTML.count("?v=179")
+assert HTML.count("?v=180") == 10, HTML.count("?v=180")
 assert "?v=15" + "5" not in HTML
-assert 'menu_url.rstrip("/") + "/?v=179"' in BOT
+assert 'menu_url.rstrip("/") + "/?v=180"' in BOT
 print("PHASE 156 OK")

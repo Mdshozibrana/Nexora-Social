@@ -87,9 +87,12 @@ with TestClient(app) as c:
     RATE_LIMITS["heartbeat"] = (2, 3600)
     ratelimit.reset()
     try:
+        # Phase 180 (audit H14): /ads/shown is 410 while no ad
+        # provider is live — but the rate budget still runs first,
+        # so the 4th call inside the 3/h test budget 429s.
         for _ in range(3):
             r = c.post("/ads/shown", headers=h660)
-            assert r.status_code == 200, r.text
+            assert r.status_code == 410, r.text
         r = c.post("/ads/shown", headers=h660)
         assert r.status_code == 429, r.status_code
         for _ in range(2):

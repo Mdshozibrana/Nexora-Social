@@ -13,7 +13,7 @@ points, over balance, gate locked, second pending); admin list +
 decide (approve needs amount + currency, deducts points, notifies,
 audits; reject costs nothing; non-admin 403; paid only from
 approved); backup carries 35 tables incl. payout_requests with a
-restore round-trip; ?v=179 (x5), ?v=179 gone; client markers; the
+restore round-trip; ?v=180 (x5), ?v=180 gone; client markers; the
 monetization endpoint still works after the gate-helper refactor.
 """
 import hashlib
@@ -330,7 +330,7 @@ with TestClient(app) as c:
     assert b["format"] == "nexora-backup" and b["version"] == 1
     from app.main import _BACKUP_TABLES  # noqa: E402
     assert set(b["tables"]) == {n for n, _ in _BACKUP_TABLES}
-    assert len(b["tables"]) == 51, len(b["tables"])
+    assert len(b["tables"]) == 52, len(b["tables"])
     assert "payout_requests" in b["tables"]
     assert len(b["tables"]["payout_requests"]) == 4, \
         len(b["tables"]["payout_requests"])
@@ -357,9 +357,9 @@ with TestClient(app) as c:
     print("backup restore round-trip: payout rows back identical OK")
 
     # ------------------------------------------------------------- client --
-    assert HTML.count("?v=179") == 10, HTML.count("?v=179")
+    assert HTML.count("?v=180") == 10, HTML.count("?v=180")
     assert "?v=126" not in HTML
-    assert "app.js?v=179" in HTML and "style.css?v=179" in HTML
+    assert "app.js?v=180" in HTML and "style.css?v=180" in HTML
     for marker in ("loadPayoutBox", "loadPayoutList", "loadPayouts",
                    "decidePayout", "markPayoutPaid", "payout-network",
                    "payout-address", "payout-points", "payout-request",
@@ -372,6 +372,6 @@ with TestClient(app) as c:
     for marker in ("topScroller", "pollBlock", "loadDrafts",
                    "renderPh", "goFeedTo", "loadTrending"):
         assert marker in JS, marker
-    print("client: ?v=179 + payout markers + 123-126 markers OK")
+    print("client: ?v=180 + payout markers + 123-126 markers OK")
 
 print("phase127: wallet + request + admin + backup + client OK")

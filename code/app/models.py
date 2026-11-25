@@ -334,9 +334,27 @@ class DailyClaim(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(BigInteger, ForeignKey("users.telegram_id"), index=True)
     task_key = Column(String(32))
-    day = Column(String(10))  # ISO date, UTC — the day the reward was claimed
+    day = Column(String(10))  # ISO date, Asia/Dhaka (Phase 180) —
+    # the day the reward was claimed
+
     claimed_at = Column(DateTime, default=datetime.utcnow)
     __table_args__ = (UniqueConstraint("user_id", "task_key", "day"),)
+
+
+class TaskFollowEvent(Base):
+    """Phase 180 (audit M24): a durable record of a follow for
+    the daily follow3 task. Follow rows are hard-deleted on
+    unfollow, so counting Follow rows lets unfollow + re-follow
+    re-farm the task; this row survives unfollow and is unique
+    per (follower, target, day) — one distinct target per day."""
+    __tablename__ = "task_follow_events"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("users.telegram_id"), index=True)
+    target_id = Column(BigInteger, ForeignKey("users.telegram_id"),
+                       index=True)
+    day = Column(String(10))  # ISO date, Asia/Dhaka — the day followed
+    created_at = Column(DateTime, default=datetime.utcnow)
+    __table_args__ = (UniqueConstraint("user_id", "target_id", "day"),)
 
 
 class UserActivity(Base):
@@ -658,7 +676,9 @@ class ScheduledPost(Base):
     media_type = Column(String(16), nullable=True)  # photo | video
     scheduled_at = Column(DateTime, nullable=False, index=True)
     status = Column(String(16), default="pending", nullable=False)
-    # pending | posted | failed | cancelled
+    # pending | publishing | posted | failed | cancelled
+    # (Phase 180: "publishing" is the crash-safe claim — the row
+    # is marked publishing, committed, BEFORE register_post().)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     posted_post_id = Column(Integer, ForeignKey("posts.id"),
                             nullable=True)

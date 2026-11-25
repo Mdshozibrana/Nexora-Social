@@ -258,17 +258,17 @@ with TestClient(app) as c:
                   json={"initData": ALICE["X-Init-Data"]}).status_code == 200
     r = c.get("/admin/backup", headers=ALICE)
     assert r.status_code == 200, r.text
-    assert len(r.json()["tables"]) == 51, len(r.json()["tables"])
+    assert len(r.json()["tables"]) == 52, len(r.json()["tables"])
     print("backup: 44 tables OK")
 paths = {rt.path for rt in app.routes}
 assert len(paths) == 183, len(paths)
 print("routes: 163 OK (no new endpoints)")
 
 # 10. Version.
-assert HTML.count("?v=179") == 10, HTML.count("?v=179")
+assert HTML.count("?v=180") == 10, HTML.count("?v=180")
 assert "?v=16" + "2" not in HTML
-assert 'menu_url.rstrip("/") + "/?v=179"' in BOT
+assert 'menu_url.rstrip("/") + "/?v=180"' in BOT
 assert "Phase 163" in CSS and "Phase 163" in JS and "Phase 163" in MAIN
-print("version OK (?v=179 x10, no old-version literals)")
+print("version OK (?v=180 x10, no old-version literals)")
 
 print("PHASE 163 OK")

@@ -62,12 +62,21 @@ with TestClient(app) as c:
     print("videos Following tab shows only followed creators OK")
 
     db = SessionLocal()
-    for uid, bal in ((101, 300), (202, 900), (303, 50)):
+    # Phase 180 (audit M23): the leaderboard ranks by LIFETIME
+    # points (positive ledger sum), not the spendable balance — so
+    # seed ledger rows matching the intended balances. Ann and Ben
+    # already earned 20 each from their two posts above.
+    for uid, bal, have in ((101, 300, 20), (202, 900, 20), (303, 50, 0)):
         u = db.get(models.User, uid)
         u.points_balance = bal
+        if bal > have:
+            db.add(models.PointsLedger(user_id=uid, amount=bal - have,
+                                       reason="post"))
     for i in range(55):
         db.add(models.User(telegram_id=10000 + i, first_name=f"Bulk{i}",
                            points_balance=2000 + i))
+        db.add(models.PointsLedger(user_id=10000 + i, amount=2000 + i,
+                                   reason="post"))
     db.commit()
     db.close()
 

@@ -160,6 +160,15 @@ RATE_LIMITS = {
 # earn nothing here (anti-farming rule for this phase).
 POINTS = {"post": 10, "referral": 20}
 
+# Phase 180 (audit H14): NO ad provider is live — AdsGram DECLINED
+# the platform (54173, unit int-57207), so no ad can ever play.
+# While this is False, POST /ads/shown answers 410 and creates no
+# AdEvent row, and the adwatch task reports available=False. Flip to
+# True — and only then — when a provider returns AND its shows are
+# verified server-side.
+ADS_PROVIDER_LIVE = False
+
+
 # Daily tasks (owner request, Oct 31; values revised Nov 13, Phase 113):
 # each can be claimed ONCE per day.
 # metric = how progress is counted for the current day:

@@ -5,6 +5,10 @@
 - React to 6 posts -> 10 pts (new daily task, Like rows today).
 - Watch an ad -> 20 pts, once a day (new daily task, AdEvent rows
   today — only real completed shows, reported via /ads/shown).
+  PHASE 180 (audit H14): PAUSED — AdsGram declined the platform,
+  so POST /ads/shown answers 410, creates no AdEvent row, and the
+  task reports available=False, never claimable. The section below
+  now proves the pause instead of the old unlock.
 - Check-in 20 and comment-5 (5 pts) unchanged (covered by test_phase6).
 """
 import hashlib, hmac, json, os, urllib.parse
@@ -96,25 +100,29 @@ with TestClient(app) as c:
     assert r.status_code == 400, "second react claim must be refused"
     print("react-6 (+10) once a day OK")
 
-    # Ad-watch: no show yet -> not claimable; one real /ads/shown
-    # report -> claimable -> +20, once a day.
+    # Ad-watch (Phase 180, audit H14): no ad provider is live
+    # (AdsGram declined), so the task is PAUSED — POST /ads/shown
+    # answers 410, creates no AdEvent row, and the task reports
+    # available=False, progress 0, never claimable. The old
+    # behaviour (a bare POST unlocking +20) is gone by design.
     r = c.post("/me/tasks/adwatch/claim", headers=CAROL)
     assert r.status_code == 400
     r = c.post("/ads/shown", headers=CAROL)
-    assert r.json() == {"ok": True, "counted": True}, r.json()
+    assert r.status_code == 410, (r.status_code, r.text)
+    assert r.json()["detail"] == "Ads are not available right now"
     t = tasks(c, CAROL)
-    assert t["adwatch"]["progress"] == 1 and t["adwatch"]["claimable"] is True
+    assert t["adwatch"]["progress"] == 0 and t["adwatch"]["claimable"] is False
+    assert t["adwatch"]["available"] is False, t["adwatch"]
     r = c.post("/me/tasks/adwatch/claim", headers=CAROL)
-    assert r.json()["points_awarded"] == 20, r.json()
-    assert r.json()["balance"] == 50, r.json()
-    r = c.post("/me/tasks/adwatch/claim", headers=CAROL)
-    assert r.status_code == 400, "second ad claim must be refused"
-    print("ad-watch (+20) once a day OK")
+    assert r.status_code == 400
+    assert c.get("/me/points", headers=CAROL).json()["balance"] == 30
+    print("ad-watch paused while no provider is live (410, unavailable) OK")
 
     # Client: Watch-ad button + showTaskAd wiring, history labels.
     js = c.get("/webapp/app.js").text
     assert 't.key === "adwatch"' in js, "ad button branch gone"
     assert '"▶️ Watch ad"' in js, "ad button label gone"
+    assert '"No ad available"' in js, "Phase 180 unavailable label gone"
     assert "async function showTaskAd(btn)" in js, "showTaskAd gone"
     assert 'await api("/ads/shown", { method: "POST" })' in js
     assert '"task:follow3"' in js and '"task:react6"' in js
@@ -133,8 +141,8 @@ with TestClient(app) as c:
     assert "the follow task 10" in main, "Nexa manual task values stale"
     print("Phase 111/112 markers OK")
 
-    for asset in ("style.css?v=179", "app.js?v=179", "games.js?v=179"):
+    for asset in ("style.css?v=180", "app.js?v=180", "games.js?v=180"):
         assert asset in html, asset
-    print("asset version ?v=179 OK")
+    print("asset version ?v=180 OK")
 
 print("PHASE 113 OK")

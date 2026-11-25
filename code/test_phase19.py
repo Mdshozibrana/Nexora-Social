@@ -209,12 +209,15 @@ with TestClient(app) as c:
     assert r.json()["sessions_today"] == 2 and r.json()["seconds_today"] == 30, r.json()
     print("heartbeat time tracking OK")
 
-    # --- ad impressions: counted once per burst ------------------------
+    # --- ad impressions: paused while no provider is live -----------
+    # Phase 180 (audit H14): AdsGram declined, so POST /ads/shown
+    # answers 410 and records nothing — no impressions, no task
+    # unlock. The dashboard / member-detail figures below are 0.
     r = c.post("/ads/shown", headers=RAFI)
-    assert r.json()["counted"] is True, r.json()
+    assert r.status_code == 410, (r.status_code, r.text)
     r = c.post("/ads/shown", headers=RAFI)
-    assert r.json()["counted"] is False, r.json()
-    print("ad impression counting OK")
+    assert r.status_code == 410, (r.status_code, r.text)
+    print("ad impression reporting paused (410, nothing recorded) OK")
 
     # --- dashboard aggregates ------------------------------------------
     r = c.get("/admin/dashboard", headers=RAFI)
@@ -223,7 +226,7 @@ with TestClient(app) as c:
     assert r.status_code == 200, r.text
     d = r.json()
     assert d["total_members"] >= 1 and d["new_today"] >= 1, d
-    assert d["ads_total"] == 1 and d["ads_today"] == 1, d
+    assert d["ads_total"] == 0 and d["ads_today"] == 0, d
     assert d["time_today_seconds"] == 30, d
     assert len(d["signups_14d"]) == 14 and len(d["active_14d"]) == 14, d
     assert any(x["name"] == "Bangladesh" for x in d["countries"]), d
@@ -236,7 +239,7 @@ with TestClient(app) as c:
     d = r.json()
     assert d["seconds_total"] == 30 and d["seconds_today"] == 30, d
     assert d["sessions_today"] == 2 and d["active_days"] == 1, d
-    assert d["ads_watched"] == 1 and d["posts"] == 4, d
+    assert d["ads_watched"] == 0 and d["posts"] == 4, d
     r = c.get("/admin/users/424242", headers=OWNER)
     assert r.status_code == 404, r.status_code
     r = c.get("/admin/users", headers=OWNER)

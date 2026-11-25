@@ -5849,6 +5849,13 @@ async function loadTasks() {
           } catch (e) { setStatus("Could not claim this task."); }
         };
         btn.onclick = doClaim;
+      } else if (t.key === "adwatch" && t.available === false) {
+        // Phase 180 (audit H14): no ad provider is live (AdsGram
+        // declined) — the task is paused, not claimable, and there
+        // is no Watch button to tap. It returns with a provider.
+        btn.textContent = "No ad available";
+        btn.className = "task-claim btn";
+        btn.disabled = true;
       } else if (t.key === "adwatch") {
         // Phase 113 (owner): the ad task is done by tapping to watch
         // an ad — a real completed show reports /ads/shown, which is

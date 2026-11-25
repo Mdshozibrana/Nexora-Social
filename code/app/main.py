@@ -25,15 +25,18 @@ from fastapi.responses import HTMLResponse, JSONResponse, \
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy import func, inspect, or_, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from telegram import LabeledPrice
 
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from . import filesig, geoip, imgconv, models, moderation, notify, \
     ratelimit, \
     tgupload, videoutil
-from .config import (DAILY_TASKS, MONETIZATION, OFFICIAL_FOLLOWER_BASE,
+from .config import (ADS_PROVIDER_LIVE, DAILY_TASKS, MONETIZATION,
+                     OFFICIAL_FOLLOWER_BASE,
                      OFFICIAL_ID, OFFICIAL_NAME, PAYOUT_NETWORKS,
                      RATE_LIMITS, VERIFICATION_MIN_FOLLOWERS,
                      VERIFICATION_MIN_REFERRALS, settings)
@@ -2509,11 +2512,65 @@ def cancel_scheduled_post(row_id: int,
     return {"ok": True, "id": row_id, "status": "cancelled"}
 
 
+def _find_adoptable_post(db, row):
+    """Phase 180 (audit H9): the post a crashed sweep already
+    created for this row — same author, same text and media,
+    created at/after the scheduled time, and not already claimed
+    by another scheduled row. None when no such post exists."""
+    claimed = {r[0] for r in db.query(
+        models.ScheduledPost.posted_post_id).filter(
+        models.ScheduledPost.posted_post_id.isnot(None)).all()}
+    q = db.query(models.Post).filter(
+        models.Post.user_id == row.user_id,
+        models.Post.caption == (row.text or ""),
+        models.Post.is_deleted == False,
+        models.Post.created_at >= row.scheduled_at)
+    if row.media_file_id:
+        q = q.filter(models.Post.media_file_id == row.media_file_id)
+    else:
+        q = q.filter(models.Post.media_file_id.is_(None))
+    for post in q.order_by(models.Post.created_at.desc(),
+                           models.Post.id.desc()).all():
+        if post.id not in claimed:
+            return post
+    return None
+
+
 def _publish_scheduled_row(db, row):
     """Publish one due row through the normal post path. On
     success the row is posted with its post id; on a screening
     rejection or any other failure it is failed with a short
-    human message — and never retried automatically."""
+    human message — and never retried automatically.
+
+    Phase 180 (audit H9): crash-safe. The row is CLAIMED first
+    (status -> "publishing", committed BEFORE register_post()),
+    so a crash between the post commit and the row commit leaves
+    a "publishing" row the next sweep ADOPTS (its post already
+    exists — no second post, no second +10) instead of
+    publishing again. A row whose post was never created is
+    published for real. sync_mentions() is best-effort: the post
+    is live by then, so a mention failure logs and the row still
+    posts instead of failing a live post."""
+    if row.status == "posted":
+        return
+    if row.status not in ("pending", "publishing"):
+        return
+    if row.status == "publishing":
+        # A previous sweep crashed after the post was created:
+        # adopt it (no additional points — register_post already
+        # paid them) instead of publishing again.
+        adopted = _find_adoptable_post(db, row)
+        if adopted is not None:
+            row.status = "posted"
+            row.posted_post_id = adopted.id
+            row.error = None
+            db.commit()
+            return
+        # No post exists: the crash happened before
+        # register_post() committed — publish for real below.
+    else:
+        row.status = "publishing"
+        db.commit()
     user = db.get(models.User, row.user_id)
     if user is None:
         row.status = "failed"
@@ -2544,33 +2601,54 @@ def _publish_scheduled_row(db, row):
                 return
         post, _, _ = register_post(db, user, ptype,
                                    row.media_file_id, row.text or "")
-        # Phase 170: @mentions in a scheduled post — rows +
-        # in-app record only; the bot push needs an async caller,
-        # so a scheduled post's mention lands in the 🔔 list,
-        # not as a bot message. (See PRD Phase 170.)
-        sync_mentions(db, row.user_id, post.id, None,
-                      row.text or "", row.user_id)
-        row.status = "posted"
-        row.posted_post_id = post.id
-        row.error = None
-        db.commit()
     except Exception:
+        # register_post() threw — but it commits the post row
+        # first, so the post may already be live. Adopt it when
+        # it is; only fail the row when no post was created.
         # A failed row is never retried: the member sees the
         # reason and can delete or re-schedule it.
         db.rollback()
+        adopted = _find_adoptable_post(db, row)
+        if adopted is not None:
+            row.status = "posted"
+            row.posted_post_id = adopted.id
+            row.error = None
+            db.commit()
+            return
         row.status = "failed"
         row.error = "Could not publish this post."
         db.commit()
+        return
+    # Phase 170: @mentions in a scheduled post — rows +
+    # in-app record only; the bot push needs an async caller,
+    # so a scheduled post's mention lands in the 🔔 list,
+    # not as a bot message. (See PRD Phase 170.)
+    # Phase 180: best-effort — the post is live, so a mention
+    # failure must not fail the row (the old code did, leaving
+    # a live post + a failed row).
+    try:
+        sync_mentions(db, row.user_id, post.id, None,
+                      row.text or "", row.user_id)
+    except Exception:
+        logging.exception("scheduled post mentions failed for row %s",
+                          row.id)
+    row.status = "posted"
+    row.posted_post_id = post.id
+    row.error = None
+    db.commit()
 
 
 def _run_scheduled_sweep():
     """One sweep: publish every pending row whose time has come.
     Sync — the loop runs it in a thread so screening network
-    calls never block the event loop."""
+    calls never block the event loop. Phase 180 (audit H9):
+    "publishing" rows are swept too — a crashed sweep's claimed
+    row is adopted (its post exists) or published (it does not)
+    on the next sweep, never duplicated."""
     now = datetime.utcnow()
     with SessionLocal() as db:
         rows = db.query(models.ScheduledPost).filter(
-            models.ScheduledPost.status == "pending",
+            models.ScheduledPost.status.in_(["pending", "publishing"]),
             models.ScheduledPost.scheduled_at <= now).order_by(
             models.ScheduledPost.scheduled_at.asc()).all()
         for row in rows:
@@ -2585,8 +2663,15 @@ async def _scheduled_posts_loop():
             await asyncio.to_thread(_run_scheduled_sweep)
         except asyncio.CancelledError:
             raise
-        except Exception:
+        except Exception as exc:
             logging.exception("scheduled-posts sweep failed")
+            # Phase 180 (audit M13): a sweep that dies before any
+            # row is processed left no trace the admin could see —
+            # only the server log. Persist it in the security log
+            # so the Admin Panel shows it (one line, no traceback).
+            await asyncio.to_thread(
+                log_security_event, None, "server_error", None, None,
+                f"scheduled-posts sweep failed: {exc}"[:512])
 
 
 # ---------------------------------------------------------------------------
@@ -2637,18 +2722,38 @@ def _auto_backup_last_run(db):
         return None
 
 
+def _last_manual_backup_at(db):
+    """Newest manual backup (download or Telegram send) from
+    the audit log, or None. Phase 180 (audit M12): a manual
+    backup taken minutes before a deploy must not trigger an
+    auto-backup ~1 h later — the manual copy already covers
+    the week."""
+    row = db.query(models.AdminAuditLog).filter(
+        models.AdminAuditLog.action.in_(
+            ("backup_download", "backup_send"))).order_by(
+        models.AdminAuditLog.id.desc()).first()
+    return row.created_at if row is not None else None
+
+
 def _auto_backup_due(db):
     if not _auto_backup_enabled(db):
         return False
+    now = datetime.utcnow()
     last = _auto_backup_last_run(db)
-    return last is None or datetime.utcnow() - last >= _AUTO_BACKUP_PERIOD
+    if last is not None and now - last < _AUTO_BACKUP_PERIOD:
+        return False
+    manual = _last_manual_backup_at(db)
+    if manual is not None and now - manual < _AUTO_BACKUP_PERIOD:
+        return False
+    return True
 
 
 def _auto_backup_next_due(db):
-    last = _auto_backup_last_run(db)
-    if last is None:
+    cands = [d for d in (_auto_backup_last_run(db),
+                         _last_manual_backup_at(db)) if d is not None]
+    if not cands:
         return datetime.utcnow()
-    return last + _AUTO_BACKUP_PERIOD
+    return max(cands) + _AUTO_BACKUP_PERIOD
 
 
 def _build_auto_backup():
@@ -2664,7 +2769,7 @@ def _build_auto_backup():
     return fname, data, total
 
 
-def _record_auto_backup(sent, size, total):
+def _record_auto_backup(sent, size, total, detail=None):
     """Sync (runs in a thread): record an auto-backup attempt."""
     owner_tid = settings.ADMIN_IDS[0] if settings.ADMIN_IDS else None
     with SessionLocal() as db:
@@ -2681,17 +2786,56 @@ def _record_auto_backup(sent, size, total):
                     detail=f"{size} bytes, {total} rows"))
         else:
             log_security_event(db, "server_error",
-                               detail="Auto-backup send failed")
+                               detail=detail or "Auto-backup send failed")
             db.add(models.AdminAuditLog(
                 admin_id=owner_tid or 0, action="auto_backup_failed",
-                detail="Telegram send failed"))
+                detail=detail or "Telegram send failed"))
+        db.commit()
+
+
+def _stamp_auto_backup_attempt():
+    """Sync (runs in a thread): stamp the auto-backup run BEFORE
+    building/sending and return the PREVIOUS stamp (or None).
+    Phase 180 (audit M12): a crash between the send and the
+    success record then cannot re-send the same backup on the
+    next hourly check — the stamp already says it ran."""
+    with SessionLocal() as db:
+        prev = _auto_backup_last_run(db)
+        _set_app_setting(db, "auto_backup_last_run",
+                         datetime.utcnow().isoformat())
+        db.commit()
+        return prev
+
+
+def _restore_auto_backup_stamp(prev):
+    """Sync (runs in a thread): put auto_backup_last_run back to
+    its previous value (or delete the key when there was none)
+    after a failed build or send, so the next hourly check
+    retries instead of waiting 7 days."""
+    with SessionLocal() as db:
+        row = db.get(models.AppSetting, "auto_backup_last_run")
+        if prev is None:
+            if row is not None:
+                db.delete(row)
+        elif row is None:
+            db.add(models.AppSetting(
+                key="auto_backup_last_run", value=prev.isoformat()))
+        else:
+            row.value = prev.isoformat()
         db.commit()
 
 
 async def _maybe_auto_backup(send_fn=None):
     """One auto-backup check: if due, build the full backup and
     send it to the owner's Telegram chat. True only when a backup
-    was actually sent. Never raises."""
+    was actually sent. Never raises.
+
+    Phase 180 (audit M12): the run is stamped BEFORE building /
+    sending, so a crash between the send and the success record
+    cannot re-send the same backup; a failed build or send
+    restores the previous stamp, so the next hourly check
+    retries. A build crash is admin-visible (M13): it records
+    auto_backup_failed + a server_error security-log row."""
     with SessionLocal() as db:
         due = _auto_backup_due(db)
     if not due:
@@ -2699,7 +2843,14 @@ async def _maybe_auto_backup(send_fn=None):
     owner_tid = settings.ADMIN_IDS[0] if settings.ADMIN_IDS else None
     if owner_tid is None:
         return False
-    fname, data, total = await asyncio.to_thread(_build_auto_backup)
+    prev = await asyncio.to_thread(_stamp_auto_backup_attempt)
+    try:
+        fname, data, total = await asyncio.to_thread(_build_auto_backup)
+    except Exception:
+        await asyncio.to_thread(_restore_auto_backup_stamp, prev)
+        await asyncio.to_thread(_record_auto_backup, False, 0, 0,
+                                "Auto-backup build failed")
+        return False
     send = send_fn or notify.send_document
     try:
         sent = await send(
@@ -2710,6 +2861,8 @@ async def _maybe_auto_backup(send_fn=None):
                     "whole database.")
     except Exception:
         sent = False
+    if not sent:
+        await asyncio.to_thread(_restore_auto_backup_stamp, prev)
     await asyncio.to_thread(_record_auto_backup, sent, len(data), total)
     return bool(sent)
 
@@ -2722,8 +2875,14 @@ async def _auto_backup_loop():
             await _maybe_auto_backup()
         except asyncio.CancelledError:
             raise
-        except Exception:
+        except Exception as exc:
             logging.exception("auto-backup sweep failed")
+            # Phase 180 (audit M13): same rule as the scheduled
+            # sweep — a loop-level failure belongs in the security
+            # log the Admin Panel shows, not just the server log.
+            await asyncio.to_thread(
+                log_security_event, None, "server_error", None, None,
+                f"auto-backup loop failed: {exc}"[:512])
 
 
 class PollVoteIn(BaseModel):
@@ -3443,6 +3602,7 @@ async def toggle_follow(telegram_id: int, user: models.User = Depends(current_us
         else:
             db.add(models.Follow(follower_id=user.telegram_id,
                                  following_id=telegram_id))
+            _record_follow_task_event(db, user.telegram_id, telegram_id)
             now_following = True
             requested = False
     db.commit()
@@ -3584,6 +3744,7 @@ async def accept_follow_request(request_id: int,
             following_id=user.telegram_id).first() is None:
         db.add(models.Follow(follower_id=req.requester_id,
                              following_id=user.telegram_id))
+        _record_follow_task_event(db, req.requester_id, user.telegram_id)
     req.status = "accepted"
     db.commit()
     await notify.notify_user(
@@ -4654,21 +4815,43 @@ def user_posts(telegram_id: int, cursor: int = 0,
 @app.get("/leaderboard")
 def leaderboard(user: models.User = Depends(current_user),
                 db: Session = Depends(get_db)):
-    rows = db.query(models.User).filter_by(is_banned=False) \
-        .order_by(models.User.points_balance.desc(),
-                  models.User.telegram_id).limit(50).all()
-    out = [{"rank": i + 1, "telegram_id": u.telegram_id,
-            "first_name": u.first_name, "username": u.username,
-            "points": u.points_balance,
-            "is_verified": bool(u.is_verified),
-            "photo_file_id": u.photo_file_id} for i, u in enumerate(rows)]
+    # Phase 180 (audit M23): rank by LIFETIME points (positive
+    # ledger sum) — the same figure the gate, levels and the
+    # Members-browse sort use — not the spendable balance, so a
+    # creator who cashes out a payout keeps their rank. Rank is
+    # 1 + the count of members strictly above; ties share a rank
+    # (in the top-50 list and in the outsider "me" rank alike).
+    lifetime_sq = db.query(
+        models.PointsLedger.user_id.label("uid"),
+        func.coalesce(func.sum(models.PointsLedger.amount), 0).label(
+            "pts")).filter(models.PointsLedger.amount > 0) \
+        .group_by(models.PointsLedger.user_id).subquery()
+    lp = func.coalesce(lifetime_sq.c.pts, 0)
+    rows = db.query(models.User, lp.label("lifetime")) \
+        .outerjoin(lifetime_sq,
+                   lifetime_sq.c.uid == models.User.telegram_id) \
+        .filter(models.User.is_banned == False) \
+        .order_by(lp.desc(), models.User.telegram_id).limit(50).all()
+    out = []
+    for u, lifetime in rows:
+        pts = int(lifetime or 0)
+        rank = 1 + sum(1 for r in out if r["points"] > pts)
+        out.append({"rank": rank, "telegram_id": u.telegram_id,
+                    "first_name": u.first_name, "username": u.username,
+                    "points": pts,
+                    "is_verified": bool(u.is_verified),
+                    "photo_file_id": u.photo_file_id})
     mine = next((r for r in out if r["telegram_id"] == user.telegram_id), None)
     if mine is None:
-        higher = db.query(models.User).filter(
-            models.User.points_balance > user.points_balance).count()
+        my_points = _lifetime_points(db, user.telegram_id)
+        higher = db.query(models.User).join(
+            lifetime_sq,
+            lifetime_sq.c.uid == models.User.telegram_id).filter(
+            models.User.is_banned == False,
+            lifetime_sq.c.pts > my_points).count()
         mine = {"rank": higher + 1, "telegram_id": user.telegram_id,
                 "first_name": user.first_name, "username": user.username,
-                "points": user.points_balance,
+                "points": my_points,
                 "is_verified": bool(user.is_verified),
                 "photo_file_id": user.photo_file_id}
     return {"leaders": out, "me": mine}
@@ -4680,29 +4863,70 @@ def leaderboard(user: models.User = Depends(current_user),
 # activity; the claim is guarded by the daily_claims unique row.
 # ---------------------------------------------------------------------------
 
+_DHAKA_TZ = ZoneInfo("Asia/Dhaka")
+
+
+def _dhaka_now():
+    """Now in Asia/Dhaka — the day the user experiences."""
+    return datetime.now(_DHAKA_TZ)
+
+
 def _today():
-    now = datetime.utcnow()
-    return now.date().isoformat(), now.replace(hour=0, minute=0, second=0,
-                                               microsecond=0)
+    """Phase 180 (audit M22): the daily boundary is Asia/Dhaka,
+    not UTC. Returns (Dhaka ISO date, naive-UTC datetime of Dhaka
+    midnight) — created_at rows are stored as naive UTC, so the
+    cutoff is midnight-Dhaka expressed in UTC."""
+    now = _dhaka_now()
+    start_dhaka = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    start_utc = start_dhaka.astimezone(timezone.utc).replace(tzinfo=None)
+    return now.date().isoformat(), start_utc
 
 
-def _task_progress(db, user_id, task, day_start, claimed):
+def _record_follow_task_event(db, follower_id, target_id):
+    """Phase 180 (audit M24): a durable follow record for the
+    daily follow3 task. Follow rows are hard-deleted on unfollow,
+    so counting them lets unfollow + re-follow re-farm the task;
+    this row survives unfollow and is unique per (follower,
+    target, day), so each distinct target counts once a day."""
+    day, _ = _today()
+    exists = db.query(models.TaskFollowEvent).filter_by(
+        user_id=follower_id, target_id=target_id, day=day).first()
+    if exists is None:
+        db.add(models.TaskFollowEvent(
+            user_id=follower_id, target_id=target_id, day=day))
+
+
+def _task_progress(db, user_id, task, day, day_start, claimed):
     metric = task["metric"]
     if metric == "checkin":
         return 1 if claimed else 0
     if metric == "follows":
-        return db.query(models.Follow).filter(
-            models.Follow.follower_id == user_id,
-            models.Follow.created_at >= day_start).count()
+        # Phase 180 (audit M24): distinct targets followed today,
+        # from the durable event rows — unfollow + re-follow the
+        # same person cannot count twice.
+        return db.query(models.TaskFollowEvent).filter_by(
+            user_id=user_id, day=day).count()
     if metric == "comments":
-        return db.query(models.Comment).filter(
-            models.Comment.user_id == user_id,
-            models.Comment.created_at >= day_start).count()
+        # Phase 180 (audit M24): commenting your own post does
+        # not count — only comments on other members' posts.
+        return db.query(models.Comment).join(
+            models.Post, models.Comment.post_id == models.Post.id
+        ).filter(models.Comment.user_id == user_id,
+                 models.Comment.created_at >= day_start,
+                 models.Post.user_id != user_id).count()
     if metric == "reactions":
-        return db.query(models.Like).filter(
-            models.Like.user_id == user_id,
-            models.Like.created_at >= day_start).count()
+        # Phase 180 (audit M24): liking your own post does not
+        # count — only likes on other members' posts.
+        return db.query(models.Like).join(
+            models.Post, models.Like.post_id == models.Post.id
+        ).filter(models.Like.user_id == user_id,
+                 models.Like.created_at >= day_start,
+                 models.Post.user_id != user_id).count()
     if metric == "ads":
+        # Phase 180 (audit H14): paused while no ad provider is
+        # live — no AdEvent row can unlock the task.
+        if not ADS_PROVIDER_LIVE:
+            return 0
         return db.query(models.AdEvent).filter(
             models.AdEvent.user_id == user_id,
             models.AdEvent.created_at >= day_start).count()
@@ -4715,7 +4939,10 @@ def _checkin_streak(db, user_id):
     ends). One missed day breaks it: the count simply stops there."""
     days = {r[0] for r in db.query(models.DailyClaim.day).filter_by(
         user_id=user_id, task_key="checkin").all()}
-    cur = datetime.utcnow().date()
+    # Phase 180 (audit M22): the streak walks Dhaka dates, so a
+    # 05:00-Dhaka Monday + 07:00-Dhaka Tuesday check-in keeps the
+    # streak (UTC saw Sun 23:00 + Tue 01:00 and reset it).
+    cur = _dhaka_now().date()
     if cur.isoformat() not in days:
         cur -= timedelta(days=1)
     streak = 0
@@ -4834,15 +5061,20 @@ def _task_state(db, user, task):
     day, day_start = _today()
     claimed = db.query(models.DailyClaim).filter_by(
         user_id=user.telegram_id, task_key=task["key"], day=day).first()
-    progress = _task_progress(db, user.telegram_id, task, day_start,
+    progress = _task_progress(db, user.telegram_id, task, day, day_start,
                               bool(claimed))
+    # Phase 180 (audit H14): the ad task is unavailable while no
+    # ad provider is live — it shows as unavailable in the client,
+    # never claimable, whatever old AdEvent rows exist.
+    available = not (task["metric"] == "ads" and not ADS_PROVIDER_LIVE)
     state = {
         "key": task["key"], "title": task["title"], "icon": task["icon"],
         "target": task["target"], "points": task["points"],
         "progress": min(progress, task["target"]),
         "claimed": bool(claimed),
-        "claimable": (not claimed) and (
+        "claimable": available and (not claimed) and (
             task["metric"] == "checkin" or progress >= task["target"]),
+        "available": available,
     }
     if task["metric"] == "checkin":
         state["streak"] = _checkin_streak(db, user.telegram_id)
@@ -4867,9 +5099,17 @@ def claim_task(key: str, user: models.User = Depends(current_user),
     if not state["claimable"]:
         raise HTTPException(400, "Task not completed yet")
     day, _ = _today()
-    db.add(models.DailyClaim(user_id=user.telegram_id, task_key=key, day=day))
-    award_points(db, user.telegram_id, task["points"], f"task:{key}")
-    db.commit()
+    try:
+        db.add(models.DailyClaim(user_id=user.telegram_id, task_key=key,
+                                 day=day))
+        award_points(db, user.telegram_id, task["points"], f"task:{key}")
+        db.commit()
+    except IntegrityError:
+        # Phase 180 (audit M26): two parallel claims race past the
+        # check-then-insert above; the unique row saves the points,
+        # and the loser gets the clean 400, not an unhandled 500.
+        db.rollback()
+        raise HTTPException(400, "Already claimed today")
     db.refresh(user)
     return {"ok": True, "points_awarded": task["points"],
             "balance": user.points_balance}
@@ -5640,8 +5880,16 @@ def ad_shown(user: models.User = Depends(current_user),
              db: Session = Depends(get_db)):
     """The Mini App reports each interstitial that actually finished
     showing. Reports closer than 5s together count once (SDK retries
-    and double-fires must not inflate the owner's ad figures)."""
+    and double-fires must not inflate the owner's ad figures).
+
+    Phase 180 (audit H14): while no ad provider is live (AdsGram
+    declined), a bare client POST must NOT create a point-unlocking
+    AdEvent — 410 Gone, nothing recorded. The rate budget still
+    runs first, so the budget wiring stays provable. The endpoint
+    and the AdEvent model stay for a provider's return."""
     _enforce_rate("ad_shown", f"u{user.telegram_id}")
+    if not ADS_PROVIDER_LIVE:
+        raise HTTPException(410, "Ads are not available right now")
     now = datetime.utcnow()
     last = db.query(models.AdEvent).filter_by(
         user_id=user.telegram_id) \
@@ -7900,6 +8148,8 @@ _BACKUP_TABLES = [
     ("saved_collection_posts", models.SavedCollectionPost),
     ("post_shares", models.PostShare),
     ("daily_claims", models.DailyClaim),
+    # Phase 180 (audit M24): durable follow records for follow3.
+    ("task_follow_events", models.TaskFollowEvent),
     ("user_activity", models.UserActivity),
     ("ad_events", models.AdEvent),
     ("app_settings", models.AppSetting),
