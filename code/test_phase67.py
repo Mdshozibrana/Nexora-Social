@@ -18,10 +18,10 @@ CSS = open("webapp/style.css").read()
 
 # gallery card: media wrapper + shield around the image
 at = JS.index("function designCard(d)")
-block = JS[at:at + 2600]  # widened in Phase 99: designCard grew
+block = JS[at:at + 3400]  # widened in Phase 99, again in Phase 189: designCard grew (retry button + onload)
 assert 'media.className = "design-media"' in block
 assert 'shield.className = "img-shield"' in block
-assert "media.append(img, shield)" in block
+assert "media.append(img, shield, retry)" in block
 assert "el.append(media, body)" in block
 assert "img.draggable = false" in block
 print("card shield OK")
@@ -37,7 +37,7 @@ assert 'attachLongPress($("ds-img")' not in JS
 print("sheet shield OK")
 
 # CSS: the shield covers the image and sits above it
-assert ".design-media { position: relative; }" in CSS
+assert ".design-media { position: relative; min-height: 180px;" in CSS
 shield_rule = CSS[CSS.index(".img-shield {"):CSS.index(".img-shield {") + 120]
 assert "position: absolute" in shield_rule and "inset: 0" in shield_rule
 print("shield CSS OK")

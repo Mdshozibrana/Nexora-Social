@@ -175,17 +175,17 @@ for path in ("/me/blocked", "/me/muted"):
 print("hub data sources OK (profile, notif prefs, wallet, lists)")
 
 # --- 7. Version + routes + backup pins -------------------------------
-assert HTML.count("?v=188") == 10, HTML.count("?v=188")
-assert "?v=18" + "7" not in HTML
-assert "app.js?v=188" in HTML and "games.js?v=188" in HTML
-assert 'menu_url.rstrip("/") + "/?v=188"' in BOT
+assert HTML.count("?v=189") == 10, HTML.count("?v=189")
+assert "?v=18" + "8" not in HTML
+assert "app.js?v=189" in HTML and "games.js?v=189" in HTML
+assert 'menu_url.rstrip("/") + "/?v=189"' in BOT
 paths = {rt.path for rt in app.routes}
-assert len(paths) == 183, len(paths)
+assert len(paths) == 184, len(paths)
 assert len(_BACKUP_TABLES) == 52, len(_BACKUP_TABLES)
 with TestClient(app) as cx:
     r = cx.get("/admin/health", headers=ADMIN)
     assert r.status_code == 200, r.text
     h = r.json()
-    assert h["version"] == 188, h["version"]
-print("version ?v=188 + routes 183 + backup 52 OK")
+    assert h["version"] == 189, h["version"]
+print("version ?v=189 + routes 183 + backup 52 OK")
 print("PHASE 187 OK")

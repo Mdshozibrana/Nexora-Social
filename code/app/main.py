@@ -8331,6 +8331,43 @@ def admin_designs(limit: int = 30,
     } for d in rows]}
 
 
+@app.get("/admin/designs/health")
+async def admin_designs_health(admin: models.User = Depends(admin_user),
+                               db: Session = Depends(get_db)):
+    """Phase 189: which Design gallery images can Telegram still
+    serve? Every design's image_file_id is checked with getFile —
+    a dead file_id 404s there, so the gallery card can never
+    render it (the client retries 3x, then shows tap-to-retry).
+    Read-only, admin-only; capped at 100 newest designs so one
+    call cannot fan out unboundedly. Without a live bot token it
+    answers 503, like /media."""
+    if not settings.BOT_TOKEN:
+        raise HTTPException(503, "Media unavailable until the bot is live")
+    rows = db.query(models.Design).order_by(
+        models.Design.id.desc()).limit(100).all()
+    api = f"https://api.telegram.org/bot{settings.BOT_TOKEN}"
+
+    async def _check(d):
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                info = await client.get(f"{api}/getFile",
+                                        params={"file_id": d.image_file_id})
+        except httpx.HTTPError:
+            return {"id": d.id, "ok": False, "error": "upstream error"}
+        if info.status_code != 200:
+            return {"id": d.id, "ok": False,
+                    "error": "getFile %s" % info.status_code}
+        try:
+            path = info.json()["result"]["file_path"]
+        except (ValueError, KeyError, TypeError, AttributeError):
+            return {"id": d.id, "ok": False, "error": "bad getFile body"}
+        return {"id": d.id, "ok": True, "file_path": path}
+
+    results = await asyncio.gather(*(_check(d) for d in rows))
+    return {"designs": results, "checked": len(results),
+            "dead": [r["id"] for r in results if not r["ok"]]}
+
+
 class MaintenanceIn(BaseModel):
     on: bool
 

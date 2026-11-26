@@ -6989,6 +6989,27 @@ loadMe().then(bootOk).catch(() => {
 // hiccup left the whole gallery broken until a manual reload.
 // Any /media image or video that fails now retries itself with
 // a short pause and a cache-buster, up to three times.
+// Phase 189: when the retries are spent the image is not
+// silently left as a zero-height hole (the Design gallery then
+// looks text-only, exactly the owner's Nov 24 + Nov 26
+// screenshots). Mark the .design-media so the card keeps its
+// shape (CSS min-height) and shows its tap-to-retry button.
+function markDesignImgFailed(t) {
+  const media = t.closest ? t.closest(".design-media") : null;
+  if (media) media.classList.add("design-img-failed");
+}
+// Retry one design image from scratch: clear the once-only
+// guards, re-issue the token, rebuild the URL. Used by the
+// card's retry button and the sheet's retry button.
+async function retryDesignImg(img) {
+  if (!img) return;
+  const media = img.closest ? img.closest(".design-media") : null;
+  if (media) media.classList.remove("design-img-failed");
+  delete img.dataset.mtok; delete img.dataset.mr;
+  await refreshMediaToken();
+  const m = (img.getAttribute("src") || "").match(/\/media\/([^?]+)/);
+  if (m) img.src = mediaUrl(decodeURIComponent(m[1]));
+}
 document.addEventListener("error", async (e) => {
   const t = e.target;
   if (!t || (t.tagName !== "IMG" && t.tagName !== "VIDEO")) return;
@@ -7009,7 +7030,7 @@ document.addEventListener("error", async (e) => {
     }
   }
   const tries = Number(t.dataset.mr || 0);
-  if (tries >= 3) return;
+  if (tries >= 3) { markDesignImgFailed(t); return; }
   t.dataset.mr = tries + 1;
   const bust = (src.includes("?") ? "&r=" : "?r=") + (tries + 1);
   setTimeout(() => { t.src = src + bust; }, 800 * (tries + 1));
@@ -7629,7 +7650,12 @@ function designCard(d) {
   el.className = "design-card";
   const img = document.createElement("img");
   img.src = mediaUrl(d.image_file_id);
-  img.loading = "lazy";
+  // Phase 189: eager, not lazy — the design IS the card's
+  // content, and lazy images inside the gallery's 2-column
+  // masonry never fired at all on the owner's phone (Nov 24 +
+  // Nov 26: every card text-only, zero-height media area). Feed
+  // images keep lazy — they work; do not touch what works.
+  img.loading = "eager";
   img.alt = "Design";
   img.draggable = false;
   // Phase 67: a transparent shield over the image takes the touch,
@@ -7639,7 +7665,20 @@ function designCard(d) {
   media.className = "design-media";
   const shield = document.createElement("div");
   shield.className = "img-shield";
-  media.append(img, shield);
+  // Phase 189: a loaded image clears any earlier failed state;
+  // the retry button only shows when the media is marked failed
+  // (CSS). It sits above the shield (z-index) so the tap reaches
+  // it, and it swallows the tap + the long-press, like the like
+  // button (Phase 99).
+  img.onload = () => media.classList.remove("design-img-failed");
+  const retry = document.createElement("button");
+  retry.type = "button";
+  retry.className = "design-retry";
+  retry.textContent = "↻ Couldn't load — tap to retry";
+  retry.onclick = e => { e.stopPropagation(); retryDesignImg(img); };
+  retry.addEventListener("pointerdown", e => e.stopPropagation());
+  retry.addEventListener("pointerup", e => e.stopPropagation());
+  media.append(img, shield, retry);
   const body = document.createElement("div");
   body.className = "design-card-body";
   const p = document.createElement("p");
@@ -7866,7 +7905,13 @@ $("design-more").onclick = () => loadDesigns(false);
 function openDesignSheet(d) {
   const isNew = !currentDesign || currentDesign.id !== d.id;
   currentDesign = d;
-  $("ds-img").src = mediaUrl(d.image_file_id);
+  // Phase 189: a new design starts clean — a failed state (or
+  // spent retry guards) from the previous design must not linger.
+  const dsMedia = $("ds-media");
+  if (dsMedia) dsMedia.classList.remove("design-img-failed");
+  const dsImg = $("ds-img");
+  delete dsImg.dataset.mtok; delete dsImg.dataset.mr;
+  dsImg.src = mediaUrl(d.image_file_id);
   // Phase 31 (owner request): the caption opens PARTLY — a few
   // lines — and "See more" unfolds the rest, Pinterest-style.
   const promptEl = $("ds-prompt");
@@ -7939,12 +7984,22 @@ async function loadRelatedDesigns(d) {
       media.className = "design-media";
       const img = document.createElement("img");
       img.src = mediaUrl(rel.image_file_id);
-      img.loading = "lazy";
+      // Phase 189: eager, like the gallery card — same
+      // never-load failure mode in the masonry strip.
+      img.loading = "eager";
       img.alt = "Design";
       img.draggable = false;
       const shield = document.createElement("div");
       shield.className = "img-shield";
-      media.append(img, shield);
+      img.onload = () => media.classList.remove("design-img-failed");
+      const retry = document.createElement("button");
+      retry.type = "button";
+      retry.className = "design-retry";
+      retry.textContent = "↻ Couldn't load — tap to retry";
+      retry.onclick = e => { e.stopPropagation(); retryDesignImg(img); };
+      retry.addEventListener("pointerdown", e => e.stopPropagation());
+      retry.addEventListener("pointerup", e => e.stopPropagation());
+      media.append(img, shield, retry);
       card.append(media);
       card.onclick = () => openDesignSheet(rel);
       grid.appendChild(card);
@@ -7954,6 +8009,14 @@ async function loadRelatedDesigns(d) {
 }
 $("design-sheet-backdrop").onclick = closeDesignSheet;
 $("ds-close").onclick = closeDesignSheet;
+// Phase 189: the sheet's retry button + load clearing,
+// mirroring the gallery card. The sheet image is static HTML,
+// so it is wired once here instead of per card.
+$("ds-retry").onclick = () => retryDesignImg($("ds-img"));
+$("ds-img").onload = () => {
+  const m = $("ds-media");
+  if (m) m.classList.remove("design-img-failed");
+};
 $("ds-more").onclick = () => {
   const el = $("ds-prompt");
   const clamped = el.classList.toggle("clamped");

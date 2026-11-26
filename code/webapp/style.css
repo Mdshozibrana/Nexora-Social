@@ -2070,9 +2070,20 @@ button.liked { animation: heartPop .32s cubic-bezier(.22,.9,.3,1); }
    never on the <img>, so the WebView's native image menu (Open
    in… / Download / Copy Link with the raw media URL) cannot fire
    on a hold. */
-.design-media { position: relative; }
+.design-media { position: relative; min-height: 180px;
+  background: linear-gradient(160deg, #F4EBDD, #E9DCC8); }
 .img-shield { position: absolute; inset: 0; z-index: 2; }
 .design-media img { -webkit-user-drag: none; }
+/* Phase 189: a failed design image no longer collapses the card
+   to text-only — the media area keeps its shape, and a
+   tap-to-retry button shows instead. The button sits above the
+   img-shield (z-index 2), or the shield would swallow the tap. */
+.design-retry { display: none; position: absolute; inset: 0; z-index: 3;
+  align-items: center; justify-content: center; text-align: center;
+  padding: 12px; border: 0; background: transparent; cursor: pointer;
+  font-size: 14px; font-weight: 700; color: #8A6D4B; }
+.design-media.design-img-failed .design-retry { display: flex; }
+.design-media.design-img-failed img { visibility: hidden; }
 
 /* ---------- Phase 69: Nexa, the AI assistant ---------- */
 .gb-nexa-img { width: 40px; height: 40px; border-radius: 50%;

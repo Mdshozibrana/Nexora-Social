@@ -99,12 +99,12 @@ with TestClient(app) as c:
     assert "loadRelatedDesigns(d);" in js
     css = c.get("/webapp/style.css").text
     assert "#ds-related" in css and "#ds-related-grid" in css
-    for asset in ("style.css?v=188", "app.js?v=188", "games.js?v=188"):
+    for asset in ("style.css?v=189", "app.js?v=189", "games.js?v=189"):
         assert asset in html, asset
     # Earlier phases intact.
     assert "openPhotoViewer" in js, "Phase 112 wiring gone"
     assert "showTaskAd" in js, "Phase 113 wiring gone"
     assert "loadMyQr" in js, "Phase 114 wiring gone"
-    print("client: related section, loader, scroll-top, ?v=188 OK")
+    print("client: related section, loader, scroll-top, ?v=189 OK")
 
 print("PHASE 115 OK")
