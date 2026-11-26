@@ -178,10 +178,10 @@ assert "  settings: [" in JS, "mascot settings-view tips gone"
 print("sidebar move OK (Me button gone, sidebar entry in ACCOUNT)")
 
 # --- 5. Version + routes + backup pins -------------------------------
-assert HTML.count("?v=189") == 10, HTML.count("?v=189")
-assert "?v=18" + "8" not in HTML
-assert "app.js?v=189" in HTML and "games.js?v=189" in HTML
-assert 'menu_url.rstrip("/") + "/?v=189"' in BOT
+assert HTML.count("?v=190") == 10, HTML.count("?v=190")
+assert "?v=18" + "9" not in HTML
+assert "app.js?v=190" in HTML and "games.js?v=190" in HTML
+assert 'menu_url.rstrip("/") + "/?v=190"' in BOT
 paths = {rt.path for rt in app.routes}
 assert len(paths) == 184, len(paths)
 assert len(_BACKUP_TABLES) == 52, len(_BACKUP_TABLES)
@@ -189,6 +189,6 @@ with TestClient(app) as cx:
     r = cx.get("/admin/health", headers=ADMIN)
     assert r.status_code == 200, r.text
     h = r.json()
-    assert h["version"] == 189, h["version"]
-print("version ?v=189 + routes 183 + backup 52 OK")
+    assert h["version"] == 190, h["version"]
+print("version ?v=190 + routes 183 + backup 52 OK")
 print("PHASE 188 OK")

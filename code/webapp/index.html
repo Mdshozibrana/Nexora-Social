@@ -20,10 +20,10 @@
 <meta name="twitter:description" content="Share photos, watch reels, discover designs and play classic games — all inside Telegram.">
 <meta name="twitter:image" content="https://nexora-9pip.onrender.com/webapp/og-image.png">
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
-<link rel="stylesheet" href="style.css?v=189">
-<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=189">
-<link rel="stylesheet" href="vendor/maplibre/maplibre-gl-4.7.1.css?v=189">
-<link rel="stylesheet" href="vendor/mapillary/mapillary.css?v=189">
+<link rel="stylesheet" href="style.css?v=190">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=190">
+<link rel="stylesheet" href="vendor/maplibre/maplibre-gl-4.7.1.css?v=190">
+<link rel="stylesheet" href="vendor/mapillary/mapillary.css?v=190">
 </head>
 <body>
 <div id="entry-screen">
@@ -902,11 +902,35 @@
   </div>
 </div>
 
-<script src="vendor/leaflet/leaflet.js?v=189"></script>
-<script src="vendor/maplibre/maplibre-gl-4.7.1.js?v=189"></script>
-<script src="vendor/mapillary/mapillary.js?v=189"></script>
-<script src="vendor/three/three.min.js?v=189"></script>
-<script src="app.js?v=189"></script>
-<script src="games.js?v=189"></script>
+<script>
+// Phase 190: boot watchdog — app.js itself may never arrive
+// (the server wedged on Nov 26, 21:13-21:23, so the shell was
+// served but nothing else answered) or /auth may hang, and
+// the entry screen then sits on "Loading…" forever with no
+// way out. This inline script runs even when app.js never
+// loads: if the app has not signalled a boot outcome within
+// 60s of the shell parsing, say so plainly and offer a
+// working RETRY. app.js disarms it by setting
+// window.__nxBootDone = true in bootOk() and bootFailed().
+// 60s is deliberate: a free-tier cold wake (30-50s) happens
+// while the shell itself is fetched, before this timer
+// starts, so a cold start never trips it.
+window.__nxBootWatchdog = setTimeout(function () {
+  if (window.__nxBootDone) return;
+  window.__nxBootDone = true;
+  var s = document.getElementById("status");
+  if (s) s.textContent = "Could not reach the server. Check your connection, then tap RETRY.";
+  var n = document.getElementById("entry-note");
+  if (n) n.textContent = "The server did not answer. Tap RETRY to reload — if it keeps happening, the service may be down, so try again in a few minutes.";
+  var go = document.getElementById("entry-go");
+  if (go) { go.disabled = false; go.textContent = "\u21bb RETRY"; go.onclick = function () { location.reload(); }; }
+}, 60000);
+</script>
+<script src="vendor/leaflet/leaflet.js?v=190"></script>
+<script src="vendor/maplibre/maplibre-gl-4.7.1.js?v=190"></script>
+<script src="vendor/mapillary/mapillary.js?v=190"></script>
+<script src="vendor/three/three.min.js?v=190"></script>
+<script src="app.js?v=190"></script>
+<script src="games.js?v=190"></script>
 </body>
 </html>

@@ -73,7 +73,12 @@ async function api(path, options = {}) {
     let msg = "API " + res.status;
     try { const j = await res.json(); if (j.detail) msg = j.detail; }
     catch (e) { /* keep the generic message */ }
-    throw new Error(msg);
+    // Phase 190: keep the status on the error — bootFailed tells
+    // a dead server (5xx) from a refused login (401) by it, since
+    // the message itself may be the server's detail text.
+    const err = new Error(msg);
+    err.status = res.status;
+    throw err;
   }
   return res.json();
 }
@@ -6530,8 +6535,11 @@ async function refreshMediaToken() {
   if (mediaTokenRefresh) return mediaTokenRefresh;
   mediaTokenRefresh = (async () => {
     try {
+      // Phase 190: same 25s bound as loadMe — a hung refresh must
+      // not leave mediaTokenRefresh pending forever (its catch
+      // already swallows errors; a timeout just retries next time).
       const r = await api("/auth", { method: "POST",
-        body: JSON.stringify({ initData }) });
+        body: JSON.stringify({ initData }), timeoutMs: 25000 });
       if (r && r.media_token) mediaToken = r.media_token;
     } catch (e) { /* next refresh retries; images retry meanwhile */ }
   })();
@@ -6539,7 +6547,13 @@ async function refreshMediaToken() {
 }
 
 async function loadMe() {
-  me = await api("/auth", { method: "POST", body: JSON.stringify({ initData }) });
+  // Phase 190: bounded /auth — without timeoutMs a wedged server
+  // (Nov 26 pool outage) hangs this fetch forever and the app
+  // sits on "Loading…" with no way out. Warm /auth answers in
+  // <1s; 25s + 2s Phase 76 retry + 25s = 52s, inside the 60s
+  // shell watchdog, so bootFailed's server message normally wins.
+  me = await api("/auth", { method: "POST", body: JSON.stringify({ initData }),
+    timeoutMs: 25000 });
   if (me.media_token) mediaToken = me.media_token;
   loadAccountTheme();
   startHeartbeat();
@@ -6946,6 +6960,12 @@ function routeStartParam() {
   return false;
 }
 function bootOk() {
+  // Phase 190: disarm the inline shell watchdog — the app booted.
+  // Also clear #status: if the watchdog already fired on a slow
+  // boot, its "could not reach the server" line must not linger
+  // on screen while the feed loads.
+  window.__nxBootDone = true;
+  setStatus("");
   loadAnnouncementBar();
   loadFeed(true);
   // Phase 146: a deep link (start param) wins; otherwise a
@@ -6953,7 +6973,11 @@ function bootOk() {
   if (!routeStartParam()) restoreProfile();
 }
 
-function bootFailed() {
+function bootFailed(err) {
+  // Phase 190: disarm the inline shell watchdog — the app did
+  // reach a boot outcome (even a failed one), so the watchdog
+  // must not overwrite this message with its own.
+  window.__nxBootDone = true;
   // Phase 188 (Job 1): when Telegram's own script never arrived
   // the app cannot sign in at all — say so plainly and offer a
   // RETRY (reload) instead of the dead "open from inside Telegram"
@@ -6967,6 +6991,27 @@ function bootFailed() {
     const go = $("entry-go");
     go.disabled = false;
     go.textContent = "↻ RETRY";
+    go.onclick = () => location.reload();
+    return;
+  }
+  // Phase 190: /auth can fail because the SERVER is unreachable
+  // (Nov 26 outage: pool exhausted, every request hung) — that
+  // is not "opened outside Telegram". A hung /auth aborts
+  // (timeoutMs) or the fetch rejects (TypeError); a 5xx is the
+  // server failing — api() keeps the status on the error, since
+  // the message itself may be the server's detail text. Show the
+  // server message with a working RETRY instead of the dead "open
+  // from inside Telegram" line with a disabled button.
+  if (err && (err.name === "AbortError" || err instanceof TypeError ||
+              (err.status && err.status >= 500) ||
+              /^API 5/.test(err.message || ""))) {
+    $("status").textContent =
+      "Could not reach the server. Check your connection, then tap RETRY.";
+    $("entry-note").textContent =
+      "The server did not answer. Tap RETRY to reload — if it keeps happening, the service may be down, so try again in a few minutes.";
+    const go = $("entry-go");
+    go.disabled = false;
+    go.textContent = "\u21bb RETRY";
     go.onclick = () => location.reload();
     return;
   }

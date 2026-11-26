@@ -30,12 +30,14 @@ for bit in ('document.addEventListener("error"',
 print("image retry OK")
 
 # --- boot retry --------------------------------------------------
-assert "function bootFailed()" in JS
+# Phase 190: bootFailed takes the boot error so it can tell a
+# dead server from "opened outside Telegram".
+assert "function bootFailed(err)" in JS
 assert "loadMe().then(bootOk).catch(bootFailed)" in JS
 assert JS.count("loadMe().then(bootOk)") == 2
 # the fallback text itself is unchanged for a genuine failure
 assert "Please open this app from inside Telegram." in JS
 print("boot retry OK")
 
-assert "app.js?v=189" in HTML and "style.css?v=189" in HTML
+assert "app.js?v=190" in HTML and "style.css?v=190" in HTML
 print("PHASE 76 OK")
