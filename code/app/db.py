@@ -17,7 +17,7 @@ transaction is already open (current_user resolves the member
 through the same session it then binds). On SQLite both paths are
 no-ops, so the suites keep passing unchanged. Every direct
 SessionLocal() call site in the app goes through rls_session() or
-system_session() below — grep SessionLocal() outside this file to
+system_session() or short_session() below — grep SessionLocal() outside this file to
 audit completeness."""
 import contextvars
 from contextlib import contextmanager
@@ -35,7 +35,21 @@ elif url.startswith("postgresql://"):
     url = url.replace("postgresql://", "postgresql+psycopg://", 1)
 
 connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
-engine = create_engine(url, connect_args=connect_args, pool_pre_ping=True)
+# Phase 191 (pool leak): explicit sizing for the single uvicorn
+# worker (render.yaml has no --workers), so this pool is the
+# whole pool: 5 + 10 overflow = 15 connections, 30s checkout
+# timeout. The Nov 26 outage was a HOLD, not a size problem
+# (media_proxy held a connection for the whole stream) — the
+# fix is in main.py, not a bigger pool. pool_recycle drops
+# connections Render's free Postgres may have closed idly
+# (pool_pre_ping already guards). Postgres only; SQLite keeps
+# its defaults.
+pool_kwargs = {}
+if url.startswith("postgresql"):
+    pool_kwargs = dict(pool_size=5, max_overflow=10,
+                       pool_timeout=30, pool_recycle=1800)
+engine = create_engine(url, connect_args=connect_args,
+                       pool_pre_ping=True, **pool_kwargs)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
 
@@ -183,3 +197,41 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+@contextmanager
+def short_session():
+    """Phase 191: yield a get_db session that closes on exit —
+    for code that must NOT hold a session across slow I/O.
+    media_proxy used to take Depends(get_db) and return a
+    StreamingResponse, so FastAPI kept the session (and its
+    pool connection) open for the whole download + stream and
+    wedged the pool (Nov 26 outage). A short_session closes
+    before any await that can take seconds."""
+    gen = get_db()
+    db = next(gen)
+    try:
+        yield db
+    finally:
+        try:
+            next(gen)
+        except StopIteration:
+            pass
+
+
+def pool_status():
+    """Phase 191: read-only QueuePool gauges for GET
+    /admin/health (and the Admin Panel System Health card) — a
+    future wedge is visible as checkedout climbing toward
+    size + overflow before requests start timing out. Never
+    raises: a non-QueuePool (or a pool without these gauges)
+    reports nulls."""
+    try:
+        pool = engine.pool
+        return {"size": pool.size(),
+                "checkedin": pool.checkedin(),
+                "checkedout": pool.checkedout(),
+                "overflow": pool.overflow()}
+    except Exception:
+        return {"size": None, "checkedin": None,
+                "checkedout": None, "overflow": None}

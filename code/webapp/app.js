@@ -9166,6 +9166,12 @@ function fmtBytes(n) {
   return (n / 1048576).toFixed(1) + " MB";
 }
 
+// Phase 191 (pool leak): "checked out / size" for the DB pool.
+function poolText(p) {
+  if (!p || p.size == null || p.checkedout == null) return "—";
+  return p.checkedout + " / " + p.size + " checked out";
+}
+
 async function loadHealth() {
   const box = $("admin-health");
   if (!box) return;
@@ -9179,6 +9185,9 @@ async function loadHealth() {
     grid.appendChild(statCard("💾 Commit", h.commit || "—"));
     grid.appendChild(statCard("⏱️ Uptime", fmtUptime(h.uptime_seconds)));
     grid.appendChild(statCard("🗄️ Database", fmtBytes(h.db_size_bytes)));
+    // Phase 191 (pool leak): live pool gauges on the System Health
+    // card, so a future wedge is visible before it kills the site.
+    grid.appendChild(statCard("🔌 DB pool", poolText(h.pool)));
     box.appendChild(grid);
     // Phase 183 (audit M18): screening must never be silently
     // off — the Admin Panel says so when the Gemini key is absent.

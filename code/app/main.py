@@ -40,8 +40,9 @@ from .config import (ADS_PROVIDER_LIVE, DAILY_TASKS, MONETIZATION,
                      OFFICIAL_ID, OFFICIAL_NAME, PAYOUT_NETWORKS,
                      RATE_LIMITS, VERIFICATION_MIN_FOLLOWERS,
                      VERIFICATION_MIN_REFERRALS, settings)
-from .db import (Base, apply_rls_context, engine, get_db,
-                 rls_session, set_rls_context_for, system_session)
+from .db import (Base, apply_rls_context, clear_rls_context,
+                 engine, get_db, pool_status, rls_session,
+                 set_rls_context_for, short_session, system_session)
 from .security import init_data_auth_date, validate_init_data
 from .services import (BANNED_WORD_MESSAGE, award_points,
                       banned_word_in, extract_hashtags, register_post,
@@ -8292,6 +8293,10 @@ def admin_health(admin: models.User = Depends(admin_user),
         "commit": commit,
         "uptime_seconds": int(time.time() - _STARTED_AT),
         "db_size_bytes": _health_db_size_bytes(),
+        # Phase 191 (pool leak): live pool gauges — a future wedge
+        # shows here as checkedout climbing toward size + overflow
+        # before requests start timing out.
+        "pool": pool_status(),
         "tables": tables,
         # Phase 183 (audit M18): screening must never be
         # silently off — the Admin Panel shows this warning
@@ -9092,8 +9097,7 @@ def my_delete_account(body: DeleteAccountIn,
 
 
 @app.get("/media/{file_id}")
-async def media_proxy(file_id: str, request: Request,
-                      db: Session = Depends(get_db)):
+async def media_proxy(file_id: str, request: Request):
     """Stream a Telegram-hosted file to the Mini App. The bot token is used
     only in server-side requests and never appears in a client-visible URL.
     Phase 164 (P1): access needs a user-bound 1-hour token AND the
@@ -9105,7 +9109,12 @@ async def media_proxy(file_id: str, request: Request,
     The upstream response is opened HERE (not inside an `async with` that
     exits before the body streams — that closed-client bug silently broke
     every posted image) and its lifetime is tied to the body generator.
-    Range requests are forwarded so video seeking works in reels."""
+    Range requests are forwarded so video seeking works in reels.
+
+    Phase 191 (pool leak): the DB session is short-lived (auth +
+    visibility only) — the stream below holds no connection. The
+    old code held one for the whole download + stream and wedged
+    the 15-connection pool (Nov 26 outage)."""
     if not settings.BOT_TOKEN:
         raise HTTPException(503, "Media unavailable until the bot is live")
     # Phase 164 (P1): the token is bound to one member and one hour,
@@ -9114,26 +9123,39 @@ async def media_proxy(file_id: str, request: Request,
     if checked is None:
         raise HTTPException(401, "Media token missing or expired")
     viewer_id, issued_at = checked
-    viewer = db.get(models.User, viewer_id)
-    if viewer is None or viewer.is_banned:
-        raise HTTPException(401, "Media token missing or expired")
-    if viewer.auth_revoked_at is not None:
-        revoked_ts = int(viewer.auth_revoked_at.replace(
-            tzinfo=timezone.utc).timestamp())
-        if issued_at < revoked_ts:
-            raise HTTPException(401, "Media token missing or expired")
-    # Phase 164 (H2): /media was unthrottled — one token holder could
-    # hammer the Telegram proxy without limit.
-    _enforce_rate("media", f"u{viewer_id}")
-    # Phase 186 (RLS H4): _media_visible reads posts / messages,
-    # both RLS-filtered — bind the token's viewer first, or every
-    # private post / DM photo 404s even for its own owner.
+    # Phase 191 (pool leak): the DB session lives ONLY for the auth
+    # + visibility checks below. The old code took Depends(get_db),
+    # and FastAPI closes a yield-dependency only after the
+    # StreamingResponse finishes — so every /media request held a
+    # pool connection for the whole Telegram download + client
+    # stream (up to 90s). A gallery page fires ~10 concurrent
+    # /media requests and wedged the 15-connection pool (Nov 26
+    # outage — the TimeoutError surfaced at the db.get below,
+    # waiting on checkout). The stream further down holds NO
+    # database connection now. Identity binding is unchanged
+    # (set_rls_context_for + apply_rls_context, cleared in the
+    # finally) so the Phase 186 pins on this function still hold.
     set_rls_context_for(viewer_id)
-    apply_rls_context(db)
-    # Phase 164 (P1): the file's owner/visibility decides — a token
-    # alone never opens another member's private media.
-    if not _media_visible(db, viewer_id, file_id):
-        raise HTTPException(404, "File not found")
+    try:
+        with short_session() as db:
+            apply_rls_context(db)
+            viewer = db.get(models.User, viewer_id)
+            if viewer is None or viewer.is_banned:
+                raise HTTPException(401, "Media token missing or expired")
+            if viewer.auth_revoked_at is not None:
+                revoked_ts = int(viewer.auth_revoked_at.replace(
+                    tzinfo=timezone.utc).timestamp())
+                if issued_at < revoked_ts:
+                    raise HTTPException(401, "Media token missing or expired")
+            # Phase 164 (H2): /media was unthrottled — one token holder could
+            # hammer the Telegram proxy without limit.
+            _enforce_rate("media", f"u{viewer_id}")
+            # Phase 164 (P1): the file's owner/visibility decides — a token
+            # alone never opens another member's private media.
+            if not _media_visible(db, viewer_id, file_id):
+                raise HTTPException(404, "File not found")
+    finally:
+        clear_rls_context()
     api = f"https://api.telegram.org/bot{settings.BOT_TOKEN}"
     async with httpx.AsyncClient(timeout=30) as client:
         try:
