@@ -27,10 +27,9 @@ MAIN = open("app/main.py", encoding="utf-8").read()
 # --- Phase 144 (owner): the card moved from Me into Settings -------
 assert "function rainCard()" in JS
 assert "🌧️ After Rain Effect" in JS
-assert "appendChild(rainCard())" in JS
-# it sits after Data Control in the Settings Data Control section
-assert (JS.index("appendChild(dataCard())") <
-        JS.index("appendChild(rainCard())"))
+# Phase 187: Data Control + Rain share one hub detail — one append
+# call mounts both, Data Control first, Rain right after it.
+assert "dataWrap.append(dataCard(), rainCard());" in JS
 print("rain card mounted OK")
 
 # --- per-account persistence, OFF by default ---------------------------
@@ -71,7 +70,7 @@ assert "Rain Effect card" in MAIN
 print("nexa manual OK")
 
 # --- asset version -------------------------------------------------------
-assert "app.js?v=186" in HTML and "style.css?v=186" in HTML
+assert "app.js?v=187" in HTML and "style.css?v=187" in HTML
 print("asset version OK")
 
 print("PHASE 101 OK")

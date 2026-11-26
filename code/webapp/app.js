@@ -324,6 +324,7 @@ function onAppBack() {
   else if (!$("reel-sheet-wrap").hidden) closeReelMenu();
   else if (!$("design-sheet-wrap").hidden) closeDesignSheet();
   else if ($("glassbar").classList.contains("open")) closeSidebar();
+  else if (settingsDetailKey) renderSettingsHub();
   else if (viewStack.length) showView(viewStack.pop(), true);
   else if (currentView !== "feed") showView("feed", true);
   updateBackButton();
@@ -5600,6 +5601,168 @@ const NOTIF_PREF_META = [
   ["mention", "📣 Mentions", "Someone mentions you in a post or comment"],
 ];
 
+// ---------------------------------------------------------------------------
+// Phase 187: Settings hub (designcharan pattern) — the page is a hub,
+// not one long stack: a profile card on top, then ACCOUNT /
+// PREFERENCES / SUPPORT grouped cards of icon rows with chevrons.
+// Tapping a row opens that section as a detail inside the same
+// Settings view (‹ Settings goes back); every one of the 8 existing
+// sections is built exactly as before and nothing is removed or
+// added. Excluded by the owner's order: a language switcher (never
+// ordered), a dark-mode toggle (Nexora has 33 theme shades — the
+// Theme row instead) and a log-out button (a Telegram Mini App has
+// no logout). The
+// About row shows the live build version (?v=NN) read off the
+// app.js script tag. Colours follow the member's theme (CSS vars),
+// not the screenshot's light palette — a light-only page would
+// clash with the dark/themeable app.
+// ---------------------------------------------------------------------------
+let settingsDetails = {};
+let settingsHubUser = null;
+let settingsDetailKey = null;
+
+function settingsVersion() {
+  const s = document.querySelector('script[src*="app.js?v="]');
+  const m = s && /[?&]v=(\d+)/.exec(s.src || "");
+  return m ? m[1] : null;
+}
+
+function settingsHubRow(icon, label, sub, valueText, onOpen, valueClass) {
+  const b = document.createElement("button");
+  b.className = "settings-row-btn";
+  b.type = "button";
+  const ic = document.createElement("span");
+  ic.className = "settings-row-ic";
+  ic.textContent = icon;
+  const tx = document.createElement("div");
+  tx.className = "settings-row-tx";
+  const lb = document.createElement("div");
+  lb.className = "settings-row-label";
+  lb.textContent = label;
+  tx.appendChild(lb);
+  if (sub) {
+    const s = document.createElement("div");
+    s.className = "settings-row-sub";
+    s.textContent = sub;
+    tx.appendChild(s);
+  }
+  b.append(ic, tx);
+  if (valueText) {
+    const v = document.createElement("span");
+    v.className = "settings-row-value" + (valueClass ? " " + valueClass : "");
+    v.textContent = valueText;
+    b.appendChild(v);
+  }
+  const ch = document.createElement("span");
+  ch.className = "settings-row-chev";
+  ch.textContent = "›";
+  b.appendChild(ch);
+  b.onclick = onOpen;
+  return b;
+}
+
+function settingsGroupEl(label, rows) {
+  const wrap = document.createElement("div");
+  const lab = document.createElement("div");
+  lab.className = "settings-group-label";
+  lab.textContent = label;
+  const card = document.createElement("div");
+  card.className = "card settings-group";
+  rows.forEach(r => card.appendChild(r));
+  wrap.append(lab, card);
+  return wrap;
+}
+
+function renderSettingsHub() {
+  const box = $("settings-box");
+  if (!box) return;
+  settingsDetailKey = null;
+  box.innerHTML = "";
+  const u = settingsHubUser;
+  const name = (u && u.first_name) || (me && me.first_name) || "Member";
+  const uname = u && u.username;
+  // Profile card — the mockup's email line cannot be copied:
+  // Nexora members are Telegram-identified and have no email on
+  // file, so the second line is the @username.
+  const card = document.createElement("div");
+  card.className = "card settings-profile-card";
+  card.appendChild(avatarEl(name, me.telegram_id, true,
+                            u && u.photo_file_id));
+  const col = document.createElement("div");
+  col.className = "settings-profile-col";
+  const nm = document.createElement("div");
+  nm.className = "settings-profile-name";
+  nm.textContent = name;
+  const sub = document.createElement("div");
+  sub.className = "settings-profile-sub";
+  sub.textContent = uname ? "@" + uname : "Nexora member";
+  col.append(nm, sub);
+  card.appendChild(col);
+  const edit = document.createElement("button");
+  edit.className = "settings-edit";
+  edit.type = "button";
+  edit.textContent = "✎ Edit";
+  edit.onclick = () => openSettingsDetail("profile");
+  card.appendChild(edit);
+  box.appendChild(card);
+  const ver = settingsVersion();
+  let themeName = "Default pink";
+  try {
+    const p = themeState && themeState.picks
+      ? palById(themeState.picks.bg) : null;
+    if (p) themeName = p.name;
+  } catch (e) { /* theme state unreadable; keep the default label */ }
+  box.appendChild(settingsGroupEl("ACCOUNT", [
+    settingsHubRow("👤", "Profile", null, null,
+                   () => openSettingsDetail("profile")),
+    settingsHubRow("🔒", "Privacy", null,
+                   u ? (u.is_private ? "Private" : "Public") : null,
+                   () => openSettingsDetail("privacy")),
+    settingsHubRow("💰", "Payout wallet", null, null,
+                   () => openSettingsDetail("wallet")),
+    settingsHubRow("🔳", "My QR", null, null,
+                   () => openSettingsDetail("qr")),
+    settingsHubRow("📦", "From your profile", null, null,
+                   () => openSettingsDetail("extras")),
+  ]));
+  box.appendChild(settingsGroupEl("PREFERENCES", [
+    settingsHubRow("🎨", "Theme", null, themeName,
+                   () => openSettingsDetail("theme")),
+    settingsHubRow("🔔", "Notifications", "In-app & Telegram bot", null,
+                   () => openSettingsDetail("notif")),
+    settingsHubRow("🗂️", "Data Control", null, null,
+                   () => openSettingsDetail("data")),
+  ]));
+  box.appendChild(settingsGroupEl("SUPPORT", [
+    settingsHubRow("ℹ️", "About", null, ver ? "v" + ver : null,
+                   () => openSettingsDetail("about"),
+                   "settings-ver-pill"),
+  ]));
+  const sc = $("app-scroll");
+  if (sc) sc.scrollTop = 0;
+  updateBackButton();
+}
+
+function openSettingsDetail(key) {
+  const box = $("settings-box");
+  const node = settingsDetails[key];
+  if (!box || !node) return;
+  settingsDetailKey = key;
+  box.innerHTML = "";
+  const back = document.createElement("button");
+  back.className = "settings-back";
+  back.type = "button";
+  back.textContent = "‹ Settings";
+  back.onclick = () => renderSettingsHub();
+  const wrap = document.createElement("div");
+  wrap.className = "settings-detail";
+  wrap.appendChild(node);
+  box.append(back, wrap);
+  const sc = $("app-scroll");
+  if (sc) sc.scrollTop = 0;
+  updateBackButton();
+}
+
 async function loadSettings() {
   const box = $("settings-box");
   if (!box || !me) return;
@@ -5617,6 +5780,15 @@ async function loadSettings() {
       u = null;
     }
     box.innerHTML = "";
+    // Phase 187: sections are built exactly as before, but each is
+    // registered under a hub key instead of staying stacked — the
+    // hub renders at the end of this function and a row tap moves
+    // the registered node into the detail view (DOM moves keep
+    // listeners and input state). Builders that look their target
+    // up by id (loadMySkills, loadMyQrInto) run while the section
+    // is still attached, exactly as today.
+    const details = {};
+    const reg = (key, node) => { details[key] = node; return node; };
     const sec = (title) => {
       const s = document.createElement("div");
       s.className = "card settings-sec";
@@ -5631,7 +5803,7 @@ async function loadSettings() {
     // form, plus the same photo/cover pickers (the pickers live
     // in the profile view; after a photo change the app shows
     // your profile, as it does from Me today).
-    const prof = sec("👤 Profile");
+    const prof = reg("profile", sec("👤 Profile"));
     const nameIn = document.createElement("input");
     nameIn.type = "text";
     nameIn.maxLength = 128;
@@ -5773,11 +5945,12 @@ async function loadSettings() {
     prof.append(skillHead, skillName, skillKind, skillNote, skillAdd, skillList, skillHint);
     loadMySkills();
     // 2. Theme — the same picker as Me (themeCard is reused).
-    box.appendChild(themeCard());
+    const themeNode = reg("theme", themeCard());
+    box.appendChild(themeNode);
     // 3. Privacy — the same toggle as the profile edit form,
     // plus the blocked list with Unblock (GET /me/blocked,
     // POST /users/{id}/block toggles the block off).
-    const priv = sec("🔒 Privacy");
+    const priv = reg("privacy", sec("🔒 Privacy"));
     const privRow = document.createElement("label");
     privRow.className = "privacy-row";
     const privChk = document.createElement("input");
@@ -5877,7 +6050,7 @@ async function loadSettings() {
     // 4. Notifications — per-type toggles, all ON by default.
     // Every change posts the full prefs object, so toggling one
     // type never resets the others.
-    const notif = sec("🔔 Notifications");
+    const notif = reg("notif", sec("🔔 Notifications"));
     const notifHint = document.createElement("p");
     notifHint.className = "hint";
     notifHint.textContent = "Turn off a type to stop getting those notifications — in the app and from the bot. Everything is on until you change it.";
@@ -5915,16 +6088,19 @@ async function loadSettings() {
       notifBox.textContent = "Could not load notification settings.";
     }
     // 5. Data Control — the same card as Me (dataCard is reused).
-    box.appendChild(dataCard());
-    // Phase 144 (owner): the After Rain toggle sat under Data
-    // Control in Me, so it sits under it here too.
-    box.appendChild(rainCard());
+    // Phase 187: Data Control and the After Rain card share one
+    // detail — Phase 144 (owner): the After Rain toggle sat under
+    // Data Control in Me, so it sits under it here too.
+    const dataWrap = document.createElement("div");
+    dataWrap.className = "settings-detail-body";
+    dataWrap.append(dataCard(), rainCard());
+    box.appendChild(reg("data", dataWrap));
     // 6. Payout wallet — the same /me/wallet save as the
     // Monetization card. A small standalone form: loadPayoutBox
     // uses fixed ids (payout-network, payout-address), so calling
     // it twice would duplicate ids in the DOM. Payout requests
     // themselves stay in the Monetization card below (💰 Account).
-    const wal = sec("💰 Payout wallet");
+    const wal = reg("wallet", sec("💰 Payout wallet"));
     const walHint = document.createElement("p");
     walHint.className = "hint";
     walHint.textContent = "The wallet your crypto payouts go to. Payout requests live in the Monetization card below (💰 Account).";
@@ -5968,7 +6144,7 @@ async function loadSettings() {
     //    insights, level, referrals, saved, shared, drafts,
     //    scheduled, follow requests, hashtags, monetization
     //    and verification — same cards, same buttons, now here.
-    const more = sec("📦 From your profile");
+    const more = reg("extras", sec("📦 From your profile"));
     const moreHint = document.createElement("p");
     moreHint.className = "hint";
     moreHint.textContent = "Everything that used to live on your profile — same cards, same buttons, now gathered here.";
@@ -5983,7 +6159,7 @@ async function loadSettings() {
     }
     box.appendChild(more);
     // 8. My QR — rendered inline (same loader as the QR view).
-    const qrSec = sec("🔳 My QR");
+    const qrSec = reg("qr", sec("🔳 My QR"));
     const qrBox = document.createElement("div");
     qrBox.id = "settings-qr-box";
     qrSec.appendChild(qrBox);
@@ -5996,6 +6172,34 @@ async function loadSettings() {
       err.textContent = "Could not load your QR code.";
       qrSec.appendChild(err);
     }
+    // Phase 187: every section built — hand the nodes to the hub
+    // and show the hub (profile card + ACCOUNT / PREFERENCES /
+    // SUPPORT groups). The About detail is built here too: it is
+    // information only (app name + live build version), not a
+    // setting.
+    const aboutSec = document.createElement("div");
+    aboutSec.className = "card settings-sec";
+    const aboutHead = document.createElement("b");
+    aboutHead.className = "settings-head";
+    aboutHead.textContent = "ℹ️ About";
+    const aboutName = document.createElement("div");
+    aboutName.className = "settings-about-name";
+    aboutName.textContent = "Nexora Social";
+    const aboutVer = document.createElement("div");
+    aboutVer.className = "hint";
+    const ver = settingsVersion();
+    aboutVer.textContent = ver
+      ? "Version v" + ver + " (build ?v=" + ver + ")"
+      : "Version unknown";
+    const aboutHint = document.createElement("p");
+    aboutHint.className = "hint";
+    aboutHint.textContent = "Runs inside Telegram — your account is "
+      + "your Telegram account.";
+    aboutSec.append(aboutHead, aboutName, aboutVer, aboutHint);
+    details.about = aboutSec;
+    settingsDetails = details;
+    settingsHubUser = u;
+    renderSettingsHub();
   } catch (e) { box.textContent = "Could not load Settings."; }
 }
 
