@@ -91,8 +91,8 @@ assert groups == ["ACCOUNT", "PREFERENCES", "SUPPORT"], groups
 rows = re.findall(r'settingsHubRow\("[^"]*", "([^"]+)"', JS)
 assert rows == ["Profile", "Privacy", "Payout wallet", "My QR",
                 "From your profile", "Theme", "Notifications",
-                "Data Control", "About"], rows
-print("hub groups + rows OK (3 groups, 9 rows, in order)")
+                "Data Control", "Help & Support", "About"], rows
+print("hub groups + rows OK (3 groups, 10 rows, in order)")
 
 # --- 3. All 8 existing sections still built inside loadSettings -----
 for bit in ('sec("👤 Profile")', 'sec("🔒 Privacy")',
@@ -105,7 +105,7 @@ for bit in ('sec("👤 Profile")', 'sec("🔒 Privacy")',
 # ... and each is registered under a hub key (built, then moved —
 # DOM moves keep listeners and input state).
 for key in ("profile", "privacy", "notif", "wallet", "extras", "qr",
-            "theme", "data", "about"):
+            "theme", "data", "help", "about"):
     assert 'reg("%s"' % key in JS or 'details.%s' % key in JS, key
 print("all 8 sections still built + registered OK")
 
@@ -175,10 +175,10 @@ for path in ("/me/blocked", "/me/muted"):
 print("hub data sources OK (profile, notif prefs, wallet, lists)")
 
 # --- 7. Version + routes + backup pins -------------------------------
-assert HTML.count("?v=187") == 10, HTML.count("?v=187")
-assert "?v=18" + "6" not in HTML
-assert "app.js?v=187" in HTML and "games.js?v=187" in HTML
-assert 'menu_url.rstrip("/") + "/?v=187"' in BOT
+assert HTML.count("?v=188") == 10, HTML.count("?v=188")
+assert "?v=18" + "7" not in HTML
+assert "app.js?v=188" in HTML and "games.js?v=188" in HTML
+assert 'menu_url.rstrip("/") + "/?v=188"' in BOT
 paths = {rt.path for rt in app.routes}
 assert len(paths) == 183, len(paths)
 assert len(_BACKUP_TABLES) == 52, len(_BACKUP_TABLES)
@@ -186,6 +186,6 @@ with TestClient(app) as cx:
     r = cx.get("/admin/health", headers=ADMIN)
     assert r.status_code == 200, r.text
     h = r.json()
-    assert h["version"] == 187, h["version"]
-print("version ?v=187 + routes 183 + backup 52 OK")
+    assert h["version"] == 188, h["version"]
+print("version ?v=188 + routes 183 + backup 52 OK")
 print("PHASE 187 OK")

@@ -1,7 +1,21 @@
 // Nexora Mini App — feed, posting, likes, comments, profiles, follow,
 // search, referrals and points, all against the FastAPI backend.
 // Login is the Telegram initData sent with every request (see /auth).
-const tg = window.Telegram.WebApp;
+// Phase 188 (Job 1): telegram-web-app.js is an external script —
+// when it fails to load (slow or flaky connection) window.Telegram
+// is undefined and the old `window.Telegram.WebApp` dereference
+// killed the WHOLE script before any UI painted: a blank page,
+// i.e. "the whole site doesn't load". Fall back to a no-op stub
+// so the app always reaches the entry screen, where bootFailed
+// explains the failure and offers a working RETRY instead of a
+// blank page. Normal Telegram opens are untouched — tg is the
+// real WebApp object there, and every guarded tg.* use below
+// (BackButton, openLink, downloadFile, LocationManager) already
+// tolerates the stub's nulls/undefineds.
+const tg = (window.Telegram && window.Telegram.WebApp) || {
+  ready() {}, expand() {}, initData: "", initDataUnsafe: {},
+  BackButton: null, LocationManager: null,
+};
 tg.ready();
 tg.expand();
 // Phase 23: stop Telegram's sheet gestures from fighting the page's
@@ -4810,16 +4824,9 @@ async function openProfile(userId) {
       box.append(eBtn, form);
     }
 
-    if (me && userId === me.telegram_id) {
-      // Phase 144 (owner): Me keeps only name, photo, bio, cover
-      // and posts — everything else lives on the Settings page.
-      const sBtn = document.createElement("button");
-      sBtn.className = "wide";
-      sBtn.id = "profile-settings-btn";
-      sBtn.textContent = "⚙️ Settings";
-      sBtn.onclick = () => showView("settings");
-      box.appendChild(sBtn);
-    }
+    // Phase 188 (Job 3): the Settings button lived here (Me) — it
+    // moved to the sidebar (ACCOUNT section). Me keeps only name,
+    // photo, bio, cover and posts.
     // Phase 136: a private account's posts stay hidden until a
     // follow request is accepted — show the lock, not the posts.
     if (u.is_private && !u.following && !ownProfile) {
@@ -5734,6 +5741,8 @@ function renderSettingsHub() {
                    () => openSettingsDetail("data")),
   ]));
   box.appendChild(settingsGroupEl("SUPPORT", [
+    settingsHubRow("❓", "Help & Support", null, null,
+                   () => openSettingsDetail("help")),
     settingsHubRow("ℹ️", "About", null, ver ? "v" + ver : null,
                    () => openSettingsDetail("about"),
                    "settings-ver-pill"),
@@ -6196,6 +6205,66 @@ async function loadSettings() {
     aboutHint.textContent = "Runs inside Telegram — your account is "
       + "your Telegram account.";
     aboutSec.append(aboutHead, aboutName, aboutVer, aboutHint);
+    // Phase 188 (Job 2): Help & Support — FAQ with real facts only,
+    // drawn from the app itself. There are no contact details to give
+    // (no email, no phone, no external links) — help actions stay
+    // in-app: "Ask Nexa" opens the assistant, "Report a problem"
+    // opens a DM to Nexora Social (id 1, OFFICIAL_ID), which the
+    // admin reads. The existing /reports endpoint is post-scoped
+    // (needs a post_id), so a general problem has no report endpoint
+    // to reuse — the DM route is the existing in-app channel, and
+    // the post-report flow is documented in the FAQ below.
+    const helpSec = document.createElement("div");
+    helpSec.className = "card settings-sec";
+    const helpHead = document.createElement("b");
+    helpHead.className = "settings-head";
+    helpHead.textContent = "❓ Help & Support";
+    helpSec.appendChild(helpHead);
+    const helpFaq = [
+      ["How do I post a photo or video?",
+       "Send it to @NexoraSocial_bot in chat with a caption and it becomes a post. In-app upload is not available."],
+      ["How do I earn points?",
+       "Every post earns 10 points. Daily tasks on the Tasks page earn more: check-in 20, follow 3 people 10, comment 5 times 5, react 6 times 10 — each once a day, tap Claim."],
+      ["How do I unlock monetisation?",
+       "Six targets, all shown in Settings under From your profile: 500 followers, 12 qualified referrals, 25 posts, an account 14 days old, 5000 lifetime points, and a 30-day check-in streak."],
+      ["What is a qualified referral?",
+       "A friend who joins from your invite link AND makes their first post. Your link is in Settings, under From your profile. A qualified referral also earns you 20 points."],
+      ["How do Stars tips work?",
+       "Tap ⭐ on a post to tip 10, 50, 100 or 250 Stars, or a custom amount. Stars go to the bot's balance; payouts to creators are in crypto (TON, Gram or USDT) — see Payout wallet in Settings."],
+      ["How do Blood donors work?",
+       "Opt in from Settings → Profile and pick your blood group. Donors are listed by group. No phone numbers are shown anywhere — you contact a donor by DM."],
+      ["What is Skill Swap?",
+       "List a skill you teach and one you want to learn (Settings → Profile → My skills). Matches show on the Skills page; Connect opens a DM."],
+      ["Can I send voice messages?",
+       "Yes, in DMs — tap the mic. A voice note can be up to 120 seconds and 5 MB."],
+      ["What is Nexa?",
+       "Nexa is the in-app AI assistant (sidebar, top). She answers in text only — no voice messages."],
+      ["How do I stay safe?",
+       "Report any post from its ⋮ menu. Block or mute someone from their profile — a blocked person cannot see your posts or message you. A private account (Settings → Privacy) shows posts to followers only."],
+    ];
+    helpFaq.forEach(([q, a]) => {
+      const qEl = document.createElement("b");
+      qEl.textContent = q;
+      const aEl = document.createElement("p");
+      aEl.className = "hint";
+      aEl.textContent = a;
+      helpSec.append(qEl, aEl);
+    });
+    const helpAsk = document.createElement("button");
+    helpAsk.className = "wide";
+    helpAsk.type = "button";
+    helpAsk.textContent = "💬 Ask Nexa";
+    helpAsk.onclick = () => showView("assistant");
+    const helpReport = document.createElement("button");
+    helpReport.className = "wide";
+    helpReport.type = "button";
+    helpReport.textContent = "⚑ Report a problem";
+    helpReport.onclick = () => openChat(1);
+    const helpHint = document.createElement("p");
+    helpHint.className = "hint";
+    helpHint.textContent = "Reporting a problem opens a message to Nexora Social — describe the problem and the admin will read it. To report a post, tap ⋮ on the post, then Report.";
+    helpSec.append(helpAsk, helpReport, helpHint);
+    details.help = helpSec;
     details.about = aboutSec;
     settingsDetails = details;
     settingsHubUser = u;
@@ -6885,6 +6954,22 @@ function bootOk() {
 }
 
 function bootFailed() {
+  // Phase 188 (Job 1): when Telegram's own script never arrived
+  // the app cannot sign in at all — say so plainly and offer a
+  // RETRY (reload) instead of the dead "open from inside Telegram"
+  // line with a disabled button. A reload re-fetches
+  // telegram-web-app.js, which is the part that failed.
+  if (!window.Telegram || !window.Telegram.WebApp) {
+    $("status").textContent =
+      "Could not reach Telegram. Check your connection, then tap RETRY.";
+    $("entry-note").textContent =
+      "Telegram did not load, so the app cannot sign you in. If you opened this inside Telegram, tap RETRY to reload; if you opened it in a browser, open Nexora Social from inside Telegram instead.";
+    const go = $("entry-go");
+    go.disabled = false;
+    go.textContent = "↻ RETRY";
+    go.onclick = () => location.reload();
+    return;
+  }
   $("status").textContent = "Please open this app from inside Telegram.";
   $("entry-go").disabled = true;
   $("entry-note").textContent =

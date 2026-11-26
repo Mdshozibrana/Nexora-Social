@@ -632,10 +632,10 @@ finally:
     shutil.rmtree(scratch, ignore_errors=True)
 
 # --- version, routes, backup ----------------------------------------------
-assert HTML.count("?v=187") == 10, HTML.count("?v=187")
+assert HTML.count("?v=188") == 10, HTML.count("?v=188")
 assert "?v=18" + "3" not in HTML
 BOT = open(os.path.join(ROOT, "code/app/bot.py")).read()
-assert "/?v=187" in BOT and "/?v=18" + "3" not in BOT
+assert "/?v=188" in BOT and "/?v=18" + "3" not in BOT
 paths = {rt.path for rt in app.routes}
 assert len(paths) == 183, len(paths)
 assert "/users/{telegram_id}/followers" in paths
@@ -647,7 +647,7 @@ assert r.status_code == 200, r.text
 assert len(r.json()["tables"]) == 52, len(r.json()["tables"])
 assert len(_BACKUP_TABLES) == 52, len(_BACKUP_TABLES)
 r = c.get("/admin/health", headers=ADMIN)
-assert r.json()["version"] == 187, r.json()
+assert r.json()["version"] == 188, r.json()
 print("version + routes 183 + backup 52 OK")
 
 print("PHASE 184 OK")

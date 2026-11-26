@@ -9,7 +9,7 @@ CSS = open("webapp/style.css").read()
 for marker in ('class="admin-hero"', 'id="ah-members"',
                'id="ah-active"', 'id="ah-posts"', 'id="ah-reports"',
                'class="admin-live"', 'class="live-dot"',
-               "Good Evening,", "?v=187"):
+               "Good Evening,", "?v=188"):
     # Phase 121: the hero subtitle "Owner control room" was replaced
     # by the Obsidian greeting ("Good Evening, Admin"); the hero
     # itself (class, ids, LIVE pill) is unchanged.

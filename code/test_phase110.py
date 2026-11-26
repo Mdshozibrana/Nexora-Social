@@ -71,8 +71,8 @@ with TestClient(app) as c:
     assert "#app-scroll.sheet-open" in css, "Phase 108 lock gone"
     print("Phase 108/109 markers OK")
 
-    for asset in ("style.css?v=187", "app.js?v=187", "games.js?v=187"):
+    for asset in ("style.css?v=188", "app.js?v=188", "games.js?v=188"):
         assert asset in html, asset
-    print("asset version ?v=187 OK")
+    print("asset version ?v=188 OK")
 
 print("PHASE 110 OK")

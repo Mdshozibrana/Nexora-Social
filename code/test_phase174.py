@@ -292,10 +292,10 @@ JS_MARKS = ["paintMute", "loadMuted", "Muted members", "/mute",
             "muted_by_me", "Member muted", "Nobody muted.", "Unmute"]
 for m in JS_MARKS:
     assert m in JS, f"missing JS marker: {m}"
-assert HTML.count("?v=187") == 10, HTML.count("?v=187")
+assert HTML.count("?v=188") == 10, HTML.count("?v=188")
 assert "?v=17" + "3" not in HTML
 BOT = open(os.path.join(ROOT, "code/app/bot.py")).read()
-assert "/?v=187" in BOT and "/?v=17" + "3" not in BOT
+assert "/?v=188" in BOT and "/?v=17" + "3" not in BOT
 paths = set()
 for route in app.routes:
     paths.add(route.path)
