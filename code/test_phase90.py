@@ -55,5 +55,5 @@ for bit in ("html[data-theme] body", "html[data-theme] #nav-pill",
     assert bit in CSS, bit
 # Nexa can explain the feature
 assert "THEME COLOURS" in MAIN and "never blend" in MAIN
-assert "app.js?v=191" in HTML and "games.js?v=191" in HTML
+assert "app.js?v=192" in HTML and "games.js?v=192" in HTML
 print("PHASE 90 OK")

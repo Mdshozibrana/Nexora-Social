@@ -213,6 +213,20 @@ def _migrate():
         if "story_id" not in msg_cols:
             conn.execute(text(
                 "ALTER TABLE messages ADD COLUMN story_id INTEGER"))
+    # Phase 192: Phase 181 added delivered_targets to the
+    # Broadcast model but never migrated existing databases.
+    # create_all only creates missing TABLES, so the old DB
+    # (created Oct 31, 2026) never got the column and
+    # GET /admin/backup 500d on it (UndefinedColumn at
+    # _backup_payload). TEXT with a '[]' default is legal on
+    # Postgres and SQLite alike.
+    broadcast_cols = {c["name"]
+                      for c in inspect(engine).get_columns("broadcasts")}
+    with engine.begin() as conn:
+        if "delivered_targets" not in broadcast_cols:
+            conn.execute(text(
+                "ALTER TABLE broadcasts ADD COLUMN "
+                "delivered_targets TEXT NOT NULL DEFAULT '[]'"))
     # Phase 60: a managed account created as "@name" stored the @
     # IN the username, so every "@" + username render showed
     # "@@name". Strip stray leading @s once (idempotent — later

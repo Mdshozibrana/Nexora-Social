@@ -18,7 +18,7 @@ async def _no_poll(app):
 bot_mod.start_bot = _no_poll
 
 from fastapi.testclient import TestClient
-from app.main import app
+from app.main import _dhaka_now, app
 from app.db import SessionLocal
 from app import models
 
@@ -37,7 +37,10 @@ def H(uid, name):
 
 CAROL, DAVE, ERIN, FRANK = (H(333, "Carol"), H(444, "Dave"),
                             H(555, "Erin"), H(666, "Frank"))
-TODAY = datetime.utcnow().date()
+# Phase 192: seed from the Dhaka day the app counts on
+# (_checkin_streak walks Dhaka dates since Phase 180) — a UTC
+# TODAY breaks the streak seeds 00:00-06:00 Dhaka.
+TODAY = _dhaka_now().date()
 
 with TestClient(app) as c:
     for h in (CAROL, DAVE, ERIN, FRANK):
