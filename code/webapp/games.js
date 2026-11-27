@@ -2232,6 +2232,942 @@ registerGame({
   }
 });
 
+// --------------------------------------------- Phase 196: Runner Rush --
+// Owner (Nov 27, 13:03 Dhaka): two reference videos — a bike runner
+// over water and a carrot runner on a sky track — merged into ONE
+// Games-section game: pick Bike Run or Carrot Run when starting.
+// Rebuilt in our stack (vanilla JS + vendored Three.js r149, no
+// React, no CDN): a shared 3-lane auto-runner engine, per-mode
+// worlds restyled so nobody can say it is the source creators'
+// game — teal lagoon + sunset + amber track + teal tide gates for
+// the bike; purple dusk + mint track + star saws + a juice jar for
+// the carrot. Collect, smash, dodge, finish for the multiplier.
+// Best level is stored per account (nxGet/nxSet) — games award no
+// points. Pauses on visibilitychange; cleanup cancels rAF, removes
+// listeners and disposes the renderer.
+registerGame({
+  id: "runner-rush", icon: "🏁", name: "Runner Rush",
+  title: "🏁 Runner Rush",
+  desc: "Pick your ride — pedal the lagoon track or sprint the sky track. Collect, smash, dodge, finish big.",
+  help: "← → or swipe to steer. Bike: collect wheels to smash walls. Carrot: dodge the saws. Finish for the multiplier.",
+  start(stage, setScore) {
+    if (typeof THREE === "undefined" || !window.WebGLRenderingContext) {
+      const p = document.createElement("p");
+      p.className = "hint";
+      p.textContent = "3D is not available on this device — try another phone or browser.";
+      stage.appendChild(p);
+      return () => {};
+    }
+    // --- deterministic world: same spawns on every load ---
+    let seed = 196196;
+    const rng = () => {
+      seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+      let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+    const LANES = [-2.2, 0, 2.2];
+    const laneX = (l) => (l < 0 ? -4.4 : l > 2 ? 4.4 : LANES[l]);
+    const TRACK_W = 7.6;
+    const GATE_VALS = [2, 3, 4, 5, 6];
+    let level = 1;
+    let best = +(nxGet("nx_runnerrush_best") || 0);
+    let mode = null;             // "bike" | "carrot"
+    let status = "picker";       // picker | running | over | done
+    let lane = 1, px = 0, pz = 0, speed = 0;
+    let wheels = 0, gems = 0, carrots = 0, mult = 1, lastScore = 0;
+    let checkpoint = 0, invuln = 0, respawnT = 0, blinkT = 0, levelLen = 600;
+    let spawnZ = -24, nextFlagZ = -150;
+    let rowsSinceGate = 0, rowsSinceSaw = 0;
+    let ents = [];
+    let modeGroup = null, player = null;
+    let spinWheels = [], spinSaws = [];
+    let sliceParts = [];
+    const input = { left: false, right: false };
+    // --- DOM: picker + canvas + HUD + touch + overlay ---
+    const wrap = document.createElement("div");
+    wrap.className = "rr-wrap";
+    stage.appendChild(wrap);
+    const cv = document.createElement("canvas");
+    cv.className = "rr-canvas";
+    wrap.appendChild(cv);
+    const hud = document.createElement("div");
+    hud.className = "rr-hud";
+    hud.hidden = true;
+    const modesBtn = document.createElement("button");
+    modesBtn.className = "rr-modes";
+    modesBtn.textContent = "‹ Modes";
+    modesBtn.onclick = () => toPicker();
+    const hudLevel = document.createElement("span");
+    hudLevel.className = "rr-level";
+    hudLevel.textContent = "Lv 1";
+    const hudCount = document.createElement("span");
+    hudCount.className = "rr-count";
+    hudCount.textContent = "🛞 0";
+    const hudGems = document.createElement("span");
+    hudGems.className = "rr-gems";
+    hudGems.textContent = "💎 0";
+    const hudMult = document.createElement("span");
+    hudMult.className = "rr-mult";
+    hudMult.textContent = "×1";
+    const prog = document.createElement("div");
+    prog.className = "rr-progress";
+    const progFill = document.createElement("div");
+    progFill.className = "rr-progress-fill";
+    prog.appendChild(progFill);
+    hud.append(modesBtn, hudLevel, hudCount, hudGems, hudMult, prog);
+    wrap.appendChild(hud);
+    const picker = document.createElement("div");
+    picker.className = "rr-picker";
+    const pickTitle = document.createElement("div");
+    pickTitle.className = "rr-pick-title";
+    pickTitle.textContent = "Choose your run";
+    const pickBest = document.createElement("div");
+    pickBest.className = "rr-best";
+    pickBest.textContent = "Best level: " + best;
+    const mkPick = (label, desc, m) => {
+      const b = document.createElement("button");
+      b.className = "rr-pick-card";
+      b.textContent = label;
+      const d = document.createElement("span");
+      d.className = "rr-pick-desc";
+      d.textContent = desc;
+      b.appendChild(d);
+      b.onclick = () => startMode(m);
+      return b;
+    };
+    picker.append(pickTitle,
+      mkPick("🚲 Bike Run", "Pedal the lagoon track, collect wheels, smash numbered walls", "bike"),
+      mkPick("🥕 Carrot Run", "Sprint the sky track, grab carrots, dodge the spinning saws", "carrot"),
+      pickBest);
+    wrap.appendChild(picker);
+    const overlay = document.createElement("div");
+    overlay.className = "rr-overlay";
+    overlay.hidden = true;
+    const ovTitle = document.createElement("div");
+    ovTitle.className = "rr-ov-title";
+    const ovBody = document.createElement("div");
+    ovBody.className = "rr-ov-body";
+    const ovBtns = document.createElement("div");
+    ovBtns.className = "rr-ov-btns";
+    const retryBtn = document.createElement("button");
+    retryBtn.className = "rr-btn rr-retry";
+    retryBtn.textContent = "↻ Retry";
+    retryBtn.onclick = () => startMode(mode);
+    const nextBtn = document.createElement("button");
+    nextBtn.className = "rr-btn rr-next";
+    nextBtn.textContent = "Next level ›";
+    nextBtn.onclick = () => { level++; startMode(mode); };
+    const ovModesBtn = document.createElement("button");
+    ovModesBtn.className = "rr-btn rr-ov-modes";
+    ovModesBtn.textContent = "Back to modes";
+    ovModesBtn.onclick = () => toPicker();
+    ovBtns.append(retryBtn, nextBtn, ovModesBtn);
+    overlay.append(ovTitle, ovBody, ovBtns);
+    wrap.appendChild(overlay);
+    const touch = document.createElement("div");
+    touch.className = "rr-touch";
+    touch.hidden = true;
+    const mkSteer = (label, dir) => {
+      const b = document.createElement("button");
+      b.className = "rr-btn rr-steer";
+      b.textContent = label;
+      const on = (e) => { if (e && e.preventDefault) e.preventDefault(); shiftLane(dir); };
+      b.addEventListener("pointerdown", on);
+      touch.appendChild(b);
+      return b;
+    };
+    mkSteer("◀", -1);
+    mkSteer("▶", 1);
+    wrap.appendChild(touch);
+    // --- Three.js scene (one renderer, per-mode world groups) ---
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xFF9E57);
+    scene.fog = new THREE.Fog(0xFFB37A, 60, 170);
+    const camera = new THREE.PerspectiveCamera(62, 3 / 2, 0.1, 400);
+    const camTarget = new THREE.Vector3(0, 5.2, 9.5);
+    const renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: true, powerPreference: "low-power" });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.outputEncoding = THREE.sRGBEncoding;
+    scene.add(new THREE.HemisphereLight(0xFFE8C8, 0x2E6B6B, 0.95));
+    const sun = new THREE.DirectionalLight(0xFFE0B3, 0.9);
+    sun.position.set(30, 60, 20);
+    scene.add(sun);
+    const textTex = (txt, fg, bg) => {
+      const c = document.createElement("canvas");
+      c.width = 128; c.height = 128;
+      const g = c.getContext("2d");
+      if (bg) { g.fillStyle = bg; g.fillRect(0, 0, 128, 128); }
+      g.fillStyle = fg; g.font = "bold 52px sans-serif";
+      g.textAlign = "center"; g.textBaseline = "middle";
+      g.fillText(txt, 64, 68);
+      return new THREE.CanvasTexture(c);
+    };
+    const stripeTex = () => {
+      const c = document.createElement("canvas");
+      c.width = 32; c.height = 128;
+      const g = c.getContext("2d");
+      for (let i = 0; i < 8; i++) {
+        g.fillStyle = i % 2 ? "#F8FAFC" : "#7C3AED";
+        g.fillRect(0, i * 16, 32, 16);
+      }
+      return new THREE.CanvasTexture(c);
+    };
+    const lam = (color, extra) => {
+      const p = { color: color };
+      if (extra) for (const k in extra) p[k] = extra[k];
+      return new THREE.MeshLambertMaterial(p);
+    };
+    const box = (w, h, d, mat, x, y, z) => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+      m.position.set(x, y, z);
+      modeGroup.add(m);
+      return m;
+    };
+    // --- bike world: teal lagoon, sunset sky, amber track, palms ---
+    const buildRider = () => {
+      player = new THREE.Group();
+      const frameMat = lam(0x0F766E);
+      const tyreMat = lam(0x1F2937);
+      const hubMat = lam(0xD1D5DB);
+      const jerseyMat = lam(0xEA580C);
+      const skinMat = lam(0xF2C29B);
+      const helmetMat = lam(0x0D9488);
+      const bar = (x, y, z, rz) => {
+        const m = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.1, 6), frameMat);
+        m.position.set(x, y, z);
+        m.rotation.x = rz;
+        player.add(m);
+        return m;
+      };
+      bar(0, 0.75, 0.35, 0.9);
+      bar(0, 0.75, -0.35, -0.9);
+      const top = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.15, 6), frameMat);
+      top.rotation.x = Math.PI / 2; top.position.set(0, 1.0, 0);
+      player.add(top);
+      const wheelGeo = new THREE.TorusGeometry(0.42, 0.09, 8, 18);
+      spinWheels = [];
+      [0.75, -0.75].forEach((wz) => {
+        const pivot = new THREE.Group();
+        pivot.position.set(0, 0.42, wz);
+        const tyre = new THREE.Mesh(wheelGeo, tyreMat);
+        tyre.rotation.y = Math.PI / 2;
+        const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.12, 8), hubMat);
+        hub.rotation.z = Math.PI / 2;
+        pivot.add(tyre, hub);
+        player.add(pivot);
+        spinWheels.push(pivot);
+      });
+      const torso = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.7, 0.4), jerseyMat);
+      torso.position.set(0, 1.35, -0.1);
+      torso.rotation.x = 0.35;
+      player.add(torso);
+      const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.3, 12, 8), helmetMat);
+      helmet.position.set(0, 1.85, 0.05);
+      player.add(helmet);
+      const armGeo = new THREE.CylinderGeometry(0.06, 0.06, 0.62, 6);
+      const armL = new THREE.Mesh(armGeo, jerseyMat);
+      armL.position.set(-0.32, 1.45, 0.35); armL.rotation.x = 0.9;
+      const armR = new THREE.Mesh(armGeo, jerseyMat);
+      armR.position.set(0.32, 1.45, 0.35); armR.rotation.x = 0.9;
+      player.add(armL, armR);
+      const legGeo = new THREE.BoxGeometry(0.14, 0.55, 0.14);
+      const legL = new THREE.Mesh(legGeo, skinMat);
+      legL.position.set(-0.18, 0.95, 0.15);
+      const legR = new THREE.Mesh(legGeo, skinMat);
+      legR.position.set(0.18, 0.95, 0.15);
+      player.add(legL, legR);
+      modeGroup.add(player);
+    };
+    const buildBikeFinish = () => {
+      const gold = lam(0xF59E0B, { emissive: 0x92400E });
+      const fz = -levelLen;
+      [-2.6, 2.6].forEach((x) => {
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.3, 2.6, 8), gold);
+        post.position.set(x, 1.3, fz);
+        modeGroup.add(post);
+      });
+      const arch = new THREE.Mesh(new THREE.TorusGeometry(2.6, 0.24, 8, 20, Math.PI), gold);
+      arch.position.set(0, 0.4, fz);
+      modeGroup.add(arch);
+      const chest = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.85, 0.9), lam(0x7C2D12));
+      chest.position.set(0, 0.45, fz - 2);
+      modeGroup.add(chest);
+      const lid = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.4, 0.9), lam(0x9A3412));
+      lid.position.set(0, 1.05, fz - 2);
+      modeGroup.add(lid);
+      const band = new THREE.Mesh(new THREE.BoxGeometry(1.56, 0.14, 0.96), gold);
+      band.position.set(0, 0.85, fz - 2);
+      modeGroup.add(band);
+    };
+    const buildBikeWorld = () => {
+      scene.background = new THREE.Color(0xFF9E57);
+      scene.fog = new THREE.Fog(0xFFB37A, 60, 170);
+      const water = new THREE.Mesh(new THREE.PlaneGeometry(320, 320), lam(0x0E7C7B));
+      water.rotation.x = -Math.PI / 2;
+      water.position.set(0, -0.2, -levelLen / 2);
+      modeGroup.add(water);
+      const track = new THREE.Mesh(new THREE.PlaneGeometry(TRACK_W, levelLen + 90), lam(0xE8A33D));
+      track.rotation.x = -Math.PI / 2;
+      track.position.set(0, 0, -levelLen / 2 + 10);
+      modeGroup.add(track);
+      box(TRACK_W + 0.5, 0.18, levelLen + 90, lam(0xC77F22), 0, -0.11, -levelLen / 2 + 10);
+      const sandMat = lam(0xE8C98A);
+      const trunkMat = lam(0x7A4A21);
+      const leafMat = lam(0x2F7D4F, { flatShading: true });
+      for (let i = 0; i < 9; i++) {
+        const side = i % 2 ? 1 : -1;
+        const ix = side * (11 + rng() * 18);
+        const iz = -20 - rng() * (levelLen - 40);
+        const ir = 3 + rng() * 3.5;
+        const isl = new THREE.Mesh(new THREE.CylinderGeometry(ir, ir * 1.15, 0.6, 10), sandMat);
+        isl.position.set(ix, -0.05, iz);
+        modeGroup.add(isl);
+        const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.26, 2.4, 6), trunkMat);
+        trunk.position.set(ix, 1.2, iz);
+        trunk.rotation.z = (rng() - 0.5) * 0.25;
+        modeGroup.add(trunk);
+        for (let l = 0; l < 4; l++) {
+          const leaf = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1.9, 4), leafMat);
+          const a = l * 1.5708 + rng() * 0.5;
+          leaf.position.set(ix + Math.cos(a) * 0.7, 2.6, iz + Math.sin(a) * 0.7);
+          leaf.rotation.z = Math.cos(a) * 1.1;
+          leaf.rotation.x = -Math.sin(a) * 1.1;
+          modeGroup.add(leaf);
+        }
+      }
+      buildRider();
+      buildBikeFinish();
+    };
+    // --- carrot world: purple dusk, mint sky track, pastel clouds ---
+    const buildCarrot = () => {
+      player = new THREE.Group();
+      const bodyMat = lam(0xF97316);
+      const leafMat = lam(0x16A34A, { flatShading: true });
+      const body = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.1, 1.7, 10), bodyMat);
+      body.position.y = 1.05;
+      player.add(body);
+      for (let i = 0; i < 3; i++) {
+        const leaf = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.7, 5), leafMat);
+        leaf.position.set((i - 1) * 0.18, 2.1, 0);
+        leaf.rotation.z = (i - 1) * -0.35;
+        player.add(leaf);
+      }
+      const lensMat = lam(0x1E3A8A);
+      const rimMat = lam(0xF8FAFC);
+      [-0.22, 0.22].forEach((x) => {
+        const rim = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.045, 6, 14), rimMat);
+        rim.position.set(x, 1.45, -0.5);
+        const lens = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.05, 10), lensMat);
+        lens.rotation.x = Math.PI / 2;
+        lens.position.set(x, 1.45, -0.5);
+        player.add(rim, lens);
+      });
+      const strap = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.04, 6, 16), rimMat);
+      strap.rotation.x = Math.PI / 2;
+      strap.position.set(0, 1.45, 0);
+      player.add(strap);
+      const scarf = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.13, 8, 16), lam(0x5EEAD4));
+      scarf.rotation.x = Math.PI / 2;
+      scarf.position.set(0, 1.15, 0);
+      player.add(scarf);
+      const scarfTail = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.6, 0.06), lam(0x5EEAD4));
+      scarfTail.position.set(0.3, 0.95, 0.35);
+      scarfTail.rotation.z = 0.25;
+      player.add(scarfTail);
+      const armGeo = new THREE.CylinderGeometry(0.06, 0.06, 0.6, 6);
+      const armL = new THREE.Mesh(armGeo, bodyMat);
+      armL.position.set(-0.62, 1.2, 0);
+      armL.rotation.z = 0.9;
+      const armR = new THREE.Mesh(armGeo, bodyMat);
+      armR.position.set(0.62, 1.2, 0);
+      armR.rotation.z = -0.9;
+      player.add(armL, armR);
+      player.userData = { armL: armL, armR: armR };
+      modeGroup.add(player);
+    };
+    const buildJarFinish = () => {
+      const fz = -levelLen;
+      const glass = new THREE.Mesh(new THREE.CylinderGeometry(2.3, 2.3, 4.4, 18),
+        lam(0xE0F2FE, { transparent: true, opacity: 0.45 }));
+      glass.position.set(0, 2.2, fz);
+      modeGroup.add(glass);
+      const juice = new THREE.Mesh(new THREE.CylinderGeometry(1.95, 1.95, 3.4, 18), lam(0xF97316));
+      juice.position.set(0, 1.7, fz);
+      modeGroup.add(juice);
+      const rim = new THREE.Mesh(new THREE.TorusGeometry(2.3, 0.16, 8, 22), lam(0xF8FAFC));
+      rim.rotation.x = Math.PI / 2;
+      rim.position.set(0, 4.4, fz);
+      modeGroup.add(rim);
+      const zoneCols = [0x22C55E, 0x3B82F6, 0xA855F7, 0xF59E0B];
+      const zoneTxt = ["×2", "×4", "×6", "×8"];
+      zoneCols.forEach((c, i) => {
+        const band = new THREE.Mesh(new THREE.CylinderGeometry(2.0, 2.0, 0.8, 18), lam(c));
+        band.position.set(0, 0.45 + i * 0.85, fz);
+        modeGroup.add(band);
+        const lbl = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 1.1),
+          new THREE.MeshBasicMaterial({ map: textTex(zoneTxt[i], "#FFFFFF", null), transparent: true }));
+        lbl.position.set(0, 0.45 + i * 0.85, fz + 2.05);
+        modeGroup.add(lbl);
+      });
+    };
+    const buildCarrotWorld = () => {
+      scene.background = new THREE.Color(0x6B4FA1);
+      scene.fog = new THREE.Fog(0x8A6BC0, 60, 170);
+      const track = new THREE.Mesh(new THREE.PlaneGeometry(TRACK_W, levelLen + 90), lam(0x7FE3B0));
+      track.rotation.x = -Math.PI / 2;
+      track.position.set(0, 0, -levelLen / 2 + 10);
+      modeGroup.add(track);
+      box(TRACK_W + 0.5, 0.18, levelLen + 90, lam(0x4CC98A), 0, -0.11, -levelLen / 2 + 10);
+      const cloudCols = [0xFDF6EC, 0xFDE68A, 0xFBCFE8, 0xE0E7FF];
+      for (let i = 0; i < 14; i++) {
+        const side = i % 2 ? 1 : -1;
+        box(2 + rng() * 3, 1 + rng() * 1.6, 2 + rng() * 2, lam(cloudCols[i % cloudCols.length]),
+            side * (9 + rng() * 16), 2 + rng() * 6, -20 - rng() * (levelLen - 40));
+      }
+      const bCols = [0xF9A8D4, 0xA5B4FC, 0xFCD34D, 0x6EE7B7, 0xFDA4AF];
+      for (let i = 0; i < 10; i++) {
+        const side = i % 2 ? 1 : -1;
+        const h = 4 + rng() * 7;
+        box(3 + rng() * 2, h, 3 + rng() * 2, lam(bCols[i % bCols.length]),
+            side * (10 + rng() * 14), -h / 2 - 0.5, -30 - rng() * (levelLen - 60));
+      }
+      buildCarrot();
+      buildJarFinish();
+    };
+    // --- spawns (rows ahead of the player, removed behind) ---
+    const spawnWheelRow = (z) => {
+      const ln = (rng() * 3) | 0;
+      const n = 3 + ((rng() * 3) | 0);
+      for (let i = 0; i < n; i++) {
+        const g = new THREE.Group();
+        const tyre = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.13, 8, 16), lam(0x374151));
+        tyre.rotation.y = Math.PI / 2;
+        const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.16, 8), lam(0xF59E0B));
+        hub.rotation.z = Math.PI / 2;
+        g.add(tyre, hub);
+        g.position.set(LANES[ln], 0.55, z - i * 2.6);
+        modeGroup.add(g);
+        ents.push({ kind: "wheel", g: g, z: z - i * 2.6, lane: ln, done: false });
+      }
+    };
+    const spawnGemRow = (z) => {
+      const ln = (rng() * 3) | 0;
+      for (let i = 0; i < 2; i++) {
+        const g = new THREE.Mesh(new THREE.OctahedronGeometry(0.5, 0), lam(0xEC4899, { emissive: 0x9D174D }));
+        g.position.set(LANES[ln], 0.9, z - i * 3);
+        modeGroup.add(g);
+        ents.push({ kind: "gem", g: g, z: z - i * 3, lane: ln, done: false });
+      }
+    };
+    const spawnWall = (z) => {
+      const g = new THREE.Group();
+      const costs = [0, 1, 2].map(() => 2 + ((rng() * (6 + level)) | 0));
+      const panels = [];
+      const panelMat = lam(0x0D9488);
+      for (let i = 0; i < 3; i++) {
+        const p = new THREE.Group();
+        const blk = new THREE.Mesh(new THREE.BoxGeometry(2.0, 2.2, 0.5), panelMat);
+        blk.position.y = 1.1;
+        p.add(blk);
+        const num = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.5),
+          new THREE.MeshBasicMaterial({ map: textTex(String(costs[i]), "#FFFFFF", "#0F766E") }));
+        num.position.set(0, 1.1, 0.28);
+        p.add(num);
+        p.position.set(LANES[i], 0, 0);
+        g.add(p);
+        panels.push(p);
+      }
+      const beam = new THREE.Mesh(new THREE.BoxGeometry(7.2, 0.35, 0.6), lam(0x0F766E));
+      beam.position.y = 2.35;
+      g.add(beam);
+      g.position.set(0, 0, z);
+      modeGroup.add(g);
+      ents.push({ kind: "wall", g: g, z: z, lane: -1, costs: costs, panels: panels, done: false });
+    };
+    const spawnGate = (z) => {
+      const val = GATE_VALS[(rng() * GATE_VALS.length) | 0];
+      const g = new THREE.Group();
+      const postMat = lam(0xF59E0B, { emissive: 0x92400E });
+      [-3.1, 3.1].forEach((x) => {
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 2.6, 8), postMat);
+        post.position.set(x, 1.3, 0);
+        g.add(post);
+      });
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(6.6, 0.3, 0.3), postMat);
+      bar.position.y = 2.6;
+      g.add(bar);
+      const lbl = new THREE.Mesh(new THREE.PlaneGeometry(1.8, 1.8),
+        new THREE.MeshBasicMaterial({ map: textTex(val + "X", "#7C2D12", "#FDE68A") }));
+      lbl.position.set(0, 2.6, 0.2);
+      g.add(lbl);
+      g.position.set(0, 0, z);
+      modeGroup.add(g);
+      ents.push({ kind: "gate", g: g, z: z, lane: -1, val: val, done: false });
+    };
+    const spawnCarrotRow = (z) => {
+      const ln = (rng() * 3) | 0;
+      const n = 3 + ((rng() * 3) | 0);
+      for (let i = 0; i < n; i++) {
+        const g = new THREE.Group();
+        const body = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.7, 8), lam(0xFBBF24));
+        body.rotation.x = Math.PI;
+        body.position.y = 0.55;
+        g.add(body);
+        const leaf = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.35, 5), lam(0x16A34A));
+        leaf.position.y = 1.0;
+        g.add(leaf);
+        g.position.set(LANES[ln], 0, z - i * 2.4);
+        modeGroup.add(g);
+        ents.push({ kind: "carrot", g: g, z: z - i * 2.4, lane: ln, done: false });
+      }
+    };
+    const spawnSawRow = (z) => {
+      const lanes = [0, 1, 2].sort(() => rng() - 0.5);
+      const n = rng() < 0.6 ? 1 : 2;
+      for (let i = 0; i < n; i++) {
+        const ln = lanes[i];
+        const g = new THREE.Group();
+        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 2.4, 8),
+          new THREE.MeshLambertMaterial({ map: stripeTex() }));
+        pole.position.y = 1.2;
+        g.add(pole);
+        const blade = new THREE.Group();
+        blade.position.y = 1.1;
+        const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 0.85, 0.12, 18), lam(0x7C3AED));
+        disc.rotation.x = Math.PI / 2;
+        blade.add(disc);
+        for (let s = 0; s < 8; s++) {
+          const spike = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.55, 4), lam(0xA855F7));
+          const a = s * Math.PI / 4;
+          spike.position.set(Math.cos(a) * 1.0, Math.sin(a) * 1.0, 0);
+          spike.rotation.z = a - Math.PI / 2;
+          blade.add(spike);
+        }
+        g.add(blade);
+        g.position.set(LANES[ln], 0, z);
+        modeGroup.add(g);
+        ents.push({ kind: "saw", g: g, z: z, lane: ln, blade: blade, done: false });
+        spinSaws.push(blade);
+      }
+    };
+    const spawnFlag = (z) => {
+      const g = new THREE.Group();
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 2.2, 6), lam(0xE5E7EB));
+      pole.position.y = 1.1;
+      g.add(pole);
+      const flag = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.55),
+        new THREE.MeshBasicMaterial({ color: 0x22C55E }));
+      flag.position.set(0.5, 1.9, 0);
+      g.add(flag);
+      g.position.set(3.4, 0, z);
+      modeGroup.add(g);
+      ents.push({ kind: "flag", g: g, z: z, lane: -1, done: false });
+    };
+    const spawnRow = (z) => {
+      if (z < -levelLen + 30) return;
+      const r = rng();
+      if (mode === "bike") {
+        // A multiplier gate is guaranteed at least every 9 rows so the
+        // multiplier is never out of reach for a whole level.
+        if (rowsSinceGate >= 8) { spawnGate(z); rowsSinceGate = 0; }
+        else if (r < 0.30) { spawnWheelRow(z); rowsSinceGate++; }
+        else if (r < 0.42) { spawnGemRow(z); rowsSinceGate++; }
+        else if (r < 0.62) { spawnWall(z); rowsSinceGate++; }
+        else if (r < 0.76) { spawnGate(z); rowsSinceGate = 0; }
+        else rowsSinceGate++;
+      } else {
+        // A saw is guaranteed at least every 9 rows so the dodge
+        // challenge never vanishes for a whole level.
+        if (rowsSinceSaw >= 8) { spawnSawRow(z); rowsSinceSaw = 0; }
+        else if (r < 0.34) { spawnCarrotRow(z); rowsSinceSaw++; }
+        else if (r < 0.58) { spawnSawRow(z); rowsSinceSaw = 0; }
+        else rowsSinceSaw++;
+      }
+    };
+    const nextEnt = (kind) => {
+      let bestE = null;
+      for (const e of ents) {
+        if (e.kind !== kind || e.done) continue;
+        if (e.z > pz) continue;
+        if (!bestE || e.z > bestE.z) bestE = e;
+      }
+      if (!bestE) return null;
+      const out = { z: bestE.z };
+      if (kind === "wall") out.costs = bestE.costs.slice();
+      if (kind === "saw" || kind === "carrot" || kind === "wheel" || kind === "gem") out.lane = bestE.lane;
+      if (kind === "gate") out.val = bestE.val;
+      return out;
+    };
+    // --- HUD / overlays / scoring ---
+    const carrotMult = (c) => (c < 10 ? 2 : c < 20 ? 4 : c < 30 ? 6 : 8);
+    const updateHUD = () => {
+      hudLevel.textContent = "Lv " + level;
+      if (mode === "bike") {
+        hudCount.textContent = "🛞 " + wheels;
+        hudGems.hidden = false;
+        hudGems.textContent = "💎 " + gems;
+        hudMult.textContent = "×" + mult;
+      } else if (mode === "carrot") {
+        hudCount.textContent = "🥕 " + carrots;
+        hudGems.hidden = true;
+        mult = carrotMult(carrots);
+        hudMult.textContent = "×" + mult;
+      }
+      setScore("🏁 Lv " + level + " · " + (mode === "bike"
+        ? "🛞 " + wheels + " · 💎 " + gems + " · ×" + mult
+        : "🥕 " + carrots + " · ×" + mult) + " · Best Lv " + best);
+    };
+    const confetti = () => {
+      const cols = ["#F59E0B", "#EF4444", "#22C55E", "#3B82F6", "#A855F7", "#FACC15"];
+      for (let i = 0; i < 36; i++) {
+        const d = document.createElement("div");
+        d.className = "rr-confetti";
+        d.style.left = (rng() * 100).toFixed(1) + "%";
+        d.style.background = cols[i % cols.length];
+        d.style.animationDelay = (rng() * 0.4).toFixed(2) + "s";
+        wrap.appendChild(d);
+        setTimeout(() => { if (d.remove) d.remove(); }, 1600);
+      }
+    };
+    const showOverlay = (title, body, showRetry, showNext) => {
+      ovTitle.textContent = title;
+      ovBody.textContent = body;
+      retryBtn.hidden = !showRetry;
+      nextBtn.hidden = !showNext;
+      overlay.hidden = false;
+    };
+    const crash = (reason) => {
+      if (status !== "running") return;
+      status = "over";
+      showOverlay("💥 Crashed!", reason + " Best level: " + best + ".", true, false);
+      setScore("🏁 Lv " + level + " · Crashed · Best Lv " + best);
+    };
+    const finishRun = () => {
+      if (status !== "running") return;
+      status = "done";
+      if (mode === "bike") lastScore = (wheels + gems) * mult;
+      else lastScore = carrots * carrotMult(carrots);
+      if (level > best) { best = level; nxSet("nx_runnerrush_best", best); }
+      pickBest.textContent = "Best level: " + best;
+      confetti();
+      showOverlay("🏆 Level Clear!",
+        (mode === "bike"
+          ? "Score: " + lastScore + "  (" + wheels + " wheels + " + gems + " gems) × " + mult
+          : "Score: " + lastScore + "  (" + carrots + " carrots × " + carrotMult(carrots) + ")")
+        + "  ·  Best level: " + best + ".", false, true);
+      setScore("🏁 Lv " + level + " clear! Score " + lastScore + " · Best Lv " + best);
+    };
+    const spawnSlices = () => {
+      for (let i = 0; i < 3; i++) {
+        const m = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.35, 0.3),
+          new THREE.MeshLambertMaterial({ color: 0xF97316, transparent: true, opacity: 1 }));
+        m.position.set(px + (i - 1) * 0.4, 1.0 + i * 0.2, pz);
+        modeGroup.add(m);
+        sliceParts.push({ m: m, vx: (i - 1) * 2.2, vy: 3 + i, vz: 1.5, life: 0.8 });
+      }
+    };
+    const respawn = () => {
+      pz = checkpoint;
+      lane = 1; px = 0;
+      invuln = 1.5;
+      respawnT = 0.6;
+      player.visible = false;
+      spawnSlices();
+    };
+    const sawHit = () => {
+      if (carrots >= 5) {
+        carrots -= 5;
+        respawn();
+        updateHUD();
+      } else {
+        crash("Sliced by a star saw! You needed 5 carrots banked to keep going.");
+      }
+    };
+    const edgeFall = () => {
+      carrots = Math.max(0, carrots - 3);
+      respawn();
+      updateHUD();
+    };
+    const hitWall = (ent) => {
+      const cost = ent.costs[lane];
+      if (wheels >= cost) {
+        wheels -= cost;
+        const p = ent.panels[lane];
+        if (p) ent.g.remove(p);
+        ent.done = true;
+        updateHUD();
+      } else {
+        crash("The tide gate needed " + cost + " wheels — you only had " + wheels + ".");
+      }
+    };
+    const shiftLane = (dir) => {
+      if (status !== "running") return;
+      const min = mode === "carrot" ? -1 : 0;
+      const max = mode === "carrot" ? 3 : 2;
+      lane = Math.max(min, Math.min(max, lane + dir));
+    };
+    // --- mode lifecycle ---
+    const disposeModeGroup = () => {
+      if (!modeGroup) return;
+      modeGroup.traverse((o) => {
+        if (o.geometry && o.geometry.dispose) o.geometry.dispose();
+        if (o.material) {
+          const ms = Array.isArray(o.material) ? o.material : [o.material];
+          ms.forEach((m) => { if (m.map && m.map.dispose) m.map.dispose(); if (m.dispose) m.dispose(); });
+        }
+      });
+      scene.remove(modeGroup);
+      modeGroup = null;
+    };
+    const startMode = (m) => {
+      disposeModeGroup();
+      mode = m;
+      levelLen = 600 + 150 * (level - 1);
+      lane = 1; px = 0; pz = 0; speed = 0;
+      wheels = 0; gems = 0; carrots = 0; mult = 1; lastScore = 0;
+      checkpoint = 0; invuln = 0; respawnT = 0; blinkT = 0;
+      spawnZ = -24; nextFlagZ = -150;
+      rowsSinceGate = 0; rowsSinceSaw = 0;
+      ents = []; spinSaws = []; spinWheels = []; sliceParts = [];
+      modeGroup = new THREE.Group();
+      scene.add(modeGroup);
+      if (m === "bike") buildBikeWorld(); else buildCarrotWorld();
+      camera.position.set(0, 5.2, 9.5);
+      camera.lookAt(0, 1.0, -8);
+      status = "running";
+      picker.hidden = true;
+      overlay.hidden = true;
+      hud.hidden = false;
+      touch.hidden = false;
+      updateHUD();
+    };
+    const toPicker = () => {
+      disposeModeGroup();
+      mode = null;
+      status = "picker";
+      ents = []; spinSaws = []; spinWheels = []; sliceParts = [];
+      picker.hidden = false;
+      hud.hidden = true;
+      touch.hidden = true;
+      overlay.hidden = true;
+      pickBest.textContent = "Best level: " + best;
+      setScore("🏁 Pick your ride — Bike Run or Carrot Run. Best Lv " + best);
+    };
+    // --- per-frame step ---
+    const step = (dt) => {
+      if (status !== "running" || !modeGroup) return;
+      if (respawnT > 0) {
+        respawnT -= dt;
+        for (const s of sliceParts) {
+          s.m.position.x += s.vx * dt;
+          s.m.position.y += s.vy * dt;
+          s.m.position.z += s.vz * dt;
+          s.vy -= 9 * dt;
+          s.life -= dt;
+          if (s.m.material) s.m.material.opacity = Math.max(0, s.life / 0.8);
+        }
+        if (respawnT <= 0) {
+          player.visible = true;
+          for (const s of sliceParts) modeGroup.remove(s.m);
+          sliceParts = [];
+        }
+        renderer.render(scene, camera);
+        return;
+      }
+      if (invuln > 0) {
+        invuln -= dt;
+        blinkT += dt;
+        player.visible = Math.floor(blinkT * 8) % 2 === 0;
+        if (invuln <= 0) player.visible = true;
+      }
+      const base = mode === "bike" ? 13 : 12;
+      speed = base + level * 1.2 + Math.min(6, -pz * 0.004);
+      pz -= speed * dt;
+      const targetX = laneX(lane);
+      px += (targetX - px) * Math.min(1, dt * 10);
+      player.position.set(px, 0, pz);
+      player.rotation.z = -(targetX - px) * 0.1;
+      if (mode === "bike") {
+        for (const w of spinWheels) w.rotation.x += speed * dt / 0.42;
+      } else {
+        player.position.y = Math.abs(Math.sin(-pz * 0.35)) * 0.16;
+        const a = player.userData;
+        if (a && a.armL) {
+          a.armL.rotation.z = 0.9 + Math.sin(-pz * 0.5) * 0.5;
+          a.armR.rotation.z = -0.9 - Math.sin(-pz * 0.5) * 0.5;
+        }
+        if (Math.abs(px) > 3.6) edgeFall();
+      }
+      if (respawnT > 0) { renderer.render(scene, camera); return; }
+      if (mode === "carrot") {
+        while (-pz > -nextFlagZ && -nextFlagZ < levelLen - 20) {
+          spawnFlag(nextFlagZ - 5);
+          nextFlagZ -= 150;
+        }
+      }
+      while (spawnZ > pz - 170) { spawnRow(spawnZ); spawnZ -= 13 + rng() * 8; }
+      for (const s of spinSaws) s.rotation.z += dt * 7;
+      for (let i = ents.length - 1; i >= 0; i--) {
+        const e = ents[i];
+        if (e.z > pz + 14) {
+          modeGroup.remove(e.g);
+          ents.splice(i, 1);
+          continue;
+        }
+        if (e.done) continue;
+        if (e.kind === "wheel" || e.kind === "gem" || e.kind === "carrot") {
+          e.g.rotation.y += dt * 3;
+          if (Math.abs(e.z - pz) < 1.3 && e.lane === lane) {
+            e.done = true;
+            modeGroup.remove(e.g);
+            if (e.kind === "wheel") wheels++;
+            else if (e.kind === "gem") gems++;
+            else carrots++;
+            updateHUD();
+          }
+        } else if (e.kind === "wall") {
+          if (pz <= e.z) hitWall(e);
+        } else if (e.kind === "gate") {
+          if (pz <= e.z) { e.done = true; mult = e.val; updateHUD(); }
+        } else if (e.kind === "saw") {
+          if (Math.abs(e.z - pz) < 1.3 && e.lane === lane && invuln <= 0) {
+            e.done = true;
+            modeGroup.remove(e.g);
+            sawHit();
+          }
+        } else if (e.kind === "flag") {
+          if (pz <= e.z) { e.done = true; checkpoint = e.z; }
+        }
+      }
+      if (pz <= -levelLen) finishRun();
+      progFill.style.width = Math.max(0, Math.min(100, Math.round(-pz / levelLen * 100))) + "%";
+      camTarget.set(px * 0.55, 5.2, pz + 9.5);
+      camera.position.lerp(camTarget, 1 - Math.pow(0.001, dt));
+      camera.lookAt(px * 0.8, 1.0, pz - 8);
+      renderer.render(scene, camera);
+    };
+    // --- input: keyboard + swipe + touch buttons ---
+    const KEYS = { ArrowLeft: -1, KeyA: -1, ArrowRight: 1, KeyD: 1 };
+    const onKeyDown = (e) => {
+      const d = KEYS[e.code];
+      if (d === undefined) return;
+      if (e.preventDefault) e.preventDefault();
+      shiftLane(d);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    let tsX = 0, tsY = 0;
+    const onTouchStart = (e) => {
+      const t = e.touches && e.touches[0];
+      if (!t) return;
+      tsX = t.clientX; tsY = t.clientY;
+    };
+    const onTouchEnd = (e) => {
+      const t = e.changedTouches && e.changedTouches[0];
+      if (!t) return;
+      const dx = t.clientX - tsX, dy = t.clientY - tsY;
+      if (Math.max(Math.abs(dx), Math.abs(dy)) < 24) return;
+      if (Math.abs(dx) > Math.abs(dy)) shiftLane(Math.sign(dx));
+    };
+    cv.addEventListener("touchstart", onTouchStart, { passive: true });
+    cv.addEventListener("touchend", onTouchEnd, { passive: true });
+    const sizeRenderer = () => {
+      const w = wrap.clientWidth || 360;
+      const h = Math.round(w * 2 / 3);
+      renderer.setSize(w, h, false);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    };
+    sizeRenderer();
+    const onResize = () => sizeRenderer();
+    window.addEventListener("resize", onResize);
+    let raf = 0, dead = false, paused = false, last = 0;
+    const loop = (t) => {
+      if (dead || paused) return;
+      const dt = Math.min(0.05, Math.max(0, last ? (t - last) / 1000 : 0.016));
+      last = t;
+      step(dt);
+      if (status === "picker" || !modeGroup) renderer.render(scene, camera);
+      raf = requestAnimationFrame(loop);
+    };
+    const onVis = () => {
+      if (document.hidden) { paused = true; cancelAnimationFrame(raf); }
+      else if (!dead) { paused = false; last = 0; raf = requestAnimationFrame(loop); }
+    };
+    document.addEventListener("visibilitychange", onVis);
+    raf = requestAnimationFrame(loop);
+    setScore("🏁 Pick your ride — Bike Run or Carrot Run. Best Lv " + best);
+    const cleanup = () => {
+      dead = true;
+      cancelAnimationFrame(raf);
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("resize", onResize);
+      cv.removeEventListener("touchstart", onTouchStart);
+      cv.removeEventListener("touchend", onTouchEnd);
+      renderer.dispose();
+      scene.traverse((o) => {
+        if (o.geometry && o.geometry.dispose) o.geometry.dispose();
+        if (o.material) {
+          const ms = Array.isArray(o.material) ? o.material : [o.material];
+          ms.forEach((m) => { if (m.map && m.map.dispose) m.map.dispose(); if (m.dispose) m.dispose(); });
+        }
+      });
+    };
+    // Test hook: read-only state + driving controls for the harness.
+    cleanup._rr = {
+      mode: () => mode,
+      state: () => ({
+        mode: mode, status: status, lane: lane, x: px, z: pz,
+        speed: speed, level: level, wheels: wheels, gems: gems,
+        carrots: carrots, mult: mult, score: lastScore, best: best,
+        checkpoint: checkpoint, invuln: invuln, dist: -pz,
+        finishZ: -levelLen,
+        nextWall: nextEnt("wall"), nextSaw: nextEnt("saw"),
+        nextGate: nextEnt("gate"), nextFlag: nextEnt("flag"),
+      }),
+      setInput: (k, v) => {
+        input[k] = v;
+        if (v && k === "left") shiftLane(-1);
+        if (v && k === "right") shiftLane(1);
+      },
+      teleport: (z, laneIdx) => {
+        pz = z;
+        if (typeof laneIdx === "number") { lane = laneIdx; px = laneX(laneIdx); }
+      },
+      collect: (n, kind) => {
+        if (mode === "carrot") carrots += n;
+        else if (kind === "gem") gems += n;
+        else wheels += n;
+        updateHUD();
+      },
+      setCount: (kind, n) => {
+        if (kind === "wheel") wheels = n;
+        else if (kind === "gem") gems = n;
+        else if (kind === "carrot") carrots = n;
+        else if (kind === "mult") mult = n;
+        updateHUD();
+      },
+      hitObstacle: () => {
+        if (status !== "running") return;
+        if (mode === "bike") {
+          const w = nextEnt("wall");
+          if (w) {
+            const cost = w.costs[lane];
+            if (wheels >= cost) { wheels -= cost; updateHUD(); }
+            else crash("The tide gate needed " + cost + " wheels — you only had " + wheels + ".");
+          }
+        } else {
+          sawHit();
+        }
+      },
+      finish: () => { if (status === "running") finishRun(); },
+      toPicker: () => toPicker(),
+    };
+    return cleanup;
+  }
+});
+
 // Built last: every game above must be registered first.
 (function buildGrid() {
   const grid = $("game-grid");

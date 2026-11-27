@@ -243,10 +243,10 @@ for m in JS_MARKS:
     assert m in JS, f"missing JS marker: {m}"
 assert 'id="saved-collections"' in HTML
 assert ".saved-collections" in CSS and ".saved-chip" in CSS
-assert HTML.count("?v=195") == 10, HTML.count("?v=195")
+assert HTML.count("?v=196") == 10, HTML.count("?v=196")
 assert "?v=17" + "4" not in HTML
 BOT = open(os.path.join(ROOT, "code/app/bot.py")).read()
-assert "/?v=195" in BOT and "/?v=17" + "4" not in BOT
+assert "/?v=196" in BOT and "/?v=17" + "4" not in BOT
 paths = set()
 for route in app.routes:
     paths.add(route.path)

@@ -13,7 +13,7 @@ and works exactly as before Phase 159 (same aim state, same
 clamp, same release); the mascot is NOT hidden while Archery is
 open; the help text is back to its pre-159 wording; Solo + 2
 Players intact; neighbours (incl. Phase 160 .vname); backup 44
-tables; routes 163; ?v=195 x10, no old version literals.
+tables; routes 163; ?v=196 x10, no old version literals.
 """
 import hashlib, hmac, json, os, re, subprocess, time, urllib.parse
 
@@ -83,7 +83,7 @@ for bit in DEAD:
 assert "Phase 159" not in GAMES, "Phase 159 marker still in games.js"
 assert "Phase 159" not in CSS, "Phase 159 marker still in style.css"
 assert "Phase 159" not in HTML, "Phase 159 marker still in index.html"
-assert GAMES.count("registerGame({") == 12, "games count changed"
+assert GAMES.count("registerGame({") == 13, "games count changed"
 print("removal OK (no remote markup/classes/helpers/markers anywhere)")
 
 # 3. Board structure restored to pre-159: the canvas goes straight
@@ -163,10 +163,10 @@ assert len(paths) == 184, len(paths)
 print("routes: 163 OK (no new endpoints)")
 
 # 10. Version.
-assert HTML.count("?v=195") == 10, HTML.count("?v=195")
+assert HTML.count("?v=196") == 10, HTML.count("?v=196")
 assert "?v=16" + "0" not in HTML
-assert "app.js?v=195" in HTML and "games.js?v=195" in HTML
-assert 'menu_url.rstrip("/") + "/?v=195"' in BOT
+assert "app.js?v=196" in HTML and "games.js?v=196" in HTML
+assert 'menu_url.rstrip("/") + "/?v=196"' in BOT
 assert "Phase 161" in HTML
-print("version OK (?v=195 x10, no old-version literals)")
+print("version OK (?v=196 x10, no old-version literals)")
 print("PHASE 159 REMOVAL OK")

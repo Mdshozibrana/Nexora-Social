@@ -10296,9 +10296,9 @@ _NEXA_SYSTEM = (
     "Stories are photos that live for 24 hours, seen by "
     "followers and the official account. "
     "GAMES: open the Games page and pull the lamp cord to "
-    "light the room, then play 12 games — Snake, Tetris, "
+    "light the room, then play 13 games — Snake, Tetris, "
     "Breakout, Memory Match, Pong, Space Invaders, "
-    "Minesweeper, Flappy Bird, 2048, Pac-Man, Archery and Forest Drive "
+    "Minesweeper, Flappy Bird, 2048, Pac-Man, Archery, Forest Drive and Runner Rush "
     "(Archery: drag to aim past the drifting bars at the SUCCESS "
     "target; solo is a level climb — score the quota in 10 "
     "arrows to advance, each level has a new sky and gets "
@@ -10437,11 +10437,11 @@ def _nexa_fallback(text):
                 "5000 points and a 30-day check-in streak. Track "
                 "your progress in Settings!")
     if has("game", "গেম", "খেল"):
-        return ("Games পেজে ১২টা গেম আছে — Snake, 2048, "
-                "Pac-Man, Archery, Forest Drive আরো অনেক! ল্যাম্পটা টেনে আলো জ্বালাও "
+        return ("Games পেজে ১৩টা গেম আছে — Snake, 2048, "
+                "Pac-Man, Archery, Forest Drive, Runner Rush আরো অনেক! ল্যাম্পটা টেনে আলো জ্বালাও "
                 "প্রথমে।" if bn else
-                "The Games page has 12 games — Snake, 2048, "
-                "Pac-Man, Archery, Forest Drive and more! Pull the lamp cord to light "
+                "The Games page has 13 games — Snake, 2048, "
+                "Pac-Man, Archery, Forest Drive, Runner Rush and more! Pull the lamp cord to light "
                 "the room first.")
     if has("suggest", "who to follow", "কাকে ফলো", "সাজেস্ট",
            "follow করব", "new people"):

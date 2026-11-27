@@ -11421,7 +11421,7 @@ const MASCOT_TIPS_BY_VIEW = {
     "Share a post from its ⋮ menu to send it to someone you follow.",
   ],
   games: [
-    "12 games are built in — Snake, Tetris, 2048, Pac-Man and more.",
+    "13 games are built in — Snake, Tetris, 2048, Pac-Man, Runner Rush and more.",
     "Tap a game card to play it right inside the app.",
   ],
   game: [

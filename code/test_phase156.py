@@ -98,11 +98,11 @@ m = re.search(r"const THEME_PALETTES = \[(.*?)\n\];", JS, re.S)
 THEMES_N = len(re.findall(r'\{ id: "', m.group(1)))
 assert THEMES_N == 33, THEMES_N
 GAMES_N = len(re.findall(r'\n  id: "', GAMES))
-assert GAMES_N == 12, GAMES_N
+assert GAMES_N == 13, GAMES_N
 assert len(NOTIF_PREF_KEYS) == 10, NOTIF_PREF_KEYS
 print("live numbers OK (check-in 20, streak 30, Star 5000, tick 1000/50,"
       " 6 reactions, 24 h stories, top 20, units 1-10, 500 m, 5m-90d,"
-      " 33 themes, 12 games, 10 notif switches)")
+      " 33 themes, 13 games, 10 notif switches)")
 
 seg = JS[JS.index("// ---------- Phase 156:"):]
 
@@ -119,7 +119,7 @@ assert not os.path.exists("webapp/assets/mascot-head.webp")
 wrap = HTML[HTML.index('id="mascot-wrap"'):]
 wrap = wrap[:wrap.index("</div>\n</div>") + len("</div>\n</div>")]
 assert "<img" not in wrap
-assert "vendor/three/three.min.js?v=195" in HTML
+assert "vendor/three/three.min.js?v=196" in HTML
 three = open("webapp/vendor/three/three.min.js").read()
 assert len(three) > 500 * 1024, len(three)
 assert "WebGLRenderer" in three and "REVISION" in three
@@ -201,7 +201,7 @@ nums = set()
 for tip in all_tips:
     nums.update(int(n.replace(",", ""))
                 for n in re.findall(r"\d[\d,]*", tip))
-assert nums <= {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 20, 24, 30, 33, 50,
+assert nums <= {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 20, 24, 30, 33, 50,
                 90, 500, 1000, 2048, 5000}, nums
 print(f"tips OK ({len(by_view)} views x 2-4 + 7 general, numbers match "
       f"live code: {sorted(nums)})")
@@ -298,7 +298,7 @@ assert "museum" not in JS.lower() and "museum" not in HTML.lower()
 print("neighbours OK (Blood, Nearby, composer, glassbar, feed photos)")
 
 # 10. Version.
-assert HTML.count("?v=195") == 10, HTML.count("?v=195")
+assert HTML.count("?v=196") == 10, HTML.count("?v=196")
 assert "?v=15" + "5" not in HTML
-assert 'menu_url.rstrip("/") + "/?v=195"' in BOT
+assert 'menu_url.rstrip("/") + "/?v=196"' in BOT
 print("PHASE 156 OK")

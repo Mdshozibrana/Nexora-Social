@@ -372,26 +372,26 @@ with TestClient(app) as c:
     # 2. Node harness: real game start against DOM + THREE stubs.
     _run_node_harness()
 
-    # 3. Static: 12 games, Nexa + mascot know the 12th, no points.
+    # 3. Static: 13 games, Nexa + mascot know the 13th, no points.
     games_js = open(os.path.join(ROOT, "webapp/games.js")).read()
-    assert games_js.count("registerGame({") == 12, games_js.count("registerGame({")
+    assert games_js.count("registerGame({") == 13, games_js.count("registerGame({")
     js = open(os.path.join(ROOT, "webapp/app.js")).read()
-    assert "12 games are built in" in js, "mascot tip must say 12 games"
-    assert '"11 games"' not in js, "old 11-games tip must be gone"
+    assert "13 games are built in" in js, "mascot tip must say 13 games"
+    assert '"12 games"' not in js, "old 12-games tip must be gone"
     main_py = open(os.path.join(ROOT, "app/main.py")).read()
-    assert "12 games" in main_py and "Forest Drive" in main_py, \
-        "Nexa must know 12 games incl. Forest Drive"
-    assert "১২টা গেম" in main_py, "Nexa bn answer must say ১২টা গেম"
-    assert '"11 games"' not in main_py, "old 11-games Nexa text must be gone"
-    assert "১১টা গেম" not in main_py, "old ১১টা Nexa text must be gone"
-    print("static OK (12 games registered; Nexa + mascot updated; no points)")
+    assert "13 games" in main_py and "Forest Drive" in main_py, \
+        "Nexa must know 13 games incl. Forest Drive"
+    assert "১৩টা গেম" in main_py, "Nexa bn answer must say ১৩টা গেম"
+    assert '"12 games"' not in main_py, "old 12-games Nexa text must be gone"
+    assert "১২টা গেম" not in main_py, "old ১২টা Nexa text must be gone"
+    print("static OK (13 games registered; Nexa + mascot updated; no points)")
 
     # 4. Served assets: version + markers + neighbours.
     html = c.get("/webapp/").text
-    assert html.count("?v=195") == 10, html.count("?v=195")
+    assert html.count("?v=196") == 10, html.count("?v=196")
     assert "?v=19" + "4" not in html
-    assert "app.js?v=195" in html and "style.css?v=195" in html
-    assert "games.js?v=195" in html and "three.min.js?v=195" in html
+    assert "app.js?v=196" in html and "style.css?v=196" in html
+    assert "games.js?v=196" in html and "three.min.js?v=196" in html
     served_games = c.get("/webapp/games.js").text
     for marker in ("forest-drive", "Forest Drive", "fd-map", "fd-speed",
                    "drawMinimap", "roadDist", "nx_forestdrive_best",
@@ -401,7 +401,7 @@ with TestClient(app) as c:
     assert "from \"react\"" not in served_games, "no React in served games.js"
     assert "framer-motion" not in served_games, "no framer-motion in served games.js"
     served_js = c.get("/webapp/app.js").text
-    assert "12 games are built in" in served_js
+    assert "13 games are built in" in served_js
     css = c.get("/webapp/style.css").text
     for marker in (".fd-wrap", ".fd-canvas", ".fd-panel", ".fd-map",
                    ".fd-speed", ".fd-touch", ".fd-btn", ".fd-gas",
@@ -410,12 +410,12 @@ with TestClient(app) as c:
     paths = {rt.path for rt in app.routes}
     assert len(paths) == 184, len(paths)
     h = c.get("/admin/health", headers=ADMIN).json()
-    assert h["version"] == 195, h
+    assert h["version"] == 196, h
     r = c.get("/admin/backup", headers=ADMIN)
     assert r.status_code == 200, r.text
     assert len(r.json()["tables"]) == 52, len(r.json()["tables"])
     bot_src = open(os.path.join(ROOT, "app/bot.py")).read()
-    assert 'menu_url.rstrip("/") + "/?v=195"' in bot_src
-    print("neighbours + version + routes OK (184 routes, 52 tables, ?v=195)")
+    assert 'menu_url.rstrip("/") + "/?v=196"' in bot_src
+    print("neighbours + version + routes OK (184 routes, 52 tables, ?v=196)")
 
 print("PHASE 195 OK")

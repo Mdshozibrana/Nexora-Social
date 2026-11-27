@@ -3111,3 +3111,32 @@ html[data-theme] .suggest-follow.on { background: var(--t-chip, #F3DCE7);
 .fd-brake { background: #B91C1C; }
 .fd-brake:active { background: #DC2626; }
 @media (max-width: 380px) { .fd-map { width: 84px; height: 84px; } .fd-btn { min-width: 56px; height: 52px; } .fd-speed b { font-size: 26px; } }
+.rr-wrap { position: relative; width: 100%; }
+.rr-canvas { display: block; width: 100%; height: auto; border-radius: 12px; background: #2A1F3D; touch-action: none; }
+.rr-hud { position: absolute; top: 8px; left: 8px; right: 8px; display: flex; align-items: center; gap: 6px; color: #F1F5F9; font-size: 12.5px; font-weight: 700; text-shadow: 0 1px 4px rgba(0, 0, 0, .6); pointer-events: none; }
+.rr-hud .rr-modes { pointer-events: auto; }
+.rr-modes { background: rgba(10, 16, 28, .78); border: 1px solid rgba(255, 255, 255, .18); color: #F1F5F9; border-radius: 8px; padding: 5px 9px; font-size: 12.5px; font-weight: 700; cursor: pointer; }
+.rr-level, .rr-count, .rr-gems, .rr-mult { background: rgba(10, 16, 28, .6); border-radius: 8px; padding: 4px 7px; white-space: nowrap; }
+.rr-progress { position: absolute; top: 40px; left: 8px; right: 8px; height: 6px; border-radius: 3px; background: rgba(255, 255, 255, .25); overflow: hidden; }
+.rr-progress-fill { height: 100%; width: 0%; background: #F59E0B; border-radius: 3px; }
+.rr-picker { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; background: rgba(10, 16, 28, .55); border-radius: 12px; padding: 16px; }
+.rr-pick-title { color: #fff; font-size: 18px; font-weight: 800; text-shadow: 0 1px 6px rgba(0, 0, 0, .7); }
+.rr-pick-card { display: block; width: 92%; max-width: 300px; text-align: left; background: rgba(255, 255, 255, .94); border: 0; border-radius: 12px; padding: 12px 14px; font-size: 16px; font-weight: 800; color: #0F172A; cursor: pointer; }
+.rr-pick-desc { display: block; margin-top: 4px; font-size: 12px; font-weight: 500; color: #475569; }
+.rr-best { color: #FDE68A; font-size: 12.5px; font-weight: 700; text-shadow: 0 1px 4px rgba(0, 0, 0, .7); }
+.rr-touch { display: flex; justify-content: space-between; gap: 10px; margin-top: 10px; }
+.rr-btn { touch-action: none; user-select: none; -webkit-user-select: none; min-width: 62px; height: 56px; border-radius: 14px; border: 1px solid rgba(255, 255, 255, .18); background: #334155; color: #F8FAFC; font-size: 17px; font-weight: 800; cursor: pointer; }
+.rr-btn:active { background: #475569; transform: scale(.96); }
+.rr-steer { min-width: 84px; }
+.rr-overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; background: rgba(10, 16, 28, .72); border-radius: 12px; padding: 16px; text-align: center; }
+.rr-ov-title { color: #fff; font-size: 20px; font-weight: 800; }
+.rr-ov-body { color: #E2E8F0; font-size: 13.5px; line-height: 1.5; max-width: 300px; }
+.rr-ov-btns { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+.rr-ov-btns .rr-btn { height: 48px; font-size: 15px; min-width: 0; padding: 0 16px; }
+.rr-retry { background: #15803D; }
+.rr-next { background: #B45309; }
+.rr-confetti { position: absolute; top: -12px; width: 9px; height: 14px; border-radius: 2px; animation: rr-fall 1.4s ease-in forwards; pointer-events: none; }
+@keyframes rr-fall { to { transform: translateY(340px) rotate(540deg); opacity: 0; } }
+.rr-hud[hidden], .rr-picker[hidden], .rr-touch[hidden], .rr-overlay[hidden] { display: none; }
+@media (max-width: 380px) { .rr-btn { min-width: 56px; height: 52px; } .rr-pick-card { font-size: 15px; } .rr-ov-title { font-size: 18px; } }
+
