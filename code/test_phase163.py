@@ -246,7 +246,7 @@ for bit in ("loadBloodDonors", "loadBloodRequests", "loadRanks",
             "sendNexa", "mascotOnView", "composer-post", "glassbar",
             "fitVerifiedNames", "nbPaintPeople", "openStoryViewers"):
     assert bit in JS or bit in GAMES or bit in CSS, bit
-assert GAMES.count("registerGame({") == 11, "games count changed"
+assert GAMES.count("registerGame({") == 12, "games count changed"
 assert "arch-remote" not in GAMES and "arch-shoot" not in GAMES, \
     "Phase 161 removal must stay removed"
 print("neighbours OK")
@@ -265,10 +265,10 @@ assert len(paths) == 184, len(paths)
 print("routes: 163 OK (no new endpoints)")
 
 # 10. Version.
-assert HTML.count("?v=194") == 10, HTML.count("?v=194")
+assert HTML.count("?v=195") == 10, HTML.count("?v=195")
 assert "?v=16" + "2" not in HTML
-assert 'menu_url.rstrip("/") + "/?v=194"' in BOT
+assert 'menu_url.rstrip("/") + "/?v=195"' in BOT
 assert "Phase 163" in CSS and "Phase 163" in JS and "Phase 163" in MAIN
-print("version OK (?v=194 x10, no old-version literals)")
+print("version OK (?v=195 x10, no old-version literals)")
 
 print("PHASE 163 OK")

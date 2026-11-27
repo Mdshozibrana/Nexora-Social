@@ -57,7 +57,7 @@ with TestClient(app) as c:
     print("organic clay tokens + components OK")
 
     html = c.get("/webapp/").text
-    assert "app.js?v=194" in html and "style.css?v=194" in html
+    assert "app.js?v=195" in html and "style.css?v=195" in html
     assert 'id="composer-post" class="btn"' in html
     assert 'id="design-post" type="button" class="btn"' in html
     assert 'class="nexa-stage blob"' in html

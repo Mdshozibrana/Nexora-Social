@@ -1818,6 +1818,420 @@ registerGame({
   }
 });
 
+// --------------------------------------------- Phase 195: Forest Drive --
+// Owner (Nov 27, 11:08 Dhaka): "Game Section এ এটা এড করবা" — the
+// 3D autumn-forest driving game from his reference video, rebuilt in
+// our stack (vanilla JS + vendored Three.js r149, no React, no CDN):
+// a red jeep on a dirt-road loop through low-poly autumn trees, a
+// lake, chase camera, minimap, speed in km/h, WASD/arrows + touch
+// buttons. Arcade physics: gas/brake/reverse, speed-sensitive
+// steering, grass slows you down, trees stop you (no damage model).
+// Best speed is stored per account (nxGet/nxSet), like Archery's
+// best — games award no points. The video's look (orange dirt,
+// autumn trees, lake, minimap bottom-left, speed bottom-right) is
+// matched from its frames; its React animation-library code is NOT
+// reused.
+registerGame({
+  id: "forest-drive", icon: "🌲", name: "Forest Drive",
+  title: "🌲 Forest Drive",
+  desc: "Drive the red jeep around the autumn forest — dirt roads, lake views, 90 km/h.",
+  help: "WASD or arrow keys to drive. On your phone use the ◀ ▶ steer and GAS / BRAKE buttons below.",
+  start(stage, setScore) {
+    if (typeof THREE === "undefined" || !window.WebGLRenderingContext) {
+      const p = document.createElement("p");
+      p.className = "hint";
+      p.textContent = "3D is not available on this device — try another phone or browser.";
+      stage.appendChild(p);
+      return () => {};
+    }
+    // --- deterministic world: the same forest on every load ---
+    let seed = 195195;
+    const rng = () => {
+      seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+      let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+    const WORLD = 200, ROAD_RX = 58, ROAD_RZ = 40, ROAD_W = 5;
+    const LAKE = { x: -42, z: -30, r: 13 };
+    const roadDist = (x, z) => {
+      const q = Math.sqrt((x / ROAD_RX) * (x / ROAD_RX) + (z / ROAD_RZ) * (z / ROAD_RZ));
+      if (q < 0.0001) return Math.min(ROAD_RX, ROAD_RZ);
+      return Math.hypot(x - x / q, z - z / q);
+    };
+    // --- ground: orange dirt + fallen leaves + the road loop ---
+    const groundTex = (() => {
+      const c = document.createElement("canvas");
+      c.width = 1024; c.height = 1024;
+      const g = c.getContext("2d");
+      g.fillStyle = "#C9712F"; g.fillRect(0, 0, 1024, 1024);
+      const leaf = ["#A85A24", "#D98A45", "#8F4A1E", "#E0A35C", "#7A3E16"];
+      for (let i = 0; i < 2400; i++) {
+        g.fillStyle = leaf[(rng() * leaf.length) | 0];
+        g.beginPath();
+        g.arc(rng() * 1024, rng() * 1024, 1 + rng() * 2.6, 0, 6.2832);
+        g.fill();
+      }
+      const S = 1024 / WORLD;
+      const road = (style, w) => {
+        g.strokeStyle = style; g.lineWidth = w * S;
+        g.beginPath();
+        g.ellipse(512, 512, ROAD_RX * S, ROAD_RZ * S, 0, 0, 6.2832);
+        g.stroke();
+      };
+      road("#A85A24", (ROAD_W + 1.6) * 2);
+      road("#D89A5B", ROAD_W * 2);
+      g.strokeStyle = "rgba(120, 66, 22, 0.4)"; g.lineWidth = 4;
+      g.setLineDash([18, 26]);
+      g.beginPath();
+      g.ellipse(512, 512, (ROAD_RX - 1.6) * S, (ROAD_RZ - 1.6) * S, 0, 0, 6.2832);
+      g.stroke();
+      g.beginPath();
+      g.ellipse(512, 512, (ROAD_RX + 1.6) * S, (ROAD_RZ + 1.6) * S, 0, 0, 6.2832);
+      g.stroke();
+      g.setLineDash([]);
+      const tex = new THREE.CanvasTexture(c);
+      tex.encoding = THREE.sRGBEncoding;
+      return tex;
+    })();
+    // --- trees + grass tufts (seeded, clear of road / lake / start) ---
+    const CANOPY = [0xD94F2B, 0xE8862E, 0xE9B949, 0xC23B22, 0x5A8C3C, 0x7BAE4A];
+    const trees = [];
+    let guard = 0;
+    while (trees.length < 64 && guard++ < 1200) {
+      const x = (rng() * 2 - 1) * 92, z = (rng() * 2 - 1) * 92;
+      if (roadDist(x, z) < ROAD_W + 4) continue;
+      if (Math.hypot(x - LAKE.x, z - LAKE.z) < LAKE.r + 4) continue;
+      if (Math.hypot(x, z) < 9) continue;
+      let near = false;
+      for (const t of trees) if (Math.hypot(t.x - x, t.z - z) < 6) { near = true; break; }
+      if (near) continue;
+      trees.push({ x, z, s: 0.8 + rng() * 0.9, pine: rng() < 0.35,
+                   c: CANOPY[(rng() * CANOPY.length) | 0] });
+    }
+    const tufts = [];
+    guard = 0;
+    while (tufts.length < 46 && guard++ < 800) {
+      const a = rng() * 6.2832;
+      const rx = Math.cos(a) * ROAD_RX, rz = Math.sin(a) * ROAD_RZ;
+      const off = ROAD_W + 0.6 + rng() * 2.6;
+      const d = Math.hypot(rx, rz) || 1;
+      const x = rx + rx / d * off, z = rz + rz / d * off;
+      if (Math.hypot(x - LAKE.x, z - LAKE.z) < LAKE.r + 2) continue;
+      tufts.push({ x, z, s: 0.7 + rng() * 0.8 });
+    }
+    // --- DOM: canvas + HUD (panel, minimap, speed, touch buttons) ---
+    const wrap = document.createElement("div");
+    wrap.className = "fd-wrap";
+    stage.appendChild(wrap);
+    const cv = document.createElement("canvas");
+    cv.className = "fd-canvas";
+    wrap.appendChild(cv);
+    const panel = document.createElement("div");
+    panel.className = "fd-panel";
+    const pTitle = document.createElement("b");
+    pTitle.textContent = "Controls";
+    const pClose = document.createElement("button");
+    pClose.className = "fd-x";
+    pClose.textContent = "×";
+    pClose.onclick = () => { panel.hidden = true; };
+    panel.append(pTitle, pClose);
+    [["W / ↑", "Gas"], ["S / ↓", "Brake / Reverse"], ["A D / ← →", "Steer"],
+     ["🌿 Grass", "slows you down"]].forEach((r) => {
+      const row = document.createElement("div");
+      row.className = "fd-row";
+      const k = document.createElement("span");
+      k.className = "fd-key";
+      k.textContent = r[0];
+      const v = document.createElement("span");
+      v.textContent = r[1];
+      row.append(k, v);
+      panel.appendChild(row);
+    });
+    wrap.appendChild(panel);
+    const mapCv = document.createElement("canvas");
+    mapCv.className = "fd-map";
+    mapCv.width = 104; mapCv.height = 104;
+    wrap.appendChild(mapCv);
+    const mapCtx = mapCv.getContext("2d");
+    const speedEl = document.createElement("div");
+    speedEl.className = "fd-speed";
+    const speedNum = document.createElement("b");
+    speedNum.textContent = "0";
+    const speedUnit = document.createElement("span");
+    speedUnit.textContent = "km/h";
+    speedEl.append(speedNum, speedUnit);
+    wrap.appendChild(speedEl);
+    const input = { gas: false, brake: false, left: false, right: false };
+    const touch = document.createElement("div");
+    touch.className = "fd-touch";
+    const mkBtn = (parent, label, key, cls) => {
+      const b = document.createElement("button");
+      b.className = "fd-btn " + cls;
+      b.textContent = label;
+      const on = (e) => { if (e) e.preventDefault(); input[key] = true; };
+      const off = (e) => { if (e) e.preventDefault(); input[key] = false; };
+      b.addEventListener("pointerdown", on);
+      b.addEventListener("pointerup", off);
+      b.addEventListener("pointercancel", off);
+      b.addEventListener("pointerleave", off);
+      parent.appendChild(b);
+      return b;
+    };
+    const steerBox = document.createElement("div");
+    steerBox.className = "fd-steer";
+    mkBtn(steerBox, "◀", "left", "fd-left");
+    mkBtn(steerBox, "▶", "right", "fd-right");
+    const pedalBox = document.createElement("div");
+    pedalBox.className = "fd-pedals";
+    mkBtn(pedalBox, "BRAKE", "brake", "fd-brake");
+    mkBtn(pedalBox, "GAS", "gas", "fd-gas");
+    touch.append(steerBox, pedalBox);
+    wrap.appendChild(touch);
+    // --- Three.js scene ---
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x9A86C8);
+    scene.fog = new THREE.Fog(0xA990C8, 55, 175);
+    const camera = new THREE.PerspectiveCamera(62, 3 / 2, 0.1, 320);
+    const renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: true, powerPreference: "low-power" });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.outputEncoding = THREE.sRGBEncoding;
+    scene.add(new THREE.HemisphereLight(0xC9B8E8, 0x8A5A2E, 0.95));
+    const sun = new THREE.DirectionalLight(0xFFE0B3, 0.85);
+    sun.position.set(40, 60, 20);
+    scene.add(sun);
+    const ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(WORLD, WORLD),
+      new THREE.MeshLambertMaterial({ map: groundTex }));
+    ground.rotation.x = -Math.PI / 2;
+    scene.add(ground);
+    const lake = new THREE.Mesh(
+      new THREE.CircleGeometry(LAKE.r, 28),
+      new THREE.MeshLambertMaterial({ color: 0x4A90D9, emissive: 0x143C66 }));
+    lake.rotation.x = -Math.PI / 2;
+    lake.position.set(LAKE.x, 0.06, LAKE.z);
+    scene.add(lake);
+    const trunkGeo = new THREE.CylinderGeometry(0.22, 0.34, 1.5, 6);
+    const trunkMat = new THREE.MeshLambertMaterial({ color: 0x6B4226 });
+    const blobGeo = new THREE.IcosahedronGeometry(1.9, 0);
+    const pineGeo = new THREE.ConeGeometry(1.7, 3.4, 7);
+    const canopyMats = {};
+    const canopyMat = (c) => {
+      if (!canopyMats[c]) canopyMats[c] = new THREE.MeshLambertMaterial({ color: c, flatShading: true });
+      return canopyMats[c];
+    };
+    const pineMat = new THREE.MeshLambertMaterial({ color: 0x2F6B33, flatShading: true });
+    for (const t of trees) {
+      const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+      trunk.position.set(t.x, 0.75, t.z);
+      trunk.scale.setScalar(t.s);
+      const top = new THREE.Mesh(t.pine ? pineGeo : blobGeo, t.pine ? pineMat : canopyMat(t.c));
+      top.position.set(t.x, t.pine ? 3.1 * t.s : 2.9 * t.s, t.z);
+      top.scale.setScalar(t.s);
+      scene.add(trunk, top);
+    }
+    const tuftGeo = new THREE.ConeGeometry(0.4, 1.2, 4);
+    const tuftMat = new THREE.MeshLambertMaterial({ color: 0x3E6B2F, flatShading: true });
+    for (const t of tufts) {
+      const tuft = new THREE.Mesh(tuftGeo, tuftMat);
+      tuft.position.set(t.x, 0.55 * t.s, t.z);
+      tuft.scale.setScalar(t.s);
+      tuft.rotation.y = rng() * 6.2832;
+      scene.add(tuft);
+    }
+    // --- the red jeep (primitives, front faces +Z) ---
+    const jeep = new THREE.Group();
+    const redMat = new THREE.MeshLambertMaterial({ color: 0xC0392B });
+    const darkMat = new THREE.MeshLambertMaterial({ color: 0x1F2937 });
+    const blackMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
+    const tyreMat = new THREE.MeshLambertMaterial({ color: 0x161616 });
+    const hubMat = new THREE.MeshLambertMaterial({ color: 0x9AA5B1 });
+    const lightMat = new THREE.MeshLambertMaterial({ color: 0xFFE9A8, emissive: 0xAA7722 });
+    const add = (geo, mat, x, y, z) => {
+      const m = new THREE.Mesh(geo, mat);
+      m.position.set(x, y, z);
+      jeep.add(m);
+      return m;
+    };
+    add(new THREE.BoxGeometry(1.9, 0.55, 3.4), redMat, 0, 0.55, 0);
+    add(new THREE.BoxGeometry(1.6, 0.5, 1.6), darkMat, 0, 1.05, -0.3);
+    add(new THREE.BoxGeometry(1.66, 0.12, 1.7), redMat, 0, 1.36, -0.3);
+    add(new THREE.BoxGeometry(1.5, 0.07, 1.3), blackMat, 0, 1.46, -0.3);
+    add(new THREE.BoxGeometry(0.24, 0.14, 0.08), lightMat, -0.6, 0.62, 1.72);
+    add(new THREE.BoxGeometry(0.24, 0.14, 0.08), lightMat, 0.6, 0.62, 1.72);
+    const spare = add(new THREE.CylinderGeometry(0.44, 0.44, 0.24, 14), tyreMat, 0, 0.85, -1.78);
+    spare.rotation.x = Math.PI / 2;
+    const spareHub = add(new THREE.CylinderGeometry(0.2, 0.2, 0.26, 10), hubMat, 0, 0.85, -1.78);
+    spareHub.rotation.x = Math.PI / 2;
+    const wheelGeo = new THREE.CylinderGeometry(0.42, 0.42, 0.32, 14);
+    const hubGeo = new THREE.CylinderGeometry(0.2, 0.2, 0.34, 10);
+    const wheels = [];
+    const steerGroups = [];
+    [[-0.95, 1.15, true], [0.95, 1.15, true], [-0.95, -1.15, false], [0.95, -1.15, false]].forEach((w) => {
+      const pivot = new THREE.Group();
+      pivot.position.set(w[0], 0.42, w[1]);
+      const spin = new THREE.Group();
+      const tyre = new THREE.Mesh(wheelGeo, tyreMat);
+      tyre.rotation.z = Math.PI / 2;
+      const hub = new THREE.Mesh(hubGeo, hubMat);
+      hub.rotation.z = Math.PI / 2;
+      spin.add(tyre, hub);
+      pivot.add(spin);
+      jeep.add(pivot);
+      wheels.push(spin);
+      if (w[2]) steerGroups.push(pivot);
+    });
+    scene.add(jeep);
+    // --- arcade physics + chase camera + HUD ---
+    let best = +(nxGet("nx_forestdrive_best") || 0);
+    setScore("🚗 0 km/h · Best: " + best + " km/h");
+    const pos = { x: ROAD_RX, z: 0 };
+    let heading = 0, speed = 0, lastKmh = -1;
+    const camTarget = new THREE.Vector3(ROAD_RX, 4.6, -9.5);
+    camera.position.set(ROAD_RX, 4.6, -9.5);
+    camera.lookAt(ROAD_RX, 1.2, 6);
+    const drawMinimap = () => {
+      const S = 104 / WORLD;
+      mapCtx.clearRect(0, 0, 104, 104);
+      mapCtx.fillStyle = "rgba(10, 18, 28, 0.72)";
+      mapCtx.fillRect(0, 0, 104, 104);
+      mapCtx.fillStyle = "#4A90D9";
+      mapCtx.beginPath();
+      mapCtx.arc((LAKE.x + 100) * S, (LAKE.z + 100) * S, LAKE.r * S, 0, 6.2832);
+      mapCtx.fill();
+      mapCtx.strokeStyle = "#D89A5B";
+      mapCtx.lineWidth = 3;
+      mapCtx.beginPath();
+      mapCtx.ellipse(52, 52, ROAD_RX * S, ROAD_RZ * S, 0, 0, 6.2832);
+      mapCtx.stroke();
+      mapCtx.fillStyle = "#7BAE4A";
+      for (const t of trees) mapCtx.fillRect((t.x + 100) * S - 1, (t.z + 100) * S - 1, 2, 2);
+      const jx = (pos.x + 100) * S, jz = (pos.z + 100) * S;
+      mapCtx.strokeStyle = "#FFFFFF";
+      mapCtx.lineWidth = 1.5;
+      mapCtx.beginPath();
+      mapCtx.moveTo(jx, jz);
+      mapCtx.lineTo(jx + Math.sin(heading) * 7, jz + Math.cos(heading) * 7);
+      mapCtx.stroke();
+      mapCtx.fillStyle = "#EF4444";
+      mapCtx.beginPath();
+      mapCtx.arc(jx, jz, 3, 0, 6.2832);
+      mapCtx.fill();
+    };
+    const step = (dt) => {
+      const onRoad = roadDist(pos.x, pos.z) < ROAD_W + 1;
+      const maxF = onRoad ? 26 : 14;
+      const accel = onRoad ? 15 : 7;
+      if (input.gas) speed += accel * dt;
+      else if (input.brake) speed -= (speed > 0.5 ? 30 : 8) * dt;
+      else speed -= Math.sign(speed) * Math.min(Math.abs(speed), 6 * dt);
+      if (speed > maxF) speed = maxF;
+      if (speed < -8) speed = -8;
+      if (Math.abs(speed) < 0.05 && !input.gas && !input.brake) speed = 0;
+      const steerIn = (input.left ? 1 : 0) - (input.right ? 1 : 0);
+      const steerMax = 0.55 - Math.min(0.35, Math.abs(speed) * 0.012);
+      const steer = steerIn * steerMax;
+      heading += steer * (speed / 7) * dt * 1.15;
+      const fx = Math.sin(heading), fz = Math.cos(heading);
+      pos.x += fx * speed * dt;
+      pos.z += fz * speed * dt;
+      for (const t of trees) {
+        const dx = pos.x - t.x, dz = pos.z - t.z;
+        const d = Math.hypot(dx, dz), min = 1.7 + 1.1 * t.s;
+        if (d < min && d > 0.001) {
+          pos.x = t.x + dx / d * min;
+          pos.z = t.z + dz / d * min;
+          speed *= 0.35;
+        }
+      }
+      const r = Math.hypot(pos.x, pos.z);
+      if (r > 96) { pos.x *= 96 / r; pos.z *= 96 / r; speed *= 0.5; }
+      jeep.position.set(pos.x, 0, pos.z);
+      jeep.rotation.y = heading;
+      const spin = speed * dt / 0.42;
+      for (const w of wheels) w.rotation.x += spin;
+      for (const g of steerGroups) g.rotation.y = steer * 0.9;
+      camTarget.set(pos.x - fx * 9.5, 4.6, pos.z - fz * 9.5);
+      camera.position.lerp(camTarget, 1 - Math.pow(0.001, dt));
+      camera.lookAt(pos.x + fx * 6, 1.2, pos.z + fz * 6);
+      const kmh = Math.round(Math.abs(speed) * 3.6);
+      if (kmh !== lastKmh) {
+        lastKmh = kmh;
+        speedNum.textContent = String(kmh);
+        if (kmh > best) {
+          best = kmh;
+          nxSet("nx_forestdrive_best", best);
+          setScore("🚗 " + kmh + " km/h · Best: " + best + " km/h");
+        }
+      }
+      drawMinimap();
+      renderer.render(scene, camera);
+    };
+    const KEYS = { KeyW: "gas", ArrowUp: "gas", KeyS: "brake", ArrowDown: "brake",
+                   KeyA: "left", ArrowLeft: "left", KeyD: "right", ArrowRight: "right" };
+    const onKeyDown = (e) => {
+      const k = KEYS[e.code];
+      if (!k) return;
+      e.preventDefault();
+      input[k] = true;
+    };
+    const onKeyUp = (e) => {
+      const k = KEYS[e.code];
+      if (k) input[k] = false;
+    };
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    const sizeRenderer = () => {
+      const w = wrap.clientWidth || 360;
+      const h = Math.round(w * 2 / 3);
+      renderer.setSize(w, h, false);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    };
+    sizeRenderer();
+    const onResize = () => sizeRenderer();
+    window.addEventListener("resize", onResize);
+    let raf = 0, dead = false, paused = false, last = 0;
+    const loop = (t) => {
+      if (dead || paused) return;
+      const dt = Math.min(0.05, Math.max(0, last ? (t - last) / 1000 : 0.016));
+      last = t;
+      step(dt);
+      raf = requestAnimationFrame(loop);
+    };
+    const onVis = () => {
+      if (document.hidden) { paused = true; cancelAnimationFrame(raf); }
+      else if (!dead) { paused = false; last = 0; raf = requestAnimationFrame(loop); }
+    };
+    document.addEventListener("visibilitychange", onVis);
+    raf = requestAnimationFrame(loop);
+    const cleanup = () => {
+      dead = true;
+      cancelAnimationFrame(raf);
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("resize", onResize);
+      renderer.dispose();
+      scene.traverse((o) => {
+        if (o.geometry && o.geometry.dispose) o.geometry.dispose();
+        if (o.material) {
+          const ms = Array.isArray(o.material) ? o.material : [o.material];
+          ms.forEach((m) => { if (m.map && m.map.dispose) m.map.dispose(); if (m.dispose) m.dispose(); });
+        }
+      });
+    };
+    // Test hook (handy while tuning too): read-only state + teleport.
+    cleanup._fd = {
+      state: () => ({ x: pos.x, z: pos.z, speed, heading, best }),
+      teleport: (x, z, h) => { pos.x = x; pos.z = z; if (typeof h === "number") heading = h; speed = 0; },
+      trees: () => trees.map((t) => ({ x: t.x, z: t.z, s: t.s })),
+      setInput: (k, v) => { input[k] = v; },
+    };
+    return cleanup;
+  }
+});
+
 // Built last: every game above must be registered first.
 (function buildGrid() {
   const grid = $("game-grid");

@@ -206,9 +206,9 @@ print("7. share-link OK")
 # 8. Client markers, version, routes, backup tables.
 assert "Copy public link" in JS, "missing Copy public link row"
 assert "share-link" in JS, "missing share-link call"
-assert HTML.count("?v=194") == 10, HTML.count("?v=194")
+assert HTML.count("?v=195") == 10, HTML.count("?v=195")
 assert "?v=17" + "5" not in HTML
-assert "/?v=194" in BOT and "/?v=17" + "5" not in BOT
+assert "/?v=195" in BOT and "/?v=17" + "5" not in BOT
 paths = set()
 for route in app.routes:
     paths.add(route.path)
