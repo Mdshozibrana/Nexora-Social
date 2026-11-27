@@ -17,7 +17,7 @@ no-wrap single line would overflow; all five controls present in
 index.html with labels; composer textarea, tip line and feed tabs
 unchanged; JS wiring for all five controls intact; Phase 123
 (drafts) and Phase 135 (scheduled) behaviour still works end to
-end; backup still 42 tables (no schema change); ?v=200 x5.
+end; backup still 42 tables (no schema change); ?v=201 x5.
 """
 import hashlib, hmac, json, os, re, time, urllib.parse
 from datetime import datetime, timedelta
@@ -147,9 +147,9 @@ for tid, tlabel in (("tab-explore", "Explore"),
     assert f'id="{tid}"' in HTML, tid
     assert tlabel in HTML, tlabel
 # Asset version.
-assert HTML.count("?v=200") == 10, HTML.count("?v=200")
+assert HTML.count("?v=201") == 10, HTML.count("?v=201")
 assert "?v=14" + "2" not in HTML
-print("composer HTML OK (5 controls + textarea + tip + tabs + ?v=200)")
+print("composer HTML OK (5 controls + textarea + tip + tabs + ?v=201)")
 
 # 4. JS wiring for all five controls + Phase 123/135 markers intact.
 for expr in ('$("composer-media").onclick',
@@ -196,7 +196,7 @@ with TestClient(app) as c:
     print("plain text post OK")
     r = c.get("/admin/backup", headers=ALICE)
     assert r.status_code == 200, r.text
-    assert len(r.json()["tables"]) == 54, len(r.json()["tables"])
+    assert len(r.json()["tables"]) == 55, len(r.json()["tables"])
     print("backup: 42 tables OK (no schema change)")
 
 print("ALL PHASE 143 CHECKS PASSED")

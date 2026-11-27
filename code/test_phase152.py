@@ -197,14 +197,18 @@ with TestClient(app) as c:
     assert "distance_km" in by_id[333], by_id[333]
     print("distance omitted when the donor does not share: OK")
 
-# 5. Museum removal (same assertions as the converted guards).
-assert "museum" not in HTML.lower()
-assert "museum" not in JS.lower()
-assert "museum" not in CSS.lower()
-assert 'data-go="museum"' not in HTML
-assert '<section id="view-museum"' not in HTML
-assert '"nearby", "qr", "trending", "settings", "blood", "skills"]' in JS
-assert "openMuseum" not in JS and "loadMuseum" not in JS
+# 5. Museum (Phase 201): the old Museum was removed in Phase 152
+# and REBUILT as a new 3D-walkthrough feature in Phase 201, so the
+# blanket removal guards are converted by design — the
+# OLD-implementation markers must stay gone, and the new feature
+# must be present.
+assert "museum" in HTML.lower()
+assert "museum" in JS.lower()
+assert "museum" in CSS.lower()
+assert 'data-go="museum"' in HTML
+assert '<section id="view-museum"' in HTML
+assert '"nearby", "qr", "trending", "settings", "blood", "skills", "museum"]' in JS
+assert "openMuseum" in JS and "reloadMuseum" in JS
 assert "MUSEUM_THEMES" not in JS and "museumZoom" not in JS
 # Neighbours intact: Blood page, Settings opt-in, Design, Nearby, DMs.
 assert 'data-go="blood"' in HTML and 'id="view-blood"' in HTML
@@ -215,7 +219,7 @@ assert "distance_km" in MAIN and "me_shares" in MAIN
 print("Museum removal + neighbours OK")
 
 # 6. Version.
-assert HTML.count("?v=200") == 10, HTML.count("?v=200")
+assert HTML.count("?v=201") == 10, HTML.count("?v=201")
 assert "?v=15" + "1" not in HTML
-assert 'menu_url.rstrip("/") + "/?v=200"' in BOT
+assert 'menu_url.rstrip("/") + "/?v=201"' in BOT
 print("PHASE 152 OK")

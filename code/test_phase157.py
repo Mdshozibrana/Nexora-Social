@@ -137,9 +137,10 @@ assert "MASCOT_TIPS_BY_VIEW" in JS
 assert "sendNexa" in JS and "glassbar" in HTML
 assert "loadBloodDonors" in JS and "openNearby" in JS
 assert "composer-post" in HTML
-assert "museum" not in JS.lower() and "museum" not in HTML.lower()
+assert "museum" in JS.lower() and "museum" in HTML.lower()
+assert "MUSEUM_THEMES" not in JS and "museumZoom" not in JS
 assert "Phase 156" in JS and "Phase 156" in CSS
-print("neighbours OK (mascot, Nexa, Blood, Nearby, composer, no museum)")
+print("neighbours OK (mascot, Nexa, Blood, Nearby, composer, new Museum present)")
 
 with TestClient(app) as c:
     assert c.post("/auth",
@@ -149,14 +150,14 @@ with TestClient(app) as c:
     # backup still 43 tables.
     r = c.get("/admin/backup", headers=ALICE)
     assert r.status_code == 200, r.text
-    assert len(r.json()["tables"]) == 54, len(r.json()["tables"])
+    assert len(r.json()["tables"]) == 55, len(r.json()["tables"])
     paths = {rt.path for rt in app.routes}
-    assert len(paths) == 189, len(paths)
+    assert len(paths) == 193, len(paths)
     print("routes 158 + backup 43 tables OK (no new endpoints, no schema change)")
 
 # 7. Version.
-assert HTML.count("?v=200") == 10, HTML.count("?v=200")
+assert HTML.count("?v=201") == 10, HTML.count("?v=201")
 assert "?v=15" + "6" not in HTML
-assert 'menu_url.rstrip("/") + "/?v=200"' in BOT
+assert 'menu_url.rstrip("/") + "/?v=201"' in BOT
 assert "Phase 157" in CSS and "Phase 157" in HTML
 print("PHASE 157 OK")

@@ -238,9 +238,9 @@ with TestClient(app) as c:
     # backup still 43 tables.
     r = c.get("/admin/backup", headers=ALICE)
     assert r.status_code == 200, r.text
-    assert len(r.json()["tables"]) == 54, len(r.json()["tables"])
+    assert len(r.json()["tables"]) == 55, len(r.json()["tables"])
     paths = {rt.path for rt in app.routes}
-    assert len(paths) == 189, len(paths)
+    assert len(paths) == 193, len(paths)
     assert len([p for p in paths if "blood" in p]) == 6, paths
     print("routes 158 + backup 43 tables OK (no new endpoints, no schema change)")
 
@@ -250,11 +250,12 @@ assert "nearby-toggle" in HTML and "nbPaintToggle" in JS
 assert "loadBloodDonors" in JS and "loadBloodRequests" in JS
 assert "settings-blood-save" in JS
 assert "loadMessages" in JS and "loadDesigns" in JS
-assert "museum" not in JS.lower() and "museum" not in HTML.lower()
-print("neighbours OK (Nearby toggle, Blood flows, no museum)")
+assert "museum" in JS.lower() and "museum" in HTML.lower()
+assert "MUSEUM_THEMES" not in JS and "museumZoom" not in JS
+print("neighbours OK (Nearby toggle, Blood flows, new Museum present)")
 
 # 9. Version.
-assert HTML.count("?v=200") == 10, HTML.count("?v=200")
+assert HTML.count("?v=201") == 10, HTML.count("?v=201")
 assert "?v=15" + "2" not in HTML
-assert 'menu_url.rstrip("/") + "/?v=200"' in BOT
+assert 'menu_url.rstrip("/") + "/?v=201"' in BOT
 print("PHASE 153 OK")

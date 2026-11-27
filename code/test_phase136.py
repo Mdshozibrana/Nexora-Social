@@ -13,7 +13,7 @@ GET /posts/{id} (403), visible to a follower and to self; going
 private keeps existing followers; trending excludes private
 posts; hashtag search hides private posts but user search still
 finds the account; public accounts unaffected; backup 39 tables
-incl. follow_requests rows; ?v=200 x5, no ?v=135; private-account
+incl. follow_requests rows; ?v=201 x5, no ?v=135; private-account
 client markers + Phase 123-135 markers intact.
 """
 import hashlib, hmac, json, os, time, urllib.parse
@@ -272,7 +272,7 @@ with TestClient(app) as c:
     r = c.get("/admin/backup", headers=ALICE)
     assert r.status_code == 200, r.status_code
     bk = r.json()
-    assert len(bk["tables"]) == 54, len(bk["tables"])
+    assert len(bk["tables"]) == 55, len(bk["tables"])
     assert "follow_requests" in bk["tables"], list(bk["tables"])
     assert len(bk["tables"]["follow_requests"]) >= 2, \
         len(bk["tables"]["follow_requests"])
@@ -280,7 +280,7 @@ with TestClient(app) as c:
 
     # 13. Client markers + asset version.
     html = open("webapp/index.html").read()
-    assert html.count("?v=200") == 10, html.count("?v=200")
+    assert html.count("?v=201") == 10, html.count("?v=201")
     assert "?v=135" not in html
     js = open("webapp/app.js").read()
     for m in ("loadFollowRequests", "Follow requests", "Private account",
@@ -302,6 +302,6 @@ with TestClient(app) as c:
         assert m in js, m
     css = open("webapp/style.css").read()
     assert ".private-lock" in css and ".privacy-row" in css
-    print("client markers + ?v=200 OK")
+    print("client markers + ?v=201 OK")
 
 print("PHASE-136 TESTS PASSED")

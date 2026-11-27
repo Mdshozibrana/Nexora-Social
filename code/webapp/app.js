@@ -284,7 +284,7 @@ function showView(name, viaBack) {
                    games: "nav-games",
                    game: "nav-games", tasks: "nav-tasks",
                    leaderboard: "nav-ranks", profile: "nav-me" };
-  ["feed", "videos", "designs", "search", "tasks", "leaderboard", "profile", "saved", "shared", "games", "game", "admin", "notifications", "messages", "chat", "assistant", "nearby", "qr", "trending", "settings", "blood", "skills"].forEach(v => {
+  ["feed", "videos", "designs", "search", "tasks", "leaderboard", "profile", "saved", "shared", "games", "game", "admin", "notifications", "messages", "chat", "assistant", "nearby", "qr", "trending", "settings", "blood", "skills", "museum"].forEach(v => {
     $("view-" + v).hidden = v !== name;
   });
   // Phase 21: only tab views move the highlight. Views without a tab
@@ -296,6 +296,7 @@ function showView(name, viaBack) {
   if (activeBtn) NAV_IDS.forEach(id =>
     $(id).classList.toggle("active", id === activeBtn));
   if (name !== "game" && typeof stopGame === "function") stopGame();
+  if (name !== "museum" && typeof stopMuseum === "function") stopMuseum();
   if (name === "tasks") loadTasks();
   if (name === "qr") loadMyQr();
   if (name === "saved") loadSaved();
@@ -355,6 +356,7 @@ function onAppBack() {
   else if (!$("reel-sheet-wrap").hidden) closeReelMenu();
   else if (!$("design-sheet-wrap").hidden) closeDesignSheet();
   else if ($("glassbar").classList.contains("open")) closeSidebar();
+  else if (currentView === "museum" && !$("mu-sheet").hidden) closeMuseumSheet();
   else if (settingsDetailKey) renderSettingsHub();
   else if (viewStack.length) showView(viewStack.pop(), true);
   else if (currentView !== "feed") showView("feed", true);
@@ -4685,6 +4687,20 @@ async function openProfile(userId) {
       box.insertBefore(portfolioDropdownEl(userId, "profile"),
                        box.firstChild);
     }
+    // Phase 201: Museum button on one side of the profile —
+    // same visibility as the portfolio dropdown (a muted
+    // member's museum stays hidden, as does a private-not-
+    // followed one; the server 404s it too). The button never
+    // carries the member's name, so the verified-name rule
+    // has nothing to shrink here.
+    if (!u.muted_by_me
+        && (ownProfile || !u.is_private || u.following)) {
+      const muBtn = document.createElement("button");
+      muBtn.className = "wide";
+      muBtn.textContent = "🏛️ Museum — walk through the gallery";
+      muBtn.onclick = () => openMuseum(userId);
+      box.appendChild(muBtn);
+    }
     fitVerifiedNames(box);
     const wave = document.createElement("div");
     wave.className = "wave-div";
@@ -5363,6 +5379,623 @@ async function openPortfolioEditor() {
   paintAdd();
   box.append(kindSel, titleIn, pickBtn, addBox);
 }
+
+// ---------- Phase 201: Museum — the member's own 3D gallery -------
+// Sidebar opens MY museum; a profile's Museum button opens THAT
+// member's museum (view-only for visitors). Wall photos come from
+// the owner's own posts/designs (no new upload path — same rule
+// as the Portfolio); furniture comes from a built-in catalog.
+// Three rooms, four wall frames + four floor spots each. The 3D
+// walkthrough uses the vendored Three.js r149 (no CDN); when
+// WebGL is missing the rooms fall back to a flat list with the
+// same tap actions.
+const MUSEUM_ROOMS = [
+  { id: "entrance", name: "Entrance Gallery" },
+  { id: "lounge", name: "Lounge" },
+  { id: "family", name: "Family Room" },
+];
+const MUSEUM_FURNITURE = [
+  { id: "chair", name: "Chair", icon: "🪑" },
+  { id: "table", name: "Table", icon: "🪵" },
+  { id: "lamp", name: "Lamp", icon: "💡" },
+  { id: "plant", name: "Plant", icon: "🪴" },
+  { id: "sofa", name: "Sofa", icon: "🛋️" },
+  { id: "rug", name: "Rug", icon: "🟫" },
+];
+const MUSEUM_WALL_SLOTS = 4;
+const MUSEUM_FLOOR_SLOTS = 4;
+let museumOwnerId = null;
+let museumData = null;
+let museumRoom = "entrance";
+let museumIsOwner = false;
+let muScene = null;
+let muYaw = 0;
+let muPitch = -0.05;
+
+function museumRoomItems(room) {
+  if (!museumData || !museumData.rooms) return [];
+  return museumData.rooms[room] || [];
+}
+function museumItemAt(room, kind, slot) {
+  return museumRoomItems(room).find(
+    it => it.kind === kind && it.slot === slot) || null;
+}
+function museumStepRoom(d) {
+  const idx = MUSEUM_ROOMS.findIndex(r => r.id === museumRoom);
+  museumRoom = MUSEUM_ROOMS[
+    (idx + d + MUSEUM_ROOMS.length) % MUSEUM_ROOMS.length].id;
+  renderMuseum();
+}
+
+async function openMuseum(ownerId) {
+  museumOwnerId = ownerId;
+  museumRoom = "entrance";
+  museumData = null;
+  museumIsOwner = !!(me && me.telegram_id === ownerId);
+  showView("museum");
+  const ownerEl = $("mu-owner");
+  const statusEl = $("mu-status");
+  if (ownerEl) ownerEl.textContent = "Loading the museum…";
+  if (statusEl) statusEl.textContent = "";
+  try {
+    const path = museumIsOwner ? "/me/museum"
+      : "/users/" + ownerId + "/museum";
+    museumData = await api(path);
+    renderMuseum();
+  } catch (e) {
+    if (ownerEl) ownerEl.textContent = "";
+    if (statusEl) statusEl.textContent =
+      "This museum isn't visible to you.";
+    renderMuseumEmpty();
+  }
+}
+async function reloadMuseum() {
+  if (museumOwnerId === null) return;
+  try {
+    const path = museumIsOwner ? "/me/museum"
+      : "/users/" + museumOwnerId + "/museum";
+    museumData = await api(path);
+    renderMuseum();
+  } catch (e) { setStatus("Could not reload the museum."); }
+}
+function renderMuseumEmpty() {
+  const tabs = $("mu-room-tabs");
+  if (tabs) tabs.innerHTML = "";
+  const chips = $("mu-chips");
+  if (chips) chips.innerHTML = "";
+  const fb = $("mu-fallback");
+  if (fb) { fb.hidden = true; fb.innerHTML = ""; }
+  const nameEl = $("mu-room-name");
+  if (nameEl) nameEl.textContent = "";
+  stopMuseum();
+}
+function renderMuseum() {
+  const d = museumData;
+  if (!d) return;
+  // Owner line — the shared .vname rule: the name shrinks,
+  // the tick never does (fitVerifiedNames, Phases 160/162).
+  const ownerEl = $("mu-owner");
+  if (ownerEl) {
+    ownerEl.innerHTML = "";
+    const nm = document.createElement("span");
+    nm.className = "vname";
+    const nmText = document.createElement("span");
+    nmText.className = "vname-text";
+    nmText.textContent = d.first_name || "Member";
+    nm.appendChild(nmText);
+    if (d.is_verified) nm.appendChild(verifiedBadge());
+    const sub = document.createElement("span");
+    sub.className = "muted";
+    sub.textContent = (d.username ? " @" + d.username : "")
+      + (museumIsOwner ? " · your museum" : " · museum");
+    ownerEl.append(nm, sub);
+    fitVerifiedNames(ownerEl);
+  }
+  const tabs = $("mu-room-tabs");
+  if (tabs) {
+    tabs.innerHTML = "";
+    MUSEUM_ROOMS.forEach(r => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "mu-tab" + (r.id === museumRoom ? " active" : "");
+      b.textContent = r.name;
+      b.onclick = () => { museumRoom = r.id; renderMuseum(); };
+      tabs.appendChild(b);
+    });
+  }
+  const nameEl = $("mu-room-name");
+  if (nameEl) {
+    const r = MUSEUM_ROOMS.find(x => x.id === museumRoom);
+    nameEl.textContent = r ? r.name : "";
+  }
+  const prev = $("mu-prev");
+  if (prev) prev.onclick = () => museumStepRoom(-1);
+  const next = $("mu-next");
+  if (next) next.onclick = () => museumStepRoom(1);
+  renderMuseumChips();
+  renderMuseumFallback();
+  buildMuseumScene();
+}
+function renderMuseumChips() {
+  const box = $("mu-chips");
+  if (!box) return;
+  box.innerHTML = "";
+  for (let s = 0; s < MUSEUM_WALL_SLOTS; s++) {
+    const it = museumItemAt(museumRoom, "photo", s);
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "mu-chip";
+    if (it && it.image_file_id) {
+      const im = document.createElement("img");
+      im.src = mediaUrl(it.image_file_id);
+      im.alt = "Wall photo " + (s + 1);
+      im.loading = "lazy";
+      b.appendChild(im);
+      const lb = document.createElement("span");
+      lb.textContent = "🖼️ Frame " + (s + 1);
+      b.appendChild(lb);
+    } else {
+      b.textContent = museumIsOwner ? "＋ Hang a photo" : "Empty frame";
+    }
+    b.onclick = () => museumFrameTap(s);
+    box.appendChild(b);
+  }
+  for (let s = 0; s < MUSEUM_FLOOR_SLOTS; s++) {
+    const it = museumItemAt(museumRoom, "furniture", s);
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "mu-chip";
+    if (it) {
+      const f = MUSEUM_FURNITURE.find(x => x.id === it.furniture_type);
+      b.textContent = (f ? f.icon + " " + f.name : "Furniture")
+        + " · spot " + (s + 1);
+    } else {
+      b.textContent = museumIsOwner ? "＋ Place furniture" : "Empty spot";
+    }
+    b.onclick = () => museumFloorTap(s);
+    box.appendChild(b);
+  }
+}
+function renderMuseumFallback() {
+  const fb = $("mu-fallback");
+  const stage = $("mu-stage");
+  const nogl = $("mu-nogl");
+  const has3D = muHas3D();
+  if (stage) stage.hidden = !has3D;
+  if (nogl) nogl.hidden = has3D;
+  if (!fb) return;
+  fb.hidden = has3D;
+  if (has3D) { fb.innerHTML = ""; return; }
+  fb.innerHTML = "";
+  const room = MUSEUM_ROOMS.find(r => r.id === museumRoom);
+  const h = document.createElement("div");
+  h.className = "settings-sub";
+  h.textContent = "Room: " + (room ? room.name : "");
+  fb.appendChild(h);
+  for (let s = 0; s < MUSEUM_WALL_SLOTS; s++) {
+    const it = museumItemAt(museumRoom, "photo", s);
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "mu-fb-card";
+    if (it && it.image_file_id) {
+      const im = document.createElement("img");
+      im.src = mediaUrl(it.image_file_id);
+      im.alt = "Wall photo " + (s + 1);
+      im.loading = "lazy";
+      card.appendChild(im);
+    } else {
+      card.textContent = museumIsOwner ? "＋ Hang a photo" : "Empty frame";
+    }
+    card.onclick = () => museumFrameTap(s);
+    fb.appendChild(card);
+  }
+  for (let s = 0; s < MUSEUM_FLOOR_SLOTS; s++) {
+    const it = museumItemAt(museumRoom, "furniture", s);
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "mu-fb-card";
+    if (it) {
+      const f = MUSEUM_FURNITURE.find(x => x.id === it.furniture_type);
+      card.textContent = (f ? f.icon + " " + f.name : "Furniture")
+        + " · spot " + (s + 1);
+    } else {
+      card.textContent = museumIsOwner ? "＋ Place furniture" : "Empty spot";
+    }
+    card.onclick = () => museumFloorTap(s);
+    fb.appendChild(card);
+  }
+}
+// The vendored Three.js script is the only 3D dependency — no CDN.
+// A device whose WebGL context cannot start throws inside the
+// WebGLRenderer constructor, which buildMuseumScene catches and
+// turns into the flat fallback below.
+function muHas3D() {
+  return typeof window !== "undefined" && !!window.THREE;
+}
+function muDragStart(ev) {
+  if (!muScene) return;
+  muScene.drag = { x: ev.clientX || 0, y: ev.clientY || 0 };
+}
+function muDragMove(ev) {
+  if (!muScene || !muScene.drag) return;
+  const dx = (ev.clientX || 0) - muScene.drag.x;
+  const dy = (ev.clientY || 0) - muScene.drag.y;
+  muScene.drag = { x: ev.clientX || 0, y: ev.clientY || 0 };
+  muYaw = Math.max(-0.9, Math.min(0.9, muYaw - dx * 0.005));
+  muPitch = Math.max(-0.35, Math.min(0.3, muPitch - dy * 0.004));
+}
+function muDragEnd() { if (muScene) muScene.drag = null; }
+function muDisposeGroup(group) {
+  if (!group || typeof group.traverse !== "function") return;
+  group.traverse(o => {
+    if (o.geometry && o.geometry.dispose) o.geometry.dispose();
+    if (o.material) {
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      mats.forEach(m => {
+        if (m.map && m.map.dispose) m.map.dispose();
+        if (m.dispose) m.dispose();
+      });
+    }
+  });
+}
+function muFurniture(type) {
+  const wood = c => new THREE.MeshStandardMaterial(
+    { color: c, roughness: 0.85, metalness: 0 });
+  const box = (w, h, d, c, x, y, z) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wood(c));
+    m.position.set(x, y, z);
+    return m;
+  };
+  const cyl = (rt, rb, h, c, x, y, z) => {
+    const m = new THREE.Mesh(
+      new THREE.CylinderGeometry(rt, rb, h, 12), wood(c));
+    m.position.set(x, y, z);
+    return m;
+  };
+  const g = new THREE.Group();
+  if (type === "chair") {
+    g.add(box(0.45, 0.06, 0.45, 0x6b4a2f, 0, 0.45, 0));
+    g.add(box(0.45, 0.5, 0.05, 0x6b4a2f, 0, 0.72, -0.2));
+    [[-0.19, -0.19], [0.19, -0.19], [-0.19, 0.19], [0.19, 0.19]]
+      .forEach(p => g.add(cyl(0.025, 0.025, 0.45, 0x4a3525, p[0], 0.225, p[1])));
+  } else if (type === "table") {
+    g.add(box(1.2, 0.06, 0.7, 0x6b4a2f, 0, 0.72, 0));
+    [[-0.55, -0.3], [0.55, -0.3], [-0.55, 0.3], [0.55, 0.3]]
+      .forEach(p => g.add(cyl(0.03, 0.03, 0.72, 0x4a3525, p[0], 0.36, p[1])));
+  } else if (type === "lamp") {
+    g.add(cyl(0.16, 0.18, 0.04, 0x4a3525, 0, 0.02, 0));
+    g.add(cyl(0.02, 0.02, 1.3, 0x8a6f4d, 0, 0.67, 0));
+    const shade = new THREE.Mesh(
+      new THREE.ConeGeometry(0.24, 0.28, 16, 1, true),
+      new THREE.MeshStandardMaterial({ color: 0xf5e6c8, roughness: 0.9,
+        metalness: 0, side: THREE.DoubleSide }));
+    shade.position.set(0, 1.38, 0);
+    g.add(shade);
+    const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.06, 12, 8),
+      new THREE.MeshBasicMaterial({ color: 0xffe9b8 }));
+    bulb.position.set(0, 1.28, 0);
+    g.add(bulb);
+  } else if (type === "plant") {
+    g.add(cyl(0.18, 0.14, 0.3, 0xa44a3f, 0, 0.15, 0));
+    [[0, 0.62, 0, 0.26], [-0.14, 0.5, 0.08, 0.18], [0.13, 0.52, -0.07, 0.19]]
+      .forEach(p => {
+        const leaf = new THREE.Mesh(
+          new THREE.IcosahedronGeometry(p[3], 0), wood(0x4a7a3f));
+        leaf.position.set(p[0], p[1], p[2]);
+        g.add(leaf);
+      });
+  } else if (type === "sofa") {
+    g.add(box(1.8, 0.35, 0.8, 0x7a6a5f, 0, 0.28, 0));
+    g.add(box(1.8, 0.5, 0.2, 0x7a6a5f, 0, 0.65, -0.3));
+    g.add(box(0.2, 0.35, 0.8, 0x6b5d52, -0.8, 0.55, 0));
+    g.add(box(0.2, 0.35, 0.8, 0x6b5d52, 0.8, 0.55, 0));
+    g.add(box(0.78, 0.12, 0.62, 0x8a7a6e, -0.42, 0.5, 0.04));
+    g.add(box(0.78, 0.12, 0.62, 0x8a7a6e, 0.42, 0.5, 0.04));
+  } else if (type === "rug") {
+    const rug = new THREE.Mesh(new THREE.CircleGeometry(0.95, 24),
+      new THREE.MeshStandardMaterial({ color: 0xa44a3f, roughness: 1,
+        metalness: 0 }));
+    rug.rotation.x = -Math.PI / 2;
+    rug.position.y = 0.015;
+    g.add(rug);
+  } else { return null; }
+  return g;
+}
+function muBuildRoom() {
+  if (!muScene) return;
+  if (muScene.roomGroup) {
+    muScene.scene.remove(muScene.roomGroup);
+    muDisposeGroup(muScene.roomGroup);
+  }
+  const g = new THREE.Group();
+  const mat = (c, extra) => new THREE.MeshStandardMaterial(
+    Object.assign({ color: c, roughness: 0.9, metalness: 0 }, extra || {}));
+  // Warm wood floor, warm plaster walls — the reference video's
+  // bar / lounge palette, kept dark enough for the photos.
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(8, 6), mat(0x8a6f4d));
+  floor.rotation.x = -Math.PI / 2;
+  g.add(floor);
+  const wallMat = mat(0xe8dcc8);
+  const back = new THREE.Mesh(new THREE.PlaneGeometry(8, 3.2), wallMat);
+  back.position.set(0, 1.6, -3);
+  g.add(back);
+  const left = new THREE.Mesh(new THREE.PlaneGeometry(6, 3.2), wallMat);
+  left.rotation.y = Math.PI / 2;
+  left.position.set(-4, 1.6, 0);
+  g.add(left);
+  const right = new THREE.Mesh(new THREE.PlaneGeometry(6, 3.2), wallMat);
+  right.rotation.y = -Math.PI / 2;
+  right.position.set(4, 1.6, 0);
+  g.add(right);
+  // Four wall frames: slots 0-1 on the back wall, 2 on the left,
+  // 3 on the right. A hung photo becomes the frame's texture.
+  const frameSpots = [
+    { x: -2, y: 1.7, z: -2.96, ry: 0 },
+    { x: 2, y: 1.7, z: -2.96, ry: 0 },
+    { x: -3.96, y: 1.7, z: -1.2, ry: Math.PI / 2 },
+    { x: 3.96, y: 1.7, z: -1.2, ry: -Math.PI / 2 },
+  ];
+  for (let s = 0; s < MUSEUM_WALL_SLOTS; s++) {
+    const sp = frameSpots[s];
+    const fg = new THREE.Group();
+    fg.add(new THREE.Mesh(new THREE.BoxGeometry(1.15, 1.45, 0.06),
+      mat(0x4a3525, { roughness: 0.6 })));
+    const it = museumItemAt(museumRoom, "photo", s);
+    let inner;
+    if (it && it.image_file_id) {
+      let tex = null;
+      try { tex = new THREE.TextureLoader().load(mediaUrl(it.image_file_id)); }
+      catch (e) { tex = null; }
+      inner = new THREE.Mesh(new THREE.PlaneGeometry(0.95, 1.25),
+        tex ? new THREE.MeshBasicMaterial({ map: tex }) : mat(0xf6f1e7));
+    } else {
+      inner = new THREE.Mesh(new THREE.PlaneGeometry(0.95, 1.25),
+        mat(0xf6f1e7));
+    }
+    inner.position.z = 0.04;
+    fg.add(inner);
+    fg.position.set(sp.x, sp.y, sp.z);
+    fg.rotation.y = sp.ry;
+    g.add(fg);
+  }
+  const floorSpots = [
+    { x: -2.2, z: -0.6 }, { x: 2.2, z: -0.6 },
+    { x: -2.2, z: 1.3 }, { x: 2.2, z: 1.3 },
+  ];
+  for (let s = 0; s < MUSEUM_FLOOR_SLOTS; s++) {
+    const it = museumItemAt(museumRoom, "furniture", s);
+    if (!it) continue;
+    const fg = muFurniture(it.furniture_type);
+    if (!fg) continue;
+    fg.position.set(floorSpots[s].x, 0, floorSpots[s].z);
+    g.add(fg);
+  }
+  muScene.scene.add(g);
+  muScene.roomGroup = g;
+}
+function buildMuseumScene() {
+  const stage = $("mu-stage");
+  const cv = $("mu-canvas");
+  if (!stage || !cv) return;
+  if (!muHas3D()) { stopMuseum(); renderMuseumFallback(); return; }
+  if (!muScene) {
+    let renderer;
+    try {
+      renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: true });
+    } catch (e) { stopMuseum(); renderMuseumFallback(); return; }
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x241c14);
+    scene.fog = new THREE.Fog(0x241c14, 9, 18);
+    const camera = new THREE.PerspectiveCamera(62, 4 / 3, 0.1, 60);
+    camera.position.set(0, 1.6, 2.3);
+    camera.rotation.order = "YXZ";
+    scene.add(new THREE.HemisphereLight(0xfff2df, 0x5a4632, 0.9));
+    const warm1 = new THREE.PointLight(0xffd9a0, 0.9, 12);
+    warm1.position.set(-2.4, 2.9, 1.2);
+    scene.add(warm1);
+    const warm2 = new THREE.PointLight(0xffd9a0, 0.9, 12);
+    warm2.position.set(2.4, 2.9, 1.2);
+    scene.add(warm2);
+    muScene = { renderer, scene, camera, raf: 0, roomGroup: null,
+      drag: null, active: true };
+    cv.addEventListener("pointerdown", muDragStart);
+    cv.addEventListener("pointermove", muDragMove);
+    cv.addEventListener("pointerup", muDragEnd);
+    cv.addEventListener("pointercancel", muDragEnd);
+    const loop = () => {
+      if (!muScene || !muScene.active) return;
+      if (!document.hidden && currentView === "museum") {
+        muScene.camera.rotation.y = muYaw;
+        muScene.camera.rotation.x = muPitch;
+        muScene.renderer.render(muScene.scene, muScene.camera);
+      }
+      muScene.raf = requestAnimationFrame(loop);
+    };
+    muScene.raf = requestAnimationFrame(loop);
+  }
+  muBuildRoom();
+  const w = stage.clientWidth || 360;
+  const h = Math.round(w * 0.62);
+  try {
+    muScene.renderer.setSize(w, h, false);
+    muScene.camera.aspect = w / h;
+    muScene.camera.updateProjectionMatrix();
+  } catch (e) { /* stub renderers may not size — the loop still runs */ }
+}
+function stopMuseum() {
+  if (!muScene) return;
+  muScene.active = false;
+  if (muScene.raf) cancelAnimationFrame(muScene.raf);
+  try { muDisposeGroup(muScene.roomGroup); } catch (e) {}
+  try { muScene.renderer.dispose(); } catch (e) {}
+  const cv = $("mu-canvas");
+  if (cv) {
+    cv.removeEventListener("pointerdown", muDragStart);
+    cv.removeEventListener("pointermove", muDragMove);
+    cv.removeEventListener("pointerup", muDragEnd);
+    cv.removeEventListener("pointercancel", muDragEnd);
+  }
+  muScene = null;
+}
+function openMuseumSheet(title, build) {
+  const sheet = $("mu-sheet");
+  if (!sheet) return;
+  sheet.innerHTML = "";
+  sheet.hidden = false;
+  const head = document.createElement("div");
+  head.className = "mu-sheet-head";
+  const t = document.createElement("span");
+  t.textContent = title;
+  const x = document.createElement("button");
+  x.type = "button";
+  x.className = "mu-sheet-x";
+  x.textContent = "✕";
+  x.onclick = closeMuseumSheet;
+  head.append(t, x);
+  sheet.appendChild(head);
+  const body = document.createElement("div");
+  body.className = "mu-sheet-body";
+  sheet.appendChild(body);
+  build(body);
+  updateBackButton();
+}
+function closeMuseumSheet() {
+  const sheet = $("mu-sheet");
+  if (!sheet) return;
+  sheet.hidden = true;
+  sheet.innerHTML = "";
+  updateBackButton();
+}
+async function museumSaveItem(payload) {
+  await api("/me/museum/items", { method: "POST",
+    body: JSON.stringify(payload) });
+}
+async function museumRemoveItem(itemId) {
+  try {
+    await api("/me/museum/items/" + itemId, { method: "DELETE" });
+    closeMuseumSheet();
+    await reloadMuseum();
+    setStatus("Removed.");
+  } catch (e) { setStatus("Could not remove it."); }
+}
+function museumFrameTap(slot) {
+  const it = museumItemAt(museumRoom, "photo", slot);
+  if (!it) {
+    if (!museumIsOwner) { setStatus("This frame is empty."); return; }
+    museumPickPhoto(slot);
+    return;
+  }
+  openMuseumSheet("🖼️ Frame " + (slot + 1), body => {
+    const viewBtn = document.createElement("button");
+    viewBtn.type = "button";
+    viewBtn.className = "wide";
+    viewBtn.textContent = "View photo";
+    viewBtn.onclick = () => {
+      closeMuseumSheet();
+      openPhotoViewer(it.image_file_id, "Museum photo");
+    };
+    body.appendChild(viewBtn);
+    if (!museumIsOwner) return;
+    const repBtn = document.createElement("button");
+    repBtn.type = "button";
+    repBtn.className = "wide";
+    repBtn.textContent = "Replace photo";
+    repBtn.onclick = () => museumPickPhoto(slot);
+    body.appendChild(repBtn);
+    const rmBtn = document.createElement("button");
+    rmBtn.type = "button";
+    rmBtn.className = "wide";
+    rmBtn.textContent = "Remove from wall";
+    rmBtn.onclick = async () => { await museumRemoveItem(it.id); };
+    body.appendChild(rmBtn);
+  });
+}
+function museumFloorTap(slot) {
+  const it = museumItemAt(museumRoom, "furniture", slot);
+  if (!it) {
+    if (!museumIsOwner) {
+      setStatus("Only the owner can decorate this museum.");
+      return;
+    }
+    openMuseumSheet("Place furniture — spot " + (slot + 1), body => {
+      MUSEUM_FURNITURE.forEach(f => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "wide mu-cat-row";
+        b.textContent = f.icon + " " + f.name;
+        b.onclick = async () => {
+          try {
+            await museumSaveItem({ room: museumRoom, kind: "furniture",
+              slot, furniture_type: f.id });
+            closeMuseumSheet();
+            await reloadMuseum();
+            setStatus(f.name + " placed.");
+          } catch (e) { setStatus("Could not place the furniture."); }
+        };
+        body.appendChild(b);
+      });
+    });
+    return;
+  }
+  if (!museumIsOwner) {
+    setStatus("Only the owner can decorate this museum.");
+    return;
+  }
+  const f = MUSEUM_FURNITURE.find(x => x.id === it.furniture_type);
+  openMuseumSheet((f ? f.icon + " " + f.name : "Furniture")
+    + " — spot " + (slot + 1), body => {
+    const rmBtn = document.createElement("button");
+    rmBtn.type = "button";
+    rmBtn.className = "wide";
+    rmBtn.textContent = "Remove it";
+    rmBtn.onclick = async () => { await museumRemoveItem(it.id); };
+    body.appendChild(rmBtn);
+  });
+}
+function museumPickPhoto(slot) {
+  openMuseumSheet("Hang a photo — frame " + (slot + 1), body => {
+    const save = async payload => {
+      try {
+        await museumSaveItem(Object.assign(
+          { room: museumRoom, kind: "photo", slot }, payload));
+        closeMuseumSheet();
+        await reloadMuseum();
+        setStatus("Photo hung on the wall.");
+      } catch (e) { setStatus("Could not hang the photo."); }
+    };
+    const mkH = txt => {
+      const h = document.createElement("div");
+      h.className = "settings-sub";
+      h.textContent = txt;
+      body.appendChild(h);
+    };
+    mkH("From one of my posts");
+    const postBox = document.createElement("div");
+    postBox.className = "pf-picker";
+    body.appendChild(postBox);
+    portfolioPickPosts(postBox, async p => {
+      const fid = p.type === "video" ? p.thumb_file_id : p.media_file_id;
+      if (!fid) { setStatus("That post has no photo to hang."); return; }
+      await save({ ref_kind: "post", ref_id: p.id });
+    });
+    mkH("From the Design gallery");
+    const dgBox = document.createElement("div");
+    dgBox.className = "pf-picker";
+    body.appendChild(dgBox);
+    portfolioPickDesigns(dgBox, async dg => {
+      await save({ ref_kind: "design", ref_id: dg.id });
+    });
+    mkH("From my photos");
+    const phBox = document.createElement("div");
+    phBox.className = "pf-picker";
+    body.appendChild(phBox);
+    portfolioPickPhotos(phBox, async fid => {
+      await save({ image_file_id: fid });
+    });
+  });
+}
+
 
 async function loadProfilePosts(reset) {
   try {
@@ -8022,7 +8655,8 @@ function syncSidebarActive() {
   const current = ["feed", "videos", "designs", "search", "tasks",
     "leaderboard", "profile", "saved", "shared", "games", "game",
     "nearby", "messages", "notifications", "qr", "trending",
-    "admin", "chat", "assistant", "settings", "blood", "skills"]
+    "admin", "chat", "assistant", "settings", "blood", "skills",
+    "museum"]
     .find(v => !$("view-" + v).hidden) || "feed";
   // Phase 184 (audit L22): "chat" has no sidebar entry of its
   // own — it opens from Messages — so Messages stays highlighted
@@ -8131,6 +8765,7 @@ document.querySelectorAll(".gb-item[data-go]").forEach(b => {
     // profile — showView("profile") alone would keep showing
     // whichever profile was last rendered.
     if (go === "profile" && me) openProfile(me.telegram_id);
+    else if (go === "museum" && me) openMuseum(me.telegram_id);
     else showView(go);
     if (go === "profile") loadMe();
   };
@@ -12327,6 +12962,11 @@ const MASCOT_TIPS_BY_VIEW = {
     "List what you can teach and what you want to learn — no money, just time.",
     "Tap 🤝 Connect on a card — the member is notified and a DM opens to arrange the swap.",
     "Use the search box to find someone who teaches the skill you want.",
+  ],
+  museum: [
+    "Drag on the museum canvas to look around — the room buttons walk you from room to room.",
+    "Tap a frame to see the photo big. The owner hangs photos from their own posts and designs.",
+    "In your own museum, tap an empty frame to hang a photo, or an empty floor spot to place furniture.",
   ],
 };
 let mascotTipIdx = 0;

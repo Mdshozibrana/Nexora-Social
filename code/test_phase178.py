@@ -446,23 +446,23 @@ assert bob_post in profile_ids(ALICE, 1783)
 print("8. normal reads + feed unchanged OK")
 
 # 9. Client markers, version, routes, backup tables, health.
-assert HTML.count("?v=200") == 10, HTML.count("?v=200")
+assert HTML.count("?v=201") == 10, HTML.count("?v=201")
 assert "?v=17" + "7" not in HTML
-assert "/?v=200" in BOT and "/?v=17" + "7" not in BOT
-assert "app.js?v=200" in HTML and "style.css?v=200" in HTML
+assert "/?v=201" in BOT and "/?v=17" + "7" not in BOT
+assert "app.js?v=201" in HTML and "style.css?v=201" in HTML
 paths = set()
 for route in app.routes:
     paths.add(route.path)
-assert len(paths) == 189, len(paths)
+assert len(paths) == 193, len(paths)
 r = c.get("/admin/backup", headers=ADMIN)
 assert r.status_code == 200, r.text
 b = r.json()
-assert len(b["tables"]) == 54, len(b["tables"])
-assert len(_BACKUP_TABLES) == 54, len(_BACKUP_TABLES)
+assert len(b["tables"]) == 55, len(b["tables"])
+assert len(_BACKUP_TABLES) == 55, len(_BACKUP_TABLES)
 r = c.get("/health")
 assert r.status_code == 200, r.text
 h = c.get("/admin/health", headers=ADMIN).json()
-assert h["version"] == 200, h
+assert h["version"] == 201, h
 print("9. version + routes + backup + health OK")
 
 print("PHASE 178 OK")

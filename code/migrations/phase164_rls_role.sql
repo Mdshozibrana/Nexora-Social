@@ -40,7 +40,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON
   daily_claims, design_likes, design_saves, design_shares,
   design_views, designs, drafts, follow_requests,
   follows, hashtag_follows, highlight_stories, likes,
-  mentions, message_reactions, messages, mutes,
+  mentions, message_reactions, messages, museum_items, mutes,
   notifications, notifications_log, payout_requests, points_ledger,
   poll_options, poll_votes, polls, portfolio_items, portfolios,
   post_media, post_shares, post_views, posts, referrals,

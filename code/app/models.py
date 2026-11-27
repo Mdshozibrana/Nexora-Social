@@ -355,6 +355,31 @@ class PortfolioItem(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class MuseumItem(Base):
+    """Phase 201: one thing hung or placed in a member's Museum —
+    a photo on a wall frame (kind photo, image_file_id from the
+    owner's own content, optional ref to the source post/design
+    so a deleted source drops out of the view) or a piece of
+    furniture on a floor spot (kind furniture, furniture_type
+    from the catalog). room is entrance | lounge | family;
+    slot is the wall frame (photo) or floor spot (furniture)
+    index, 0-3. One row per (owner, room, kind, slot): hanging
+    or placing on an occupied slot replaces it, so a museum
+    holds at most 24 items and needs no separate museums row."""
+    __tablename__ = "museum_items"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("users.telegram_id"),
+                     index=True)
+    room = Column(String(16), nullable=False, index=True)
+    kind = Column(String(16), nullable=False)  # photo | furniture
+    slot = Column(Integer, nullable=False, default=0)
+    image_file_id = Column(String(256), nullable=True)
+    ref_kind = Column(String(16), nullable=True)  # post | design
+    ref_id = Column(Integer, nullable=True)
+    furniture_type = Column(String(32), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class PostShare(Base):
     """In-app share: one member sends a post/video to another member
     (owner request, Oct 31). The receiver finds it under 'Shared with me'

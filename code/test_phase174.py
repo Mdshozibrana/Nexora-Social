@@ -292,21 +292,21 @@ JS_MARKS = ["paintMute", "loadMuted", "Muted members", "/mute",
             "muted_by_me", "Member muted", "Nobody muted.", "Unmute"]
 for m in JS_MARKS:
     assert m in JS, f"missing JS marker: {m}"
-assert HTML.count("?v=200") == 10, HTML.count("?v=200")
+assert HTML.count("?v=201") == 10, HTML.count("?v=201")
 assert "?v=17" + "3" not in HTML
 BOT = open(os.path.join(ROOT, "code/app/bot.py")).read()
-assert "/?v=200" in BOT and "/?v=17" + "3" not in BOT
+assert "/?v=201" in BOT and "/?v=17" + "3" not in BOT
 paths = set()
 for route in app.routes:
     paths.add(route.path)
-assert len(paths) == 189, len(paths)
+assert len(paths) == 193, len(paths)
 assert "/users/{telegram_id}/mute" in paths
 assert "/me/muted" in paths
 r = c.get("/admin/backup", headers=ADMIN)
 assert r.status_code == 200, r.text
 b = r.json()
-assert len(b["tables"]) == 54, len(b["tables"])
-assert len(_BACKUP_TABLES) == 54, len(_BACKUP_TABLES)
+assert len(b["tables"]) == 55, len(b["tables"])
+assert len(_BACKUP_TABLES) == 55, len(_BACKUP_TABLES)
 print("10. client + version + routes + backup OK")
 
 print("PHASE 174 OK")

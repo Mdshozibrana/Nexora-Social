@@ -243,15 +243,15 @@ for m in JS_MARKS:
     assert m in JS, f"missing JS marker: {m}"
 assert 'id="saved-collections"' in HTML
 assert ".saved-collections" in CSS and ".saved-chip" in CSS
-assert HTML.count("?v=200") == 10, HTML.count("?v=200")
+assert HTML.count("?v=201") == 10, HTML.count("?v=201")
 assert "?v=17" + "4" not in HTML
 BOT = open(os.path.join(ROOT, "code/app/bot.py")).read()
-assert "/?v=200" in BOT and "/?v=17" + "4" not in BOT
+assert "/?v=201" in BOT and "/?v=17" + "4" not in BOT
 paths = set()
 for route in app.routes:
     paths.add(route.path)
 # 7 endpoints, 4 new unique paths (methods share paths).
-assert len(paths) == 189, len(paths)
+assert len(paths) == 193, len(paths)
 for want in ("/saved/collections", "/saved/collections/{cid}",
              "/saved/collections/{cid}/posts",
              "/saved/collections/{cid}/posts/{post_id}"):
@@ -259,8 +259,8 @@ for want in ("/saved/collections", "/saved/collections/{cid}",
 r = c.get("/admin/backup", headers=ADMIN)
 assert r.status_code == 200, r.text
 b = r.json()
-assert len(b["tables"]) == 54, len(b["tables"])
-assert len(_BACKUP_TABLES) == 54, len(_BACKUP_TABLES)
+assert len(b["tables"]) == 55, len(b["tables"])
+assert len(_BACKUP_TABLES) == 55, len(_BACKUP_TABLES)
 print("6. client + version + routes + backup OK")
 
 print("PHASE 175 OK")
