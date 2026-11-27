@@ -4,6 +4,7 @@ Only the PRD section-8 admin endpoints remain for a later phase."""
 import asyncio
 import contextvars
 from decimal import Decimal, InvalidOperation
+import heapq
 import html
 import json
 import logging
@@ -8800,6 +8801,80 @@ def _backup_payload(db: Session) -> dict:
     }
 
 
+def _restore_order_rows(model, rows):
+    """Order one table's rows so intra-table (self-referential) FK
+    references resolve before insert. Phase 193: the backup is
+    PK-ordered, but a self-reference can point UP that order — a
+    member whose referrer sorts after him (Niloy 5177124392 names
+    referrer 6398367372) — and Postgres enforces the FK per row
+    inside the single executemany INSERT, so the whole restore
+    400d. Topologically sort each table's rows by its own
+    self-referential FKs (any column whose FK target is the same
+    table), so a row lands only after the rows it names. Returns
+    (ordered_rows, deferred): deferred is a list of
+    (pk_value, {self-ref column: original value}) for rows in a
+    true cycle — they go in with the self-referencing FK
+    temporarily NULL and are UPDATEed to their real values after
+    the insert, so no data is ever dropped or skipped."""
+    table = model.__table__
+    pk = list(table.primary_key.columns)[0].name
+    self_refs = []
+    for col in table.columns:
+        for fk in col.foreign_keys:
+            if fk.column.table is table:
+                self_refs.append((col.name, fk.column.name))
+    if not self_refs or len(rows) < 2:
+        return rows, []
+    by_target = {}
+    for i, row in enumerate(rows):
+        for _local, target in self_refs:
+            by_target.setdefault((target, row.get(target)), []).append(i)
+    n = len(rows)
+    deps = [set() for _ in range(n)]
+    dependents = [[] for _ in range(n)]
+    for i, row in enumerate(rows):
+        for local, target in self_refs:
+            val = row.get(local)
+            if val is None:
+                continue
+            for j in by_target.get((target, val), []):
+                if j != i and j not in deps[i]:
+                    deps[i].add(j)
+                    dependents[j].append(i)
+    ready = [i for i in range(n) if not deps[i]]
+    heapq.heapify(ready)
+    order = []
+    remaining = set(range(n))
+    while ready:
+        i = heapq.heappop(ready)
+        order.append(i)
+        remaining.discard(i)
+        for k in dependents[i]:
+            deps[k].discard(i)
+            if not deps[k] and k in remaining:
+                heapq.heappush(ready, k)
+    ordered = [rows[i] for i in order]
+    deferred = []
+    for i in sorted(remaining):
+        row = rows[i]
+        original = {local: row[local] for local, _t in self_refs
+                    if row.get(local) is not None}
+        if not original:
+            ordered.append(row)
+            continue
+        for local in original:
+            if not table.columns[local].nullable:
+                raise HTTPException(
+                    400, f"Table {model.__tablename__}: backup has a "
+                         "circular self-reference that cannot be restored")
+        nulled = dict(row)
+        for local in original:
+            nulled[local] = None
+        ordered.append(nulled)
+        deferred.append((row[pk], original))
+    return ordered, deferred
+
+
 def _restore_backup(db: Session, payload: dict) -> dict:
     """Validate, then wipe + re-insert every table in one
     transaction. Raises HTTPException on any bad input; the caller
@@ -8852,12 +8927,25 @@ def _restore_backup(db: Session, payload: dict) -> dict:
     for name, model in reversed(_BACKUP_TABLES):
         db.query(model).delete()
     # Insert parents first (users before everything that references
-    # them; rows are PK-ordered, so a referrer with a smaller id
-    # always lands before the member who named them).
+    # them). Within a table, rows are ordered so self-referential
+    # FKs resolve: the backup is PK-ordered, but a self-reference
+    # can point UP that order (a member whose referrer sorts after
+    # him), and Postgres enforces the FK per row inside the single
+    # executemany INSERT — Phase 193. Cyclic rows go in with the
+    # self-referencing FK NULL and are UPDATEed back afterwards.
     for name, model in _BACKUP_TABLES:
-        if cleaned.get(name):
-            db.execute(model.__table__.insert(), cleaned[name])
-        counts[name] = len(cleaned.get(name, []))
+        rows = cleaned.get(name, [])
+        if rows:
+            ordered, deferred = _restore_order_rows(model, rows)
+            db.execute(model.__table__.insert(), ordered)
+            if deferred:
+                pk = list(model.__table__.primary_key.columns)[0].name
+                for pk_val, fk_vals in deferred:
+                    db.execute(
+                        model.__table__.update()
+                        .where(getattr(model, pk) == pk_val)
+                        .values(**fk_vals))
+        counts[name] = len(rows)
     # Postgres sequences sit behind explicit ids — move them past
     # the restored max, or the next insert collides. (SQLite tracks
     # the max itself, so this runs on Postgres only.)
@@ -8868,8 +8956,8 @@ def _restore_backup(db: Session, payload: dict) -> dict:
                 db.execute(text(
                     "SELECT setval(pg_get_serial_sequence("
                     f"'{model.__tablename__}', '{pk.name}'), "
-                    f"COALESCE((SELECT MAX({pk.name}) "
-                    f"FROM {model.__tablename__}), 0))"))
+                    f"GREATEST(COALESCE((SELECT MAX({pk.name}) "
+                    f"FROM {model.__tablename__}), 0), 1))"))
     return counts
 
 
