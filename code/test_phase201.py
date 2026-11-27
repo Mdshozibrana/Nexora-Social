@@ -405,7 +405,7 @@ assert "http" not in seg and "unpkg" not in seg, seg[:200]
 # a CDN URL would contain "http", which the line above rules out.
 assert seg.lower().count("cdn") == 2, seg.lower().count("cdn")
 assert "(no cdn)" in seg.lower() and "no cdn." in seg.lower()
-assert "vendor/three/three.min.js?v=201" in HTML
+assert "vendor/three/three.min.js?v=202" in HTML
 assert "MUSEUM:" in MAIN and "museum gives no points" in MAIN
 for mid in ("mu-owner", "mu-room-tabs", "mu-stage", "mu-canvas",
             "mu-chips", "mu-fallback", "mu-sheet", "mu-prev", "mu-next",
@@ -416,11 +416,11 @@ assert HTML.count('class="gb-item" data-go="museum"') == 1
 assert '"blood", "skills", "museum"]' in JS
 assert ".mu-stage" in CSS and ".mu-tab" in CSS and ".mu-chip" in CSS
 assert ".mu-fb-card" in CSS and ".mu-sheet" in CSS and ".mu-owner" in CSS
-assert HTML.count("?v=201") == 10, HTML.count("?v=201")
+assert HTML.count("?v=202") == 10, HTML.count("?v=202")
 assert "?v=20" + "0" not in HTML
-assert "app.js?v=201" in HTML and "games.js?v=201" in HTML
+assert "app.js?v=202" in HTML and "games.js?v=202" in HTML
 BOT = open(os.path.join(ROOT, "code/app/bot.py")).read()
-assert 'menu_url.rstrip("/") + "/?v=201"' in BOT
+assert 'menu_url.rstrip("/") + "/?v=202"' in BOT
 assert ("/?v=20" + "0") not in BOT
 paths = set()
 for route in app.routes:

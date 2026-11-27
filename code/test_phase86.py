@@ -26,5 +26,5 @@ assert "MUSEUM_THEMES" not in JS and "museumZoom" not in JS
 assert 'data-go="blood"' in HTML and 'id="view-blood"' in HTML
 assert 'data-go="designs"' in HTML and 'id="view-designs"' in HTML
 assert "loadDesigns" in JS and "design-grid" in HTML
-assert "app.js?v=201" in HTML and "style.css?v=201" in HTML
+assert "app.js?v=202" in HTML and "style.css?v=202" in HTML
 print("PHASE 86 OK (new Museum present, old Museum gone, neighbours intact)")

@@ -255,7 +255,7 @@ assert "MUSEUM_THEMES" not in JS and "museumZoom" not in JS
 print("neighbours OK (Nearby toggle, Blood flows, new Museum present)")
 
 # 9. Version.
-assert HTML.count("?v=201") == 10, HTML.count("?v=201")
+assert HTML.count("?v=202") == 10, HTML.count("?v=202")
 assert "?v=15" + "2" not in HTML
-assert 'menu_url.rstrip("/") + "/?v=201"' in BOT
+assert 'menu_url.rstrip("/") + "/?v=202"' in BOT
 print("PHASE 153 OK")

@@ -585,13 +585,13 @@ with TestClient(app) as c:
     assert len(bk["tables"]) == 55, len(bk["tables"])
     assert "task_follow_events" in bk["tables"], list(bk["tables"])
     assert len(_BACKUP_TABLES) == 55, len(_BACKUP_TABLES)
-    assert HTML.count("?v=201") == 10, HTML.count("?v=201")
+    assert HTML.count("?v=202") == 10, HTML.count("?v=202")
     assert "?v=17" + "9" not in HTML
     for m in ("_find_adoptable_post", "ADS_PROVIDER_LIVE",
               "_stamp_auto_backup_attempt", "_last_manual_backup_at",
               "auto-backup loop failed", "scheduled-posts sweep failed",
               "_DHAKA_TZ", "TaskFollowEvent"):
         assert m in MAIN, m
-    print("backup 52 tables + markers + ?v=201 OK")
+    print("backup 52 tables + markers + ?v=202 OK")
 
 print("PHASE 180 OK")

@@ -309,22 +309,22 @@ for marker in ("renderRichText", "attachMentionAutocomplete",
                'mention: "📣"', "loadSkills", "loadBlood",
                "MASCOT_TIPS_BY_VIEW", "totp-card"):
     assert marker in js, marker
-assert "app.js?v=201" in HTML
+assert "app.js?v=202" in HTML
 assert ("?v=16" + "9") not in HTML
-assert "style.css?v=201" in HTML
-assert "games.js?v=201" in HTML
+assert "style.css?v=202" in HTML
+assert "games.js?v=202" in HTML
 assert ".mention" in CSS
 paths = {rt.path for rt in app.routes}
 assert len(paths) == 193, len(paths)
 assert "/posts" in paths
 h = c.get("/admin/health", headers=ADMIN).json()
-assert h["version"] == 201, h
+assert h["version"] == 202, h
 r = c.get("/admin/backup", headers=ADMIN)
 assert r.status_code == 200, r.text
 assert len(r.json()["tables"]) == 55, len(r.json()["tables"])
 assert "mentions" in r.json()["tables"]
 assert len(_BACKUP_TABLES) == 55, len(_BACKUP_TABLES)
-print("client + version + routes + backup OK (174 routes, 48 tables, ?v=201)")
+print("client + version + routes + backup OK (174 routes, 48 tables, ?v=202)")
 
 # 13. Phase 170 rider: stale /media token recovery.
 # (a) Foreground return refreshes the token (the 45-min tick
@@ -341,7 +341,11 @@ eh = eh[:eh.index("// ---------------------------------------------------- entry
 assert "await refreshMediaToken();" in eh, eh
 assert "!t.dataset.mtok" in eh, eh
 assert eh.index("await refreshMediaToken();") < eh.index(
-    "t.src = mediaUrl(decodeURIComponent(m[1]));"), eh
+    # Phase 202: the rebuild now preserves the thumbnail flag, so
+    # the call carries a second {thumb: ...} argument (and spans
+    # two lines) — the ordering pin (refresh first, rebuild after)
+    # is what this assertion guards.
+    "t.src = mediaUrl(decodeURIComponent(m[1]),"), eh
 assert "mediaTokenRefresh" in js
 # (c) Server-side: an expired token 401s; a fresh /auth token is
 # accepted again (the fake file_id then 404s at Telegram — the

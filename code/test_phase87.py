@@ -27,5 +27,5 @@ assert "openMuseum" in JS and "reloadMuseum" in JS
 # Design gallery (the Museum's picture source) still works.
 assert "loadDesigns" in JS and "design-grid" in HTML
 assert "openDesignSheet" in JS
-assert "app.js?v=201" in HTML and "style.css?v=201" in HTML
+assert "app.js?v=202" in HTML and "style.css?v=202" in HTML
 print("PHASE 87 OK (old Museum zoom/rooms gone, new Museum present)")

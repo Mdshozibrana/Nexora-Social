@@ -22,7 +22,11 @@ block = JS[at:at + 3400]  # widened in Phase 99, again in Phase 189: designCard 
 assert 'media.className = "design-media"' in block
 assert 'shield.className = "img-shield"' in block
 assert "media.append(img, shield, retry)" in block
-assert "el.append(media, body)" in block
+# Phase 202: the grid card is image-only by design (no prompt text,
+# no meta row) — the body was removed, so the card appends the media
+# alone. The media wrapper + shield above are the Phase 67 fix and
+# are unchanged.
+assert "el.append(media);" in block
 assert "img.draggable = false" in block
 print("card shield OK")
 

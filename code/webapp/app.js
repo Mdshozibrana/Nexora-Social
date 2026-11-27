@@ -31,9 +31,15 @@ let me = null;
 // refreshes it while open (refreshMediaToken) so long sessions
 // keep their images.
 let mediaToken = "";
-function mediaUrl(id) {
-  return "/media/" + encodeURIComponent(id || "") +
+function mediaUrl(id, opts) {
+  let u = "/media/" + encodeURIComponent(id || "") +
     (mediaToken ? "?mt=" + encodeURIComponent(mediaToken) : "");
+  // Phase 202: the gallery grid fetches a 480px thumbnail instead
+  // of the full-resolution Telegram file — ~20 full-size photos at
+  // once is why the Design page loaded slowly. The sheet and
+  // downloads keep the full-size URL.
+  if (opts && opts.thumb) u += (u.includes("?") ? "&" : "?") + "w=480";
+  return u;
 }
 let tab = "explore";
 let feedCursor = null;
@@ -8539,7 +8545,8 @@ async function retryDesignImg(img) {
   delete img.dataset.mtok; delete img.dataset.mr;
   await refreshMediaToken();
   const m = (img.getAttribute("src") || "").match(/\/media\/([^?]+)/);
-  if (m) img.src = mediaUrl(decodeURIComponent(m[1]));
+  if (m) img.src = mediaUrl(decodeURIComponent(m[1]),
+      {thumb: (img.getAttribute("src") || "").includes("&w=480")});
 }
 document.addEventListener("error", async (e) => {
   const t = e.target;
@@ -8556,7 +8563,8 @@ document.addEventListener("error", async (e) => {
     t.dataset.mtok = "1";
     await refreshMediaToken();
     if (mediaToken && !src.includes(encodeURIComponent(mediaToken))) {
-      t.src = mediaUrl(decodeURIComponent(m[1]));
+      t.src = mediaUrl(decodeURIComponent(m[1]),
+                       {thumb: src.includes("&w=480")});
       return;
     }
   }
@@ -9182,7 +9190,7 @@ function designCard(d) {
   const el = document.createElement("div");
   el.className = "design-card";
   const img = document.createElement("img");
-  img.src = mediaUrl(d.image_file_id);
+  img.src = mediaUrl(d.image_file_id, {thumb: true});
   // Phase 189: eager, not lazy — the design IS the card's
   // content, and lazy images inside the gallery's 2-column
   // masonry never fired at all on the owner's phone (Nov 24 +
@@ -9212,13 +9220,16 @@ function designCard(d) {
   retry.addEventListener("pointerdown", e => e.stopPropagation());
   retry.addEventListener("pointerup", e => e.stopPropagation());
   media.append(img, shield, retry);
-  const body = document.createElement("div");
-  body.className = "design-card-body";
-  const p = document.createElement("p");
-  p.className = "design-prompt";
-  p.textContent = d.prompt || "";
+  // Phase 202 (owner: card text + icons take too much space, the
+  // designs look bad): the grid card is image-only now — no prompt
+  // text, no meta row below the image. The full prompt lives in the
+  // detail sheet (tap the design). Like + views ride as small glass
+  // chips over the image's bottom corners; the like keeps its 44px
+  // touch target (Phase 99) and its data-did so paintDesignLike
+  // still finds it, and the views chip keeps data-dviews.
   const like = document.createElement("button");
-  like.className = "design-like" + (d.liked ? " liked" : "");
+  like.className = "design-like design-ov-like" +
+    (d.liked ? " liked" : "");
   like.dataset.did = d.id;
   like.textContent = (d.liked ? "❤️ " : "🤍 ") + d.like_count;
   like.onclick = e => { e.stopPropagation(); if (lpFired) return;
@@ -9229,17 +9240,12 @@ function designCard(d) {
   // liking) and never fall through to the card.
   like.addEventListener("pointerdown", e => e.stopPropagation());
   like.addEventListener("pointerup", e => e.stopPropagation());
-  // Phase 31: like + unique views share one compact stats row,
-  // Pinterest-style, under the prompt snippet.
-  const stats = document.createElement("div");
-  stats.className = "design-stats";
   const views = document.createElement("span");
-  views.className = "design-views";
+  views.className = "design-views design-ov-views";
   views.dataset.dviews = d.id;
   views.textContent = "👁 " + (d.views || 0);
-  stats.append(like, views);
-  body.append(p, stats);
-  el.append(media, body);
+  media.append(like, views);
+  el.append(media);
   // Phase 66 (owner): HOLD a design and the icon popup appears
   // (Pinterest-style). A fired long-press swallows the tap that
   // would otherwise open the sheet.
@@ -9516,7 +9522,7 @@ async function loadRelatedDesigns(d) {
       const media = document.createElement("div");
       media.className = "design-media";
       const img = document.createElement("img");
-      img.src = mediaUrl(rel.image_file_id);
+      img.src = mediaUrl(rel.image_file_id, {thumb: true});
       // Phase 189: eager, like the gallery card — same
       // never-load failure mode in the masonry strip.
       img.loading = "eager";

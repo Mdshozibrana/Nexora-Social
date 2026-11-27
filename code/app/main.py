@@ -9877,6 +9877,65 @@ async def media_proxy(file_id: str, request: Request):
         await stream_client.aclose()
         raise HTTPException(404, "File not found")
 
+    # Phase 202 (owner: Design page loads slowly — the grid fetched
+    # ~20 full-resolution Telegram files at once through this proxy):
+    # ?w=<240..1024> asks for a downscaled JPEG thumbnail instead of
+    # the original. The gallery grid uses it; the detail sheet and
+    # downloads keep the full-size stream. Range requests (video
+    # seeking) ignore w. A thumb is built only when the upstream
+    # file is small enough to buffer (<= 20 MB) and decodes as an
+    # image; anything else answers the original bytes. The browser
+    # cache (private, 1h, immutable, as before) makes repeat visits
+    # free either way.
+    thumb_w = None
+    if not request.headers.get("range"):
+        try:
+            thumb_w = int(request.query_params.get("w", "") or 0)
+        except (TypeError, ValueError):
+            thumb_w = None
+        if thumb_w is not None and not 240 <= thumb_w <= 1024:
+            thumb_w = None
+    if thumb_w is not None:
+        try:
+            _clen = resp.headers.get("content-length")
+            _too_large = _clen is not None and int(_clen) > 20_000_000
+        except (TypeError, ValueError):
+            _too_large = False
+        if not _too_large:
+            _orig_ct = resp.headers.get("content-type")
+            _data = b""
+            _thumb = None
+            try:
+                _data = await resp.aread()
+                if len(_data) <= 20_000_000:
+                    from io import BytesIO as _BytesIO
+                    from PIL import Image as _Image
+                    _im = _Image.open(_BytesIO(_data))
+                    _im.load()
+                    if _im.width > thumb_w:
+                        _im.thumbnail((thumb_w, 1 << 30), _Image.LANCZOS)
+                    _out = _BytesIO()
+                    _im.convert("RGB").save(_out, "JPEG", quality=78)
+                    _thumb = _out.getvalue()
+            except Exception:
+                _thumb = None
+            finally:
+                await resp.aclose()
+                await stream_client.aclose()
+            if _thumb is not None:
+                return Response(content=_thumb, media_type="image/jpeg",
+                                headers={"cache-control":
+                                         "private, max-age=3600, "
+                                         "immutable"})
+            if _data:
+                return Response(
+                    content=_data,
+                    media_type=_orig_ct or "application/octet-stream",
+                    headers={"cache-control":
+                             "private, max-age=3600, immutable"})
+            raise HTTPException(
+                502, "Media upstream unavailable — please try again")
+
     async def body():
         try:
             async for chunk in resp.aiter_bytes():

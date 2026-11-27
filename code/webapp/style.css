@@ -2088,6 +2088,33 @@ button.liked { animation: heartPop .32s cubic-bezier(.22,.9,.3,1); }
 .design-media.design-img-failed .design-retry { display: flex; }
 .design-media.design-img-failed img { visibility: hidden; }
 
+/* Phase 202 (owner: Design page slow + card text/icons too big +
+   a purple band over the first card's meta): grid cards are
+   image-only — like + views ride as glass chips over the image —
+   and the card no longer wears the theme's clay shadow. The theme
+   derives --clay-shadow-sm from the member's card palette, and on
+   a purple palette that shadow paints a translucent purple ring
+   around the card's meta in the masonry (measured on the owner's
+   screenshot: a ~25px purple ring, meta area only, first card).
+   A fixed neutral shadow + no entrance animation + isolated paint
+   leave that artifact nowhere to come from. */
+.design-card { box-shadow: 0 6px 18px rgba(60, 50, 40, .16);
+  animation: none; isolation: isolate; position: relative; }
+.design-card-body { background: #FFFBFC; }
+.design-card .design-like { box-shadow: none; }
+.design-ov-like { position: absolute; left: 8px; bottom: 8px; z-index: 3;
+  background: rgba(255, 251, 252, .88);
+  border: 1px solid rgba(255, 255, 255, .7); }
+.design-ov-views { position: absolute; right: 8px; bottom: 8px; z-index: 3;
+  background: rgba(255, 251, 252, .88);
+  border: 1px solid rgba(255, 255, 255, .7);
+  border-radius: 999px; padding: 6px 10px; font-size: 12px;
+  pointer-events: none; }
+.design-media.design-img-failed .design-ov-like,
+.design-media.design-img-failed .design-ov-views { display: none; }
+
+
+
 /* ---------- Phase 69: Nexa, the AI assistant ---------- */
 .gb-nexa-img { width: 40px; height: 40px; border-radius: 50%;
   object-fit: cover; flex: none; border: 2px solid #fff;
