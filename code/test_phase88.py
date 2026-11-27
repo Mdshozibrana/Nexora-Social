@@ -16,7 +16,7 @@ GAMES = open("webapp/games.js").read()
 CSS = open("webapp/style.css").read()
 MAIN = open("app/main.py").read()
 
-assert 'id: "archery"' in GAMES and "🏹 Archery" in GAMES
+assert 'id: "archery"' in GAMES and "Archery — Aim Less, Shoot More" in GAMES
 assert GAMES.count("registerGame({") == 13
 # the scene from the screenshot, rebuilt as our own game
 for bit in ("S U C C E S S", "levelCfg", "planeHit", "BULLSEYE",
@@ -31,5 +31,5 @@ for bit in (".arch-invite", ".arch-invite-row", ".arch-row"):
     assert bit in CSS, bit
 # Nexa knows the eleventh game
 assert "13 games" in MAIN and "Archery" in MAIN
-assert "app.js?v=197" in HTML and "games.js?v=197" in HTML
+assert "app.js?v=198" in HTML and "games.js?v=198" in HTML
 print("PHASE 88 OK")

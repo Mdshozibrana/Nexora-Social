@@ -70,7 +70,7 @@ def _extract_game_src():
     assert 0 <= start < end, (start, end)
     src = js[start:end]
     assert 'id: "forest-drive"' in src, "forest-drive id missing"
-    assert '"🌲 Forest Drive"' in src, "title missing"
+    assert '"Forest Drive"' in src, "title missing"
     assert "requestAnimationFrame" in src, "rAF loop missing"
     assert "visibilitychange" in src, "hidden-tab pause missing"
     assert "renderer.dispose" in src, "renderer dispose missing"
@@ -236,9 +236,10 @@ HARNESS_MAIN = r'''
   const def = GameRegistry[0];
   assert(def, "forest-drive registered");
   assert(def.id === "forest-drive", "id forest-drive, got " + def.id);
-  assert(def.icon === "🌲", "jeep icon");
+  assert(def.icon.includes("<svg") && def.icon.includes("E5484D")
+      && def.icon.includes("6B7280"), "jeep-on-road icon");
   assert(def.name === "Forest Drive", "name");
-  assert(def.title === "🌲 Forest Drive", "title");
+  assert(def.title === "Forest Drive", "title");
   assert(def.desc.includes("jeep") && def.desc.includes("90 km/h"), "desc names the jeep + top speed");
   assert(def.help.includes("WASD") && def.help.includes("GAS"), "help names keyboard + touch");
   const stage = makeEl("div");
@@ -388,10 +389,10 @@ with TestClient(app) as c:
 
     # 4. Served assets: version + markers + neighbours.
     html = c.get("/webapp/").text
-    assert html.count("?v=197") == 10, html.count("?v=197")
+    assert html.count("?v=198") == 10, html.count("?v=198")
     assert "?v=19" + "4" not in html
-    assert "app.js?v=197" in html and "style.css?v=197" in html
-    assert "games.js?v=197" in html and "three.min.js?v=197" in html
+    assert "app.js?v=198" in html and "style.css?v=198" in html
+    assert "games.js?v=198" in html and "three.min.js?v=198" in html
     served_games = c.get("/webapp/games.js").text
     for marker in ("forest-drive", "Forest Drive", "fd-map", "fd-speed",
                    "drawMinimap", "roadDist", "nx_forestdrive_best",
@@ -410,12 +411,12 @@ with TestClient(app) as c:
     paths = {rt.path for rt in app.routes}
     assert len(paths) == 184, len(paths)
     h = c.get("/admin/health", headers=ADMIN).json()
-    assert h["version"] == 197, h
+    assert h["version"] == 198, h
     r = c.get("/admin/backup", headers=ADMIN)
     assert r.status_code == 200, r.text
     assert len(r.json()["tables"]) == 52, len(r.json()["tables"])
     bot_src = open(os.path.join(ROOT, "app/bot.py")).read()
-    assert 'menu_url.rstrip("/") + "/?v=197"' in bot_src
-    print("neighbours + version + routes OK (184 routes, 52 tables, ?v=197)")
+    assert 'menu_url.rstrip("/") + "/?v=198"' in bot_src
+    print("neighbours + version + routes OK (184 routes, 52 tables, ?v=198)")
 
 print("PHASE 195 OK")

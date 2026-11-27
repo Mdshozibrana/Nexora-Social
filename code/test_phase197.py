@@ -78,7 +78,7 @@ def _extract_fd_src():
     assert 0 <= start < end, (start, end)
     src = js[start:end]
     assert 'id: "forest-drive"' in src, "forest-drive id missing"
-    assert '"🌲 Forest Drive"' in src, "Forest Drive title missing"
+    assert '"Forest Drive"' in src, "Forest Drive title missing"
     assert "fd-map" in src and "fd-speed" in src and "fd-touch" in src, \
         "FD HUD elements missing"
     return src
@@ -627,10 +627,10 @@ with TestClient(app) as c:
 
     # 6. Served assets: version + markers + neighbours.
     html = c.get("/webapp/").text
-    assert html.count("?v=197") == 10, html.count("?v=197")
+    assert html.count("?v=198") == 10, html.count("?v=198")
     assert "?v=19" + "6" not in html
-    assert "app.js?v=197" in html and "style.css?v=197" in html
-    assert "games.js?v=197" in html and "three.min.js?v=197" in html
+    assert "app.js?v=198" in html and "style.css?v=198" in html
+    assert "games.js?v=198" in html and "three.min.js?v=198" in html
     served_games = c.get("/webapp/games.js").text
     for marker in ("forest-drive", "runner-rush", "_imm197",
                    "wrap.clientHeight", "fd-map", "fd-speed", "fd-touch",
@@ -650,12 +650,12 @@ with TestClient(app) as c:
     paths = {rt.path for rt in app.routes}
     assert len(paths) == 184, len(paths)
     h = c.get("/admin/health", headers=ADMIN).json()
-    assert h["version"] == 197, h
+    assert h["version"] == 198, h
     r = c.get("/admin/backup", headers=ADMIN)
     assert r.status_code == 200, r.text
     assert len(r.json()["tables"]) == 52, len(r.json()["tables"])
     bot_src = open(os.path.join(ROOT, "app/bot.py")).read()
-    assert 'menu_url.rstrip("/") + "/?v=197"' in bot_src
-    print("neighbours + version + routes OK (184 routes, 52 tables, ?v=197)")
+    assert 'menu_url.rstrip("/") + "/?v=198"' in bot_src
+    print("neighbours + version + routes OK (184 routes, 52 tables, ?v=198)")
 
 print("PHASE 197 OK")

@@ -2386,3 +2386,61 @@ Routes stay 183. Backup tables stay 51. Shell ?v=179.
 - Version sweep: shell + bot menu URL + all suites moved to ?v=197 (493 ?v=196 URL refs + 30 numeric health-version == 196 pins; the #381932 hex colours in test_phase93/app.js are not version pins and were left alone; the split negative literals "?v=19" + "6" in test_phase197 and older splits stay untouched — they assert older versions are gone).
 - Schema: none (no new tables/columns). Routes stay 184. Backup tables stay 52. No new dependency.
 - Out of scope, untouched here: Phase 186 production RLS enablement (still blocked); Render billing; the bot token; either Render dashboard; the OLD service (suspended since Nov 27 ~10:53, serves 503 — live verification on the NEW service only). Queued after 197 by the owner during this phase (separate work, not built here): Phase 198 — clear recognizable icon per game (owner Nov 27, 15:37 Dhaka: "প্রতিটা গেমের আইকন দিয়ে রাখছো কেমন যেনো। আইকন দ্বারা বুঝা যাবে এটা কি গেম।"); Phase 199 — Portfolio feature, sample #1 Organic Clay picked Nov 27, 16:21 Dhaka (samples in ~/workspace/nexora_designs/portfolio_samples/).
+
+## Phase 198 — গেমের আইকন: এক নজরে বোঝা যায় (LIVE, ?v=198)
+
+মালিকের নির্দেশ (২৭ নভেম্বর, ১৫:৩৭): "প্রতিটা গেমের আইকন দিয়ে রাখছো কেমন যেনো। আইকন দ্বারা বুঝা যাবে এটা কি গেম।"
+গেমের নাম, মেকানিক্স, স্কোরিং, তালিকার ক্রম — কিছুই বদলায়নি। শুধু আইকন বদলেছে।
+
+### নিয়ম — গ্ল্যান্স টেস্ট
+আইকন একা, লেবেল ছাড়া, দেখেই বলতে হবে এটা কোন গেম। কোনো ইমোজি সেই পরীক্ষায় না
+পাস করলে তার বদলে কোডে আঁকা ছোট SVG মিনি-সিন টাইল বসেছে (viewBox 0 0 64 64,
+গোলাকার টাইল + মোটা দৃশ্য)। ১৩টি গেমের সবকটিতেই এখন SVG টাইল — একরকম দেখায়,
+আর কোনোটাতেই ইমোজি নেই।
+
+### পুরোনো → নতুন (সব ১৩টি)
+| গেম | পুরোনো | নতুন SVG টাইল | কেন এটা পরিষ্কার |
+|---|---|---|---|
+| Snake | 🐍 | সবুজ S-সাপ + লাল আপেল | সাপ + আপেল = সাপের খেলা, এক নজরে |
+| Tetris | 🧱 | রঙিন টেট্রোমিনো স্তূপ | ইটের ইমোজি "দেয়াল" মনে হতো; স্তূপ দেখলেই টেট্রিস |
+| Breakout | 🏓 | ইট + বল + প্যাডল | 🏓 টেবিল টেনিস মনে হতো; এখন আসল ব্রেকআউট দৃশ্য |
+| Memory | 🃏 | উল্টানো কার্ড + তারা-কার্ড | 🃏 জোকার/তাস মনে হতো; এখন জোড়া-মেলানো দৃশ্য |
+| Pong | 🎾 | দুই প্যাডল + বল + মাঝের ড্যাশ লাইন | 🎾 টেনিস মনে হতো; এখন আসল পং টেবিল |
+| Space Invaders | 👾 | পিক্সেল এলিয়েন | এলিয়েন ঠিকই ছিল, এখন আসল পিক্সেল ইনভেডার |
+| Minesweeper | 💣 | ৩×৩ গ্রিড + বোমা + পতাকা | বোমা ঠিকই ছিল, গ্রিড দেখে মাইনসুইপার বোঝা যায় |
+| Flappy | 🐦 | পাখি + পাইপ | পাখি ঠিকই ছিল, পাইপ দেখে ফ্ল্যাপি বার্ড বোঝা যায় |
+| 2048 | 🔢 | ২/৪/৮/১৬ নম্বরের টাইল | 🔢 শুধু "সংখ্যা" মনে হতো; এখন আসল টাইল গ্রিড |
+| Pac-Man | 🟡 | খোলা মুখের হলুদ প্যাক + ডট (গাঢ় নীল টাইল) | 🟡 শুধু হলুদ বিন্দু ছিল; এখন ডট-খাওয়া প্যাক |
+| Archery | 🏹 | টার্গেট + তীর | ধনুক ঠিকই ছিল, টার্গেট + তীর দেখে তীরন্দাজি বোঝা যায় |
+| Forest Drive | 🌲 | লাল জিপ + রাস্তা + গাছ + সূর্য | 🌲 শুধু গাছ ছিল; এখন জিপ চালানোই গেমটা বলে |
+| Runner Rush | 🏁 | বাইক + গাজর | 🏁 শুধু পতাকা ছিল; এখন বাইক + গাজর = মার্জড রানার |
+
+### কোথায় বদলেছে
+- গেমের তালিকা (`.g-icon`): `textContent` থেকে `innerHTML` — এখন SVG রেন্ডার হয়।
+- গেম-হেড টাইটেল: `openGame()` এখন `.gt-icon` স্প্যানে SVG + পাশে সাদা নাম দেখায়।
+  টাইটেল ফিল্ড থেকে ইমোজি সরানো হয়েছে (যেমন "🌲 Forest Drive" → "Forest Drive",
+  "🏁 Runner Rush" → "Runner Rush", Archery-র টাইটেল এখন "Archery — Aim Less,
+  Shoot More")।
+- CSS: `.game-card.g-icon svg` ৪৪×৪৪, `.game-head #game-title.gt-icon svg` ২২×২২।
+- ম্যাসকট টিপস ও Nexa-র জ্ঞানে গেমের নাম মাত্র আছে, আইকনের উল্লেখ নেই — বদলানোর
+  কিছু ছিল না। index.html-এ গেমের ইমোজি নেই।
+
+### যা বদলায়নি (ইচ্ছাকৃত)
+- গেমের ভেতরের ইমোজি গেমপ্লের অংশ, আইকন নয় — তাই আছে: ইনভেডার স্প্রাইট 👾,
+  মাইনের ঘর 💣, স্কোরের প্রিফিক্স (Archery-তে 🏹 Level, Runner Rush-এ 🏁 Lv),
+  "🏹 Invite friend" বোতাম।
+- কোনো ব্যাকএন্ড / স্কিমা পরিবর্তন নেই।
+
+### পরীক্ষা
+- নতুন test_phase198.py: ১৩টি গেমের আইকন SVG + দৃশ্যের চিহ্ন + XML বৈধতা;
+  icon/title সারফেসে পুরোনো ইমোজি নেই; গ্রিডে ১৩টি কার্ড SVG আইকনসহ রেন্ডার হয়;
+  হেডে আইকন + টাইটেল রেন্ডার হয় (snake / forest-drive / runner-rush / pacman);
+  ?v=198 ×১০, পুরোনো ?v=197 নেই; CSS নিয়ম আছে।
+- SVG জ্যামিতি যাচাই: ১৩টির সব আকৃতি ৬৪×৬৪ টাইলের ভেতরে, টাইল ব্যাকগ্রাউন্ড আছে।
+  ভিজ্যুয়াল কন্ট্যাক্ট শিট: ~/workspace/nexora_designs/phase198_icons.html
+  (স্যান্ডবক্সে কোনো SVG রেন্ডারার নেই — আসল ফোনে চেহারাটা মালিকের চূড়ান্ত যাচাই)।
+- ফুল রিগ্রেশন: **193/193 সবুজ** (test_phase198 সহ)। প্রথম পাস test_phase118-এ
+  চলার সময় স্যান্ডবক্স রানটি মারা যায় (পুনরায় চালানো হয়, .ok থেকে রিজিউম);
+  পুনরায় চালানোর সময় run.sh সোর্স পরিবর্তন দেখে .ok সাফ করে নতুন করে শুরু করে।
+  test_phase88-এর পুরোনো "🏹 Archery" টাইটেল-পিন টেস্ট-মাত্রায় ঠিক করা হয়েছে
+  ("Archery — Aim Less, Shoot More") — প্রোডাকশন কোডে হাত দেওয়া হয়নি।

@@ -48,7 +48,14 @@ function openGame(id) {
   if (!def) return;
   stopGame();
   showView("game");
-  $("game-title").textContent = def.title;
+  const _gt = $("game-title");
+  _gt.innerHTML = "";
+  const _gi = document.createElement("span");
+  _gi.className = "gt-icon";
+  _gi.innerHTML = def.icon;
+  const _tx = document.createElement("span");
+  _tx.textContent = " " + def.title;
+  _gt.append(_gi, _tx);
   $("game-score").textContent = "";
   $("game-help").textContent = def.help || "";
   gameCleanup = def.start($("game-stage"), s => {
@@ -102,7 +109,7 @@ function swipe(el, onDir) {
 
 // ------------------------------------------------------------------ Snake --
 registerGame({
-  id: "snake", icon: "🐍", name: "Snake", title: "🐍 Snake",
+  id: "snake", icon: '<svg viewBox="0 0 64 64"><rect x="2" y="2" width="60" height="60" rx="14" fill="#DFF3D8"/><circle cx="49" cy="15" r="5" fill="#E5484D"/><path d="M13 46 Q25 30 38 39 T54 25" stroke="#2FA84F" stroke-width="7" fill="none" stroke-linecap="round"/><circle cx="54" cy="25" r="6" fill="#2FA84F"/><circle cx="56.5" cy="22.5" r="1.8" fill="#fff"/><path d="M59 29 l2.5 4 M59 29 l-1 4.5" stroke="#E5484D" stroke-width="2" stroke-linecap="round"/></svg>', name: "Snake", title: "Snake",
   desc: "The Nokia classic — eat, grow, don't bite yourself.",
   help: "Swipe on the board or use the arrow keys.",
   start(stage, setScore) {
@@ -189,7 +196,7 @@ registerGame({
 
 // ----------------------------------------------------------------- Tetris --
 registerGame({
-  id: "tetris", icon: "🧱", name: "Tetris", title: "🧱 Tetris",
+  id: "tetris", icon: '<svg viewBox="0 0 64 64"><rect x="2" y="2" width="60" height="60" rx="14" fill="#E9E4FB"/><rect x="12" y="12" width="10" height="10" fill="#7C5CFF"/><rect x="22" y="12" width="10" height="10" fill="#7C5CFF"/><rect x="32" y="12" width="10" height="10" fill="#7C5CFF"/><rect x="22" y="22" width="10" height="10" fill="#7C5CFF"/><rect x="12" y="32" width="10" height="10" fill="#FFC53D"/><rect x="22" y="32" width="10" height="10" fill="#FFC53D"/><rect x="12" y="42" width="10" height="10" fill="#FFC53D"/><rect x="22" y="42" width="10" height="10" fill="#FFC53D"/><rect x="38" y="32" width="10" height="10" fill="#22B8CF"/><rect x="48" y="32" width="10" height="10" fill="#22B8CF"/><rect x="38" y="42" width="10" height="10" fill="#FF6B35"/><rect x="48" y="42" width="10" height="10" fill="#FF6B35"/></svg>', name: "Tetris", title: "Tetris",
   desc: "The brick-game legend. Stack, clear lines, survive.",
   help: "Buttons or arrow keys: move, ▲ rotate, ▼ drop faster.",
   start(stage, setScore) {
@@ -302,7 +309,7 @@ registerGame({
 
 // --------------------------------------------------------------- Breakout --
 registerGame({
-  id: "breakout", icon: "🏓", name: "Breakout", title: "🏓 Breakout",
+  id: "breakout", icon: '<svg viewBox="0 0 64 64"><rect x="2" y="2" width="60" height="60" rx="14" fill="#FFF3D6"/><rect x="10" y="10" width="14" height="8" rx="2" fill="#E5484D"/><rect x="25" y="10" width="14" height="8" rx="2" fill="#FFC53D"/><rect x="40" y="10" width="14" height="8" rx="2" fill="#2FA84F"/><rect x="10" y="20" width="14" height="8" rx="2" fill="#3E8FD0"/><rect x="25" y="20" width="14" height="8" rx="2" fill="#7C5CFF"/><rect x="40" y="20" width="14" height="8" rx="2" fill="#E5484D"/><circle cx="32" cy="40" r="5" fill="#1F2937"/><rect x="18" y="50" width="28" height="6" rx="3" fill="#1F2937"/></svg>', name: "Breakout", title: "Breakout",
   desc: "Brick-breaker: bounce the ball, smash every brick.",
   help: "Move your finger/mouse on the board, or use ◀ ▶.",
   start(stage, setScore) {
@@ -418,7 +425,7 @@ registerGame({
 
 // ----------------------------------------------------------------- Memory --
 registerGame({
-  id: "memory", icon: "🃏", name: "Memory", title: "🃏 Memory Match",
+  id: "memory", icon: '<svg viewBox="0 0 64 64"><rect x="2" y="2" width="60" height="60" rx="14" fill="#FDE8EF"/><rect x="9" y="14" width="20" height="28" rx="4" fill="#3E8FD0"/><circle cx="19" cy="28" r="6" fill="#8ED4F7"/><circle cx="19" cy="28" r="2.5" fill="#3E8FD0"/><rect x="35" y="14" width="20" height="28" rx="4" fill="#fff" stroke="#E5C07B" stroke-width="2"/><path d="M45 20 l2.4 4.9 5.4.8 -3.9 3.8 .9 5.4 -4.8-2.5 -4.8 2.5 .9-5.4 -3.9-3.8 5.4-.8z" fill="#FFC53D"/></svg>', name: "Memory", title: "Memory Match",
   desc: "The card-flip memory game from the button-phone days.",
   help: "Tap two cards. Match all 8 pairs in as few moves as you can.",
   start(stage, setScore) {
@@ -476,7 +483,7 @@ registerGame({
 // ------------------------------------------------------------------ Pong --
 // Phase 47 (owner: more old-time games): the 1972 arcade original.
 registerGame({
-  id: "pong", icon: "🎾", name: "Pong", title: "🎾 Pong",
+  id: "pong", icon: '<svg viewBox="0 0 64 64"><rect x="2" y="2" width="60" height="60" rx="14" fill="#DFF1FB"/><line x1="32" y1="8" x2="32" y2="56" stroke="#9DB8C6" stroke-width="2" stroke-dasharray="4 4"/><rect x="10" y="22" width="5" height="20" rx="2.5" fill="#1F2937"/><rect x="49" y="22" width="5" height="20" rx="2.5" fill="#1F2937"/><circle cx="32" cy="32" r="5" fill="#E5484D"/></svg>', name: "Pong", title: "Pong",
   desc: "The 1972 arcade original — you vs the machine, first to 7.",
   help: "Drag on the board, use ▲ ▼, or the arrow keys to move your paddle.",
   start(stage, setScore) {
@@ -591,7 +598,7 @@ registerGame({
 // ---------------------------------------------------------- Space Invaders --
 // Phase 47: the 1978 arcade legend — emoji invaders, auto-fire.
 registerGame({
-  id: "invaders", icon: "👾", name: "Invaders", title: "👾 Space Invaders",
+  id: "invaders", icon: '<svg viewBox="0 0 64 64"><rect x="2" y="2" width="60" height="60" rx="14" fill="#E4F7E8"/><g fill="#2FA84F"><rect x="22" y="12" width="20" height="6"/><rect x="16" y="18" width="32" height="6"/><rect x="12" y="24" width="40" height="6"/><rect x="18" y="30" width="10" height="6"/><rect x="36" y="30" width="10" height="6"/><rect x="14" y="36" width="8" height="6"/><rect x="42" y="36" width="8" height="6"/><rect x="20" y="42" width="6" height="6"/><rect x="38" y="42" width="6" height="6"/></g><circle cx="23" cy="27" r="2" fill="#fff"/><circle cx="41" cy="27" r="2" fill="#fff"/></svg>', name: "Invaders", title: "Space Invaders",
   desc: "The 1978 arcade legend. Blast the invaders before they land.",
   help: "Drag left/right to steer — your cannon fires on its own. 3 lives.",
   start(stage, setScore) {
@@ -732,7 +739,7 @@ registerGame({
 // ------------------------------------------------------------ Minesweeper --
 // Phase 47: the classic desktop mine-hunt.
 registerGame({
-  id: "mines", icon: "💣", name: "Minesweeper", title: "💣 Minesweeper",
+  id: "mines", icon: '<svg viewBox="0 0 64 64"><rect x="2" y="2" width="60" height="60" rx="14" fill="#EDEFF3"/><g fill="#fff" stroke="#B9C2CC" stroke-width="1.5"><rect x="12" y="12" width="13" height="13"/><rect x="25" y="12" width="13" height="13"/><rect x="38" y="12" width="13" height="13"/><rect x="12" y="25" width="13" height="13"/><rect x="25" y="25" width="13" height="13"/><rect x="38" y="25" width="13" height="13"/><rect x="12" y="38" width="13" height="13"/><rect x="25" y="38" width="13" height="13"/><rect x="38" y="38" width="13" height="13"/></g><circle cx="31.5" cy="31.5" r="7" fill="#1F2937"/><rect x="29" y="20" width="5" height="6" fill="#1F2937"/><path d="M31.5 20 L35 15 M31.5 20 L39 17 M31.5 20 L25 14" stroke="#1F2937" stroke-width="2" stroke-linecap="round"/><circle cx="29" cy="29" r="2" fill="#fff"/></svg>', name: "Minesweeper", title: "Minesweeper",
   desc: "The classic desktop mine-hunt. Clear the field, dodge the bombs.",
   help: "Tap to dig. Turn flag mode on to mark a mine with 🚩. First tap is always safe.",
   start(stage, setScore) {
@@ -849,7 +856,7 @@ registerGame({
 // --------------------------------------------------------------- Flappy --
 // Phase 52 (owner: more games): the 2013 one-tap legend.
 registerGame({
-  id: "flappy", icon: "🐦", name: "Flappy", title: "🐦 Flappy Bird",
+  id: "flappy", icon: '<svg viewBox="0 0 64 64"><rect x="2" y="2" width="60" height="60" rx="14" fill="#CFEFFF"/><rect x="42" y="4" width="14" height="20" fill="#2FA84F"/><rect x="40" y="20" width="18" height="6" fill="#2FA84F"/><rect x="42" y="40" width="14" height="20" fill="#2FA84F"/><rect x="40" y="38" width="18" height="6" fill="#2FA84F"/><circle cx="24" cy="32" r="11" fill="#FFC53D"/><circle cx="28" cy="28" r="3" fill="#fff"/><circle cx="29" cy="28" r="1.5" fill="#1F2937"/><path d="M34 32 l6 2 -6 3z" fill="#E8833A"/><path d="M16 34 q6 6 12 2" stroke="#E8A33D" stroke-width="3" fill="none" stroke-linecap="round"/></svg>', name: "Flappy", title: "Flappy Bird",
   desc: "The one-tap legend. Flap through the pipes, don't clip one.",
   help: "Tap the sky (or press Space) to flap. One touch is all it takes — and all it forgives.",
   start(stage, setScore) {
@@ -984,7 +991,7 @@ registerGame({
 // ----------------------------------------------------------------- 2048 --
 // Phase 52: the sliding-tile puzzle everyone lost hours to.
 registerGame({
-  id: "g2048", icon: "🔢", name: "2048", title: "🔢 2048",
+  id: "g2048", icon: '<svg viewBox="0 0 64 64"><rect x="2" y="2" width="60" height="60" rx="14" fill="#F7EEDD"/><g font-family="Arial, sans-serif" font-weight="800" text-anchor="middle"><rect x="10" y="10" width="20" height="20" rx="4" fill="#EEE4DA"/><text x="20" y="25" font-size="13" fill="#776E65">2</text><rect x="34" y="10" width="20" height="20" rx="4" fill="#EDE0C8"/><text x="44" y="25" font-size="13" fill="#776E65">4</text><rect x="10" y="34" width="20" height="20" rx="4" fill="#F2B179"/><text x="20" y="49" font-size="13" fill="#fff">8</text><rect x="34" y="34" width="20" height="20" rx="4" fill="#F59563"/><text x="44" y="49" font-size="13" fill="#fff">16</text></g></svg>', name: "2048", title: "2048",
   desc: "Slide the tiles, merge the numbers, chase the 2048 tile.",
   help: "Swipe on the board, use the arrow pad, or the arrow keys.",
   start(stage, setScore) {
@@ -1086,7 +1093,7 @@ registerGame({
 // -------------------------------------------------------------- Pac-Man --
 // Phase 52: the 1980 maze legend — dots, two ghosts, three lives.
 registerGame({
-  id: "pacman", icon: "🟡", name: "Pac-Man", title: "🟡 Pac-Man",
+  id: "pacman", icon: '<svg viewBox="0 0 64 64"><rect x="2" y="2" width="60" height="60" rx="14" fill="#232946"/><path d="M32 32 L50 19 A22 22 0 1 0 50 45 Z" fill="#FFD93D"/><circle cx="36" cy="20" r="2.5" fill="#232946"/><circle cx="56" cy="14" r="2" fill="#FFD93D"/><circle cx="56" cy="32" r="2" fill="#FFD93D"/><circle cx="56" cy="50" r="2" fill="#FFD93D"/></svg>', name: "Pac-Man", title: "Pac-Man",
   desc: "The 1980 maze legend. Eat every dot — the ghosts are hungry too.",
   help: "Swipe, use the arrow pad, or the arrow keys to steer.",
   start(stage, setScore) {
@@ -1280,8 +1287,8 @@ registerGame({
 // sky, opens with a big LEVEL card naming what is new, and the
 // difficulty (bars, target, wind) is table-driven per level.
 registerGame({
-  id: "archery", icon: "🏹", name: "Archery",
-  title: "🏹 Archery — Aim Less, Shoot More",
+  id: "archery", icon: '<svg viewBox="0 0 64 64"><rect x="2" y="2" width="60" height="60" rx="14" fill="#FDE8E8"/><circle cx="29" cy="34" r="20" fill="#fff" stroke="#E5E7EB" stroke-width="2"/><circle cx="29" cy="34" r="15" fill="#E5484D"/><circle cx="29" cy="34" r="10" fill="#fff"/><circle cx="29" cy="34" r="5" fill="#E5484D"/><line x1="29" y1="34" x2="54" y2="12" stroke="#8B5E34" stroke-width="3" stroke-linecap="round"/><path d="M54 12 l-8 1 M54 12 l-1 8" stroke="#8B5E34" stroke-width="2.5" fill="none" stroke-linecap="round"/></svg>', name: "Archery",
+  title: "Archery — Aim Less, Shoot More",
   desc: "Level by level, sky by sky: thread the moving bars, hit SUCCESS, climb.",
   help: "Drag to aim — the dotted line previews your shot. Release to loose. Solo is a level climb: score the quota in 10 arrows to advance. Bars speed up, multiply, the target shrinks, starts moving, and wind joins in. 2 Players: 6 arrows each on one phone. Invite: a challenge message to a friend.",
   start(stage, setScore) {
@@ -1832,8 +1839,8 @@ registerGame({
 // matched from its frames; its React animation-library code is NOT
 // reused.
 registerGame({
-  id: "forest-drive", icon: "🌲", name: "Forest Drive",
-  title: "🌲 Forest Drive",
+  id: "forest-drive", icon: '<svg viewBox="0 0 64 64"><rect x="2" y="2" width="60" height="60" rx="14" fill="#BFE3F2"/><circle cx="50" cy="13" r="6" fill="#FFD93D"/><path d="M12 30 l5-10 h4 l5 10z" fill="#2FA84F"/><rect x="16" y="30" width="2" height="6" fill="#8B5E34"/><path d="M46 28 l5-8 h4 l5 8z" fill="#2FA84F"/><rect x="50" y="28" width="2" height="8" fill="#8B5E34"/><rect x="6" y="42" width="52" height="12" rx="6" fill="#6B7280"/><line x1="10" y1="48" x2="54" y2="48" stroke="#F9FAFB" stroke-width="2" stroke-dasharray="6 6"/><path d="M16 42 v-6 h10 l4-6 h8 l4 6 h6 v6z" fill="#E5484D"/><circle cx="22" cy="43" r="4" fill="#1F2937"/><circle cx="22" cy="43" r="1.6" fill="#D1D5DB"/><circle cx="42" cy="43" r="4" fill="#1F2937"/><circle cx="42" cy="43" r="1.6" fill="#D1D5DB"/></svg>', name: "Forest Drive",
+  title: "Forest Drive",
   desc: "Drive the red jeep around the autumn forest — dirt roads, lake views, 90 km/h.",
   help: "WASD or arrow keys to drive. On your phone use the ◀ ▶ steer and GAS / BRAKE buttons below.",
   start(stage, setScore) {
@@ -2255,8 +2262,8 @@ registerGame({
 // points. Pauses on visibilitychange; cleanup cancels rAF, removes
 // listeners and disposes the renderer.
 registerGame({
-  id: "runner-rush", icon: "🏁", name: "Runner Rush",
-  title: "🏁 Runner Rush",
+  id: "runner-rush", icon: '<svg viewBox="0 0 64 64"><rect x="2" y="2" width="60" height="60" rx="14" fill="#D9F2EC"/><circle cx="18" cy="44" r="7" fill="none" stroke="#1F2937" stroke-width="2.5"/><circle cx="42" cy="44" r="7" fill="none" stroke="#1F2937" stroke-width="2.5"/><path d="M18 44 L27 32 L42 44 M27 32 L35 32 M35 32 L38 26 M27 32 L24 26" stroke="#1F2937" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M48 12 h12 l-3 16 -3 6 -3-6 -3-16z" fill="#F97316"/><path d="M54 12 q-4-6 -8-6 M54 12 q0-7 2-8 M54 12 q4-6 8-5" stroke="#2FA84F" stroke-width="2.5" fill="none" stroke-linecap="round"/></svg>', name: "Runner Rush",
+  title: "Runner Rush",
   desc: "Pick your ride — pedal the lagoon track or sprint the sky track. Collect, smash, dodge, finish big.",
   help: "← → or swipe to steer. Bike: collect wheels to smash walls. Carrot: dodge the saws. Finish for the multiplier.",
   start(stage, setScore) {
@@ -3191,7 +3198,7 @@ registerGame({
     card.className = "game-card";
     const ic = document.createElement("div");
     ic.className = "g-icon";
-    ic.textContent = g.icon;
+    ic.innerHTML = g.icon;
     const nm = document.createElement("div");
     nm.className = "g-name";
     nm.textContent = g.name;
