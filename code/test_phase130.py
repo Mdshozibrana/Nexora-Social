@@ -141,9 +141,9 @@ def test_source_guards():
 
 
 def test_client_markers():
-    assert HTML.count("?v=196") == 10, HTML.count("?v=196")
+    assert HTML.count("?v=197") == 10, HTML.count("?v=197")
     assert "?v=129" not in HTML
-    assert "app.js?v=196" in HTML and "style.css?v=196" in HTML
+    assert "app.js?v=197" in HTML and "style.css?v=197" in HTML
     for marker in ("loadHealth", "fmtUptime", "fmtBytes",
                    "/admin/health", "loadHealth()"):
         assert marker in JS, marker
@@ -158,7 +158,7 @@ def test_client_markers():
                    "decidePayout", "markPayoutPaid", "loadSecurityLog",
                    "loadAdminBrowse", "adminBrowse"):
         assert marker in JS, marker
-    print("client markers OK (?v=196, health UI, 123-129 intact)")
+    print("client markers OK (?v=197, health UI, 123-129 intact)")
 
 
 def test_health_values(c):
@@ -166,7 +166,7 @@ def test_health_values(c):
     # Version: the first ?v=NN in the deployed index.html on disk.
     import re as _re
     m = _re.search(r"\?v=(\d+)", HTML)
-    assert m and h["version"] == int(m.group(1)) == 196, h["version"]
+    assert m and h["version"] == int(m.group(1)) == 197, h["version"]
     # Commit: no RENDER_GIT_COMMIT in the test env -> null; if one
     # ever appears it must be a 7-char hex short SHA.
     commit = h["commit"]

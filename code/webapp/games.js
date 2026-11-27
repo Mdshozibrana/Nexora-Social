@@ -2183,7 +2183,16 @@ registerGame({
     window.addEventListener("keyup", onKeyUp);
     const sizeRenderer = () => {
       const w = wrap.clientWidth || 360;
-      const h = Math.round(w * 2 / 3);
+      // Phase 197: in the immersive game view the wrap fills
+      // the screen, so the canvas fills the wrap instead of a
+      // fixed 3:2 box. The node harness has no getElementById
+      // — guard it — and fall back to 3:2 whenever the wrap
+      // has no laid-out height yet.
+      const _vg197 = (typeof document !== "undefined" && document.getElementById)
+        ? document.getElementById("view-game") : null;
+      const _imm197 = !!(_vg197 && _vg197.classList && _vg197.classList.contains("immersive"));
+      const h = (_imm197 && wrap.clientHeight > 0)
+        ? wrap.clientHeight : Math.round(w * 2 / 3);
       renderer.setSize(w, h, false);
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
@@ -3073,7 +3082,13 @@ registerGame({
     cv.addEventListener("touchend", onTouchEnd, { passive: true });
     const sizeRenderer = () => {
       const w = wrap.clientWidth || 360;
-      const h = Math.round(w * 2 / 3);
+      // Phase 197: same immersive fill as Forest Drive — the
+      // canvas fills the wrap instead of a fixed 3:2 box.
+      const _vg197 = (typeof document !== "undefined" && document.getElementById)
+        ? document.getElementById("view-game") : null;
+      const _imm197 = !!(_vg197 && _vg197.classList && _vg197.classList.contains("immersive"));
+      const h = (_imm197 && wrap.clientHeight > 0)
+        ? wrap.clientHeight : Math.round(w * 2 / 3);
       renderer.setSize(w, h, false);
       camera.aspect = w / h;
       camera.updateProjectionMatrix();

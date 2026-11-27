@@ -260,6 +260,13 @@ function showView(name, viaBack) {
     if (viewStack.length > 30) viewStack.shift();
   }
   currentView = name;
+  // Phase 197: immersive game view — the game section goes
+  // full-screen (a fixed overlay covering the page header +
+  // bottom nav) and the mascot hides while a game is open;
+  // leaving the view restores both.
+  const _vg197 = $("view-game");
+  if (_vg197) _vg197.classList.toggle("immersive", name === "game");
+  if (document.body) document.body.classList.toggle("game-open", name === "game");
   // Phase 156: the mascot tips follow the page — reset on switch.
   if (typeof mascotOnView === "function") mascotOnView(name);
   // Phase 30: no video may follow the member to another page.

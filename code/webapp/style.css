@@ -3098,8 +3098,8 @@ html[data-theme] .suggest-follow.on { background: var(--t-chip, #F3DCE7);
 .fd-x { position: absolute; top: 2px; right: 6px; background: none; border: 0; color: #CBD5E1; font-size: 16px; padding: 2px 4px; cursor: pointer; }
 .fd-row { display: flex; gap: 8px; white-space: nowrap; }
 .fd-key { font-weight: 700; color: #FBBF24; min-width: 74px; }
-.fd-map { position: absolute; left: 8px; bottom: 8px; width: 96px; height: 96px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, .35); box-shadow: 0 2px 10px rgba(0, 0, 0, .45); }
-.fd-speed { position: absolute; right: 10px; bottom: 8px; color: #fff; text-shadow: 0 1px 6px rgba(0, 0, 0, .7); text-align: right; line-height: 1; }
+.fd-map { position: absolute; left: 8px; bottom: 88px; width: 96px; height: 96px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, .35); box-shadow: 0 2px 10px rgba(0, 0, 0, .45); }
+.fd-speed { position: absolute; top: 10px; right: 12px; bottom: auto; color: #fff; text-shadow: 0 1px 6px rgba(0, 0, 0, .7); text-align: right; line-height: 1; background: rgba(10, 16, 28, .72); border: 1px solid rgba(255, 255, 255, .18); border-radius: 10px; padding: 6px 10px; }
 .fd-speed b { font-size: 30px; font-weight: 800; }
 .fd-speed span { font-size: 12px; margin-left: 3px; opacity: .85; }
 .fd-touch { display: flex; justify-content: space-between; gap: 10px; margin-top: 10px; }
@@ -3140,3 +3140,70 @@ html[data-theme] .suggest-follow.on { background: var(--t-chip, #F3DCE7);
 .rr-hud[hidden], .rr-picker[hidden], .rr-touch[hidden], .rr-overlay[hidden] { display: none; }
 @media (max-width: 380px) { .rr-btn { min-width: 56px; height: 52px; } .rr-pick-card { font-size: 15px; } .rr-ov-title { font-size: 18px; } }
 
+
+/* --------------------------------------------- Phase 197: immersive game view + HUD + attractive buttons -- */
+/* Owner bug report (Nov 27, 15:08 Dhaka, phone screenshot of Forest
+   Drive): "একটার উপর আরেকটা চলে গেছে। আর গেমস গুলো পুরো স্কিনে কেনো
+   হয়না?" + "আর বোতামগুলো এটাক্টিভ বানাও" — the speed text sat on the
+   GAS button, the minimap covered the ◀ ▶ buttons, the header speed
+   wrapped, the canvas was a small box, and every game button was pale
+   cream with an invisible white label. */
+/* 1. Immersive view: when #view-game carries .immersive (toggled in
+   showView, app.js) the section becomes a fixed full-screen overlay
+   (z-index 66 covers the bottom nav at 65; sheets at 70+ still open
+   above it) with an opaque theme background. The game-head shrinks to
+   one non-wrapping line (back chip + ellipsis title + ellipsis score),
+   the help line hides, and #game-stage fills the rest. Leaving the
+   view removes the class and restores the nav/header exactly. */
+#view-game.immersive { position: fixed; inset: 0; z-index: 66; background: var(--t-bg, #F6F1E7); display: flex; flex-direction: column; padding: calc(8px + env(safe-area-inset-top, 0px)) 12px calc(10px + env(safe-area-inset-bottom, 0px)); }
+#view-game.immersive .game-head { flex: none; margin: 0; padding: 0 0 8px; min-width: 0; }
+#view-game.immersive #game-back { flex: none; background: rgba(10, 16, 28, .8); color: #F1F5F9; border: 1px solid rgba(255, 255, 255, .2); border-radius: 999px; padding: 7px 12px; font-size: 13px; font-weight: 700; box-shadow: 0 2px 8px rgba(0, 0, 0, .25); }
+#view-game.immersive #game-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#view-game.immersive #game-score { flex: none; max-width: 52%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#view-game.immersive #game-help { display: none; }
+#view-game.immersive #game-stage { flex: 1; min-height: 0; width: 100%; margin-top: 0; gap: 0; }
+body.game-open #mascot-wrap { display: none; }
+/* 2. 3D games fill the stage: the wrap takes the stage height and the
+   canvas covers it (the renderer is sized to the wrap in games.js);
+   the touch rows float over the canvas bottom instead of sitting in
+   the page flow below it. Mini-games keep their designed sizes and
+   stay centred in the stage — the immersive shell still applies. */
+#view-game.immersive .fd-wrap, #view-game.immersive .rr-wrap { flex: 1 1 auto; min-height: 0; width: 100%; height: 100%; }
+#view-game.immersive .fd-canvas, #view-game.immersive .rr-canvas { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 12px; }
+#view-game.immersive .fd-touch, #view-game.immersive .rr-touch { position: absolute; left: 12px; right: 12px; bottom: 12px; margin-top: 0; z-index: 3; }
+#view-game.immersive .fd-map { left: 12px; }
+/* 3. Runner Rush HUD must not wrap or overflow: one line, sideways
+   scroll when the chips exceed the width (progress bar stays put). */
+.rr-hud { overflow-x: auto; scrollbar-width: none; flex-wrap: nowrap; }
+.rr-hud::-webkit-scrollbar { display: none; }
+/* 4. Short screens (landscape phones): the Controls panel would meet
+   the minimap, so it hides and the minimap shrinks — the touch
+   buttons carry their own labels. */
+@media (max-height: 520px) {
+  #view-game.immersive .fd-panel { display: none; }
+  #view-game.immersive .fd-map { width: 64px; height: 64px; bottom: 80px; }
+}
+/* 5. Attractive game buttons. Root cause of the pale buttons:
+   `html[data-theme] button` (0,0,1,2) beat every game-button rule
+   (0,1,0), so GAS/BRAKE/steer/dpad all rendered as pale card colour
+   while .fd-btn/.rr-btn kept white text. These wrap/stage-qualified
+   selectors (0,0,2,0 and 0,1,1,1) beat it: vivid gradients, white
+   bold labels, depth shadow, and a clear pressed state (darker shade
+   + scale .93) on every game control. */
+.fd-wrap .fd-gas { background: linear-gradient(180deg, #22C55E, #15803D); border-color: rgba(255, 255, 255, .45); box-shadow: 0 4px 14px rgba(21, 128, 61, .45); }
+.fd-wrap .fd-gas:active { background: #15803D; transform: scale(.93); }
+.fd-wrap .fd-brake { background: linear-gradient(180deg, #EF4444, #B91C1C); border-color: rgba(255, 255, 255, .45); box-shadow: 0 4px 14px rgba(185, 28, 28, .45); }
+.fd-wrap .fd-brake:active { background: #B91C1C; transform: scale(.93); }
+.fd-wrap .fd-left, .fd-wrap .fd-right { background: linear-gradient(180deg, #3B82F6, #1D4ED8); border-color: rgba(255, 255, 255, .45); box-shadow: 0 4px 14px rgba(29, 78, 216, .45); }
+.fd-wrap .fd-left:active, .fd-wrap .fd-right:active { background: #1D4ED8; transform: scale(.93); }
+.rr-wrap .rr-steer { background: linear-gradient(180deg, #14B8A6, #0F766E); border-color: rgba(255, 255, 255, .45); box-shadow: 0 4px 14px rgba(13, 148, 136, .45); }
+.rr-wrap .rr-steer:active { background: #0F766E; transform: scale(.93); }
+.rr-wrap .rr-retry { background: linear-gradient(180deg, #3B82F6, #1D4ED8); border-color: rgba(255, 255, 255, .45); box-shadow: 0 4px 14px rgba(29, 78, 216, .45); }
+.rr-wrap .rr-retry:active { background: #1D4ED8; transform: scale(.93); }
+.rr-wrap .rr-next { background: linear-gradient(180deg, #22C55E, #15803D); border-color: rgba(255, 255, 255, .45); box-shadow: 0 4px 14px rgba(21, 128, 61, .45); }
+.rr-wrap .rr-next:active { background: #15803D; transform: scale(.93); }
+.rr-wrap .rr-ov-modes { background: linear-gradient(180deg, #64748B, #334155); border-color: rgba(255, 255, 255, .45); box-shadow: 0 4px 14px rgba(51, 65, 85, .45); }
+.rr-wrap .rr-ov-modes:active { background: #334155; transform: scale(.93); }
+#game-stage .dpad button, #game-stage .grow button { background: linear-gradient(180deg, #6366F1, #4F46E5); color: #fff; border: 1px solid rgba(255, 255, 255, .35); box-shadow: 0 4px 12px rgba(79, 70, 229, .4); }
+#game-stage .dpad button:active, #game-stage .grow button:active { background: #4F46E5; transform: scale(.93); }
+.fd-wrap .fd-x { background: transparent; }

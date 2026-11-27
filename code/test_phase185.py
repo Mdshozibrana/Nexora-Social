@@ -18,8 +18,8 @@
    reset the endpoint works again (proving the 429 was the bucket,
    not a broken endpoint). The delete still wipes the managed
    account completely (Phase 24 semantics, unchanged).
-4. Version + routes + backup pins: shell ?v=196 (x10), bot menu
-   /?v=196, ?v=196 gone from the shell, 183 routes, 52 backup
+4. Version + routes + backup pins: shell ?v=197 (x10), bot menu
+   /?v=197, ?v=197 gone from the shell, 183 routes, 52 backup
    tables, /admin/health version 185.
 Plain script (run.sh runs it with python directly).
 """
@@ -229,9 +229,9 @@ finally:
 print("3. DELETE /admin/fake-users/{id} rate-limited in admin_mutation OK")
 
 # --- 4. Version + routes + backup pins --------------------------------------
-assert HTML.count("?v=196") == 10, HTML.count("?v=196")
+assert HTML.count("?v=197") == 10, HTML.count("?v=197")
 assert "?v=18" + "4" not in HTML
-assert "/?v=196" in BOT and "/?v=18" + "4" not in BOT
+assert "/?v=197" in BOT and "/?v=18" + "4" not in BOT
 paths = {rt.path for rt in app.routes}
 assert len(paths) == 184, len(paths)
 assert "/admin/fake-users/{telegram_id}" in paths
@@ -240,7 +240,7 @@ assert r.status_code == 200, r.text
 assert len(r.json()["tables"]) == 52, len(r.json()["tables"])
 assert len(_BACKUP_TABLES) == 52, len(_BACKUP_TABLES)
 r = c.get("/admin/health", headers=ADMIN)
-assert r.json()["version"] == 196, r.json()
-print("4. version ?v=196 + routes 183 + backup 52 OK")
+assert r.json()["version"] == 197, r.json()
+print("4. version ?v=197 + routes 183 + backup 52 OK")
 
 print("PHASE 185 OK")
