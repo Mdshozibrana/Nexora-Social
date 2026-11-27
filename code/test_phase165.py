@@ -287,9 +287,9 @@ with TestClient(app) as c:
 
     # 4. Neighbours + version + routes.
     html = c.get("/webapp/").text
-    assert html.count("?v=199") == 10, html.count("?v=199")
+    assert html.count("?v=200") == 10, html.count("?v=200")
     assert "?v=16" + "4" not in html
-    assert "app.js?v=199" in html and "style.css?v=199" in html
+    assert "app.js?v=200" in html and "style.css?v=200" in html
     js = c.get("/webapp/app.js").text
     for marker in ("vname-text", "fitVerifiedNames", "totpGateAdmin",
                    "refreshMediaToken", "bloodDistance", "photo_file_id",
@@ -317,10 +317,10 @@ with TestClient(app) as c:
               "/admin/totp/verify"):
         assert p in paths, p
     h = c.get("/admin/health", headers=ADMIN).json()
-    assert h["version"] == 199, h
+    assert h["version"] == 200, h
     r = c.get("/admin/backup", headers=ADMIN)
     assert r.status_code == 200, r.text
     assert len(r.json()["tables"]) == 54, len(r.json()["tables"])
-    print("neighbours + version + routes OK (174 routes, 48 tables, ?v=199)")
+    print("neighbours + version + routes OK (174 routes, 48 tables, ?v=200)")
 
 print("PHASE 165 OK")

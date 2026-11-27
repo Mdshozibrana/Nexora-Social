@@ -6152,6 +6152,53 @@ let settingsHubUser = null;
 // Phase 199: the hub row + detail read the portfolio state.
 let settingsPortfolio = null;
 let settingsDetailKey = null;
+// Phase 200: hub summaries, search query and load guard. The
+// summaries are what the hub rows display as current values;
+// the query survives hub re-renders so a refresh never wipes
+// what the member typed; the load sequence stops a stale
+// (superseded) load from repainting over a newer one.
+let settingsNotifSummary = null;
+let settingsWalletSummary = null;
+let settingsSearchQuery = "";
+let settingsLoadSeq = 0;
+
+// Phase 200: the hub opens instantly from the last cached render
+// (per account, this session only) and fresh data replaces it in
+// place — a repeat open never waits on the network first.
+function settingsCacheKey() {
+  return "nx_settings_hub_" + (me && me.telegram_id ? me.telegram_id : "anon");
+}
+function settingsCacheRead() {
+  try {
+    const raw = sessionStorage.getItem(settingsCacheKey());
+    if (!raw) return null;
+    const d = JSON.parse(raw);
+    if (!d || typeof d !== "object") return null;
+    return d;
+  } catch (e) { return null; }
+}
+function settingsCacheWrite() {
+  try {
+    const u = settingsHubUser;
+    sessionStorage.setItem(settingsCacheKey(), JSON.stringify({
+      name: (u && u.first_name) || (me && me.first_name) || null,
+      username: u && u.username ? u.username : null,
+      photo_file_id: u && u.photo_file_id ? u.photo_file_id : null,
+      is_private: !!(u && u.is_private),
+      portfolioEnabled: !!(settingsPortfolio && settingsPortfolio.enabled),
+      notifSummary: settingsNotifSummary,
+      walletNetwork: settingsWalletSummary,
+    }));
+  } catch (e) { /* the cache is best-effort; a failed write is silent */ }
+}
+function settingsThemeName() {
+  try {
+    const p = themeState && themeState.picks
+      ? palById(themeState.picks.bg) : null;
+    if (p) return p.name;
+  } catch (e) { /* theme state unreadable; keep the default label */ }
+  return "Default pink";
+}
 
 function settingsVersion() {
   const s = document.querySelector('script[src*="app.js?v="]');
@@ -6159,10 +6206,13 @@ function settingsVersion() {
   return m ? m[1] : null;
 }
 
-function settingsHubRow(icon, label, sub, valueText, onOpen, valueClass) {
+function settingsHubRow(icon, label, sub, valueText, onOpen, valueClass, opts) {
   const b = document.createElement("button");
   b.className = "settings-row-btn";
   b.type = "button";
+  // Phase 200: search matches on the label + subtitle only — the
+  // value text and chevron are display, not searchable.
+  b.dataset.search = (label + " " + (sub || "")).toLowerCase();
   const ic = document.createElement("span");
   ic.className = "settings-row-ic";
   ic.textContent = icon;
@@ -6185,12 +6235,98 @@ function settingsHubRow(icon, label, sub, valueText, onOpen, valueClass) {
     v.textContent = valueText;
     b.appendChild(v);
   }
+  if (opts && opts.toggle) {
+    // Phase 200: an inline switch on the hub row — a span, not a
+    // nested button (a button inside a button is invalid HTML);
+    // its click never opens the detail.
+    const sw = document.createElement("span");
+    sw.className = "settings-switch";
+    sw.setAttribute("role", "switch");
+    sw.setAttribute("aria-checked", opts.toggle.checked ? "true" : "false");
+    sw.setAttribute("tabindex", "0");
+    sw.setAttribute("aria-label", label);
+    const knob = document.createElement("span");
+    knob.className = "settings-switch-knob";
+    sw.appendChild(knob);
+    sw.onclick = (e) => {
+      e.stopPropagation();
+      opts.toggle.onFlip(sw, b);
+    };
+    sw.onkeydown = (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        e.stopPropagation();
+        opts.toggle.onFlip(sw, b);
+      }
+    };
+    b.appendChild(sw);
+  }
   const ch = document.createElement("span");
   ch.className = "settings-row-chev";
   ch.textContent = "›";
   b.appendChild(ch);
   b.onclick = onOpen;
   return b;
+}
+
+// Phase 200: one shared flip for every inline hub switch —
+// optimistic UI (switch + value flip at once), the row's value
+// text follows, and a failed save flips it back. The cached
+// detail checkbox (if that section was already built) is kept
+// in step so the detail agrees with the hub.
+function settingsSetToggleUI(switchEl, rowBtn, on, valueText) {
+  switchEl.setAttribute("aria-checked", on ? "true" : "false");
+  const v = rowBtn.querySelector(".settings-row-value");
+  if (v && valueText != null) v.textContent = valueText;
+}
+function settingsSyncDetailCheckbox(key, checked) {
+  const det = settingsDetails && settingsDetails[key];
+  if (!det) return;
+  const cb = det.querySelector('input[type="checkbox"]');
+  if (cb) cb.checked = checked;
+}
+async function settingsFlipToggle(switchEl, rowBtn, spec) {
+  if (switchEl.dataset.busy) return;
+  const prev = switchEl.getAttribute("aria-checked") === "true";
+  const next = !prev;
+  switchEl.dataset.busy = "1";
+  settingsSetToggleUI(switchEl, rowBtn, next, spec.valueFor(next));
+  try {
+    await spec.save(next);
+    settingsSyncDetailCheckbox(spec.detailKey, next);
+    settingsCacheWrite();
+  } catch (e) {
+    settingsSetToggleUI(switchEl, rowBtn, prev, spec.valueFor(prev));
+    setStatus("Could not save that setting.");
+  } finally {
+    delete switchEl.dataset.busy;
+  }
+}
+function settingsFlipPortfolio(switchEl, rowBtn) {
+  settingsFlipToggle(switchEl, rowBtn, {
+    detailKey: "portfolio",
+    valueFor: (on) => (on ? "On" : "Off"),
+    save: async (next) => {
+      const cur = settingsPortfolio || {};
+      const r = await api("/me/portfolio", { method: "POST",
+        body: JSON.stringify({ about: cur.about || "",
+                               role: cur.role || "",
+                               cover_file_id: cur.cover_file_id || null,
+                               enabled: next }) });
+      settingsPortfolio = r;
+    },
+  });
+}
+function settingsFlipPrivate(switchEl, rowBtn) {
+  settingsFlipToggle(switchEl, rowBtn, {
+    detailKey: "privacy",
+    valueFor: (on) => (on ? "Private" : "Public"),
+    save: async (next) => {
+      const r = await api("/me/privacy", { method: "POST",
+        body: JSON.stringify({ is_private: next }) });
+      if (settingsHubUser) settingsHubUser.is_private = r.is_private;
+    },
+  });
 }
 
 function settingsGroupEl(label, rows) {
@@ -6203,6 +6339,65 @@ function settingsGroupEl(label, rows) {
   rows.forEach(r => card.appendChild(r));
   wrap.append(lab, card);
   return wrap;
+}
+
+// Phase 200: the skeleton — the first paint while the hub data
+// loads. Same shape as the hub (search bar + profile card + 3
+// groups) so the layout never jumps, theme-aware (tile
+// backgrounds), no text.
+function renderSettingsSkeleton() {
+  const box = $("settings-box");
+  if (!box) return;
+  settingsDetailKey = null;
+  box.innerHTML = "";
+  const wrap = document.createElement("div");
+  wrap.className = "settings-skel";
+  wrap.setAttribute("aria-hidden", "true");
+  const search = document.createElement("div");
+  search.className = "settings-skel-search";
+  wrap.appendChild(search);
+  const pc = document.createElement("div");
+  pc.className = "card settings-profile-card";
+  const ava = document.createElement("span");
+  ava.className = "settings-skel-ava";
+  const lines = document.createElement("span");
+  lines.className = "settings-skel-lines";
+  const l1 = document.createElement("span");
+  l1.className = "settings-skel-line w60";
+  const l2 = document.createElement("span");
+  l2.className = "settings-skel-line w40";
+  lines.append(l1, l2);
+  pc.append(ava, lines);
+  wrap.appendChild(pc);
+  [["ACCOUNT", 6], ["PREFERENCES", 3], ["SUPPORT", 2]].forEach(([label, n]) => {
+    const lab = document.createElement("div");
+    lab.className = "settings-group-label";
+    const ll = document.createElement("span");
+    ll.className = "settings-skel-line w40";
+    lab.appendChild(ll);
+    wrap.appendChild(lab);
+    const card = document.createElement("div");
+    card.className = "card settings-group";
+    for (let i = 0; i < n; i++) {
+      const row = document.createElement("div");
+      row.className = "settings-skel-row";
+      const ic = document.createElement("span");
+      ic.className = "settings-skel-ic";
+      const tx = document.createElement("span");
+      tx.className = "settings-skel-lines";
+      const a = document.createElement("span");
+      a.className = "settings-skel-line w60";
+      const b2 = document.createElement("span");
+      b2.className = "settings-skel-line w40";
+      tx.append(a, b2);
+      row.append(ic, tx);
+      card.appendChild(row);
+    }
+    wrap.appendChild(card);
+  });
+  box.appendChild(wrap);
+  const sc = $("app-scroll");
+  if (sc) sc.scrollTop = 0;
 }
 
 function renderSettingsHub() {
@@ -6237,24 +6432,36 @@ function renderSettingsHub() {
   edit.onclick = () => openSettingsDetail("profile");
   card.appendChild(edit);
   box.appendChild(card);
+  // Phase 200: search sits above the groups and filters the hub
+  // rows live; the query survives re-renders.
+  const search = document.createElement("input");
+  search.type = "search";
+  search.className = "settings-search";
+  search.placeholder = "Search settings…";
+  search.setAttribute("aria-label", "Search settings");
+  search.value = settingsSearchQuery;
+  search.oninput = () => {
+    settingsSearchQuery = search.value;
+    applySettingsSearch();
+  };
+  box.appendChild(search);
   const ver = settingsVersion();
-  let themeName = "Default pink";
-  try {
-    const p = themeState && themeState.picks
-      ? palById(themeState.picks.bg) : null;
-    if (p) themeName = p.name;
-  } catch (e) { /* theme state unreadable; keep the default label */ }
+  const themeName = settingsThemeName();
   box.appendChild(settingsGroupEl("ACCOUNT", [
     settingsHubRow("👤", "Profile", null, null,
                    () => openSettingsDetail("profile")),
     settingsHubRow("🖼️", "Portfolio", null,
                    settingsPortfolio
                      ? (settingsPortfolio.enabled ? "On" : "Off") : null,
-                   () => openSettingsDetail("portfolio")),
+                   () => openSettingsDetail("portfolio"), null,
+                   { toggle: { checked: !!(settingsPortfolio && settingsPortfolio.enabled),
+                               onFlip: settingsFlipPortfolio } }),
     settingsHubRow("🔒", "Privacy", null,
                    u ? (u.is_private ? "Private" : "Public") : null,
-                   () => openSettingsDetail("privacy")),
-    settingsHubRow("💰", "Payout wallet", null, null,
+                   () => openSettingsDetail("privacy"), null,
+                   { toggle: { checked: !!(u && u.is_private),
+                               onFlip: settingsFlipPrivate } }),
+    settingsHubRow("💰", "Payout wallet", null, settingsWalletSummary,
                    () => openSettingsDetail("wallet")),
     settingsHubRow("🔳", "My QR", null, null,
                    () => openSettingsDetail("qr")),
@@ -6264,7 +6471,8 @@ function renderSettingsHub() {
   box.appendChild(settingsGroupEl("PREFERENCES", [
     settingsHubRow("🎨", "Theme", null, themeName,
                    () => openSettingsDetail("theme")),
-    settingsHubRow("🔔", "Notifications", "In-app & Telegram bot", null,
+    settingsHubRow("🔔", "Notifications", "In-app & Telegram bot",
+                   settingsNotifSummary,
                    () => openSettingsDetail("notif")),
     settingsHubRow("🗂️", "Data Control", null, null,
                    () => openSettingsDetail("data")),
@@ -6276,9 +6484,41 @@ function renderSettingsHub() {
                    () => openSettingsDetail("about"),
                    "settings-ver-pill"),
   ]));
+  // Phase 200: empty state for search, then re-apply a preserved
+  // query and refresh the instant-open cache with fresh data.
+  const empty = document.createElement("div");
+  empty.className = "settings-search-empty";
+  empty.hidden = true;
+  empty.textContent = "No settings match your search.";
+  box.appendChild(empty);
+  if (settingsSearchQuery) applySettingsSearch();
+  settingsCacheWrite();
   const sc = $("app-scroll");
   if (sc) sc.scrollTop = 0;
   updateBackButton();
+}
+
+// Phase 200: live search over the hub rows — matches the label +
+// subtitle only; a group with no matching row hides whole; when
+// nothing matches, the empty state shows instead.
+function applySettingsSearch() {
+  const box = $("settings-box");
+  if (!box) return;
+  const q = (settingsSearchQuery || "").trim().toLowerCase();
+  const empty = box.querySelector(".settings-search-empty");
+  let visible = 0;
+  box.querySelectorAll(".settings-group").forEach(card => {
+    let groupVisible = 0;
+    card.querySelectorAll(".settings-row-btn").forEach(btn => {
+      const show = !q || (btn.dataset.search || "").includes(q);
+      btn.hidden = !show;
+      if (show) groupVisible++;
+    });
+    const wrap = card.parentElement;
+    if (wrap) wrap.hidden = groupVisible === 0;
+    visible += groupVisible;
+  });
+  if (empty) empty.hidden = visible !== 0;
 }
 
 function openSettingsDetail(key) {
@@ -6304,7 +6544,35 @@ function openSettingsDetail(key) {
 async function loadSettings() {
   const box = $("settings-box");
   if (!box || !me) return;
-  box.innerHTML = "Loading…";
+  const seq = ++settingsLoadSeq;
+  // Phase 200 (owner bug, Nov 27): the first paint is never the
+  // half-built section stack. The sections used to be appended to
+  // the visible box one by one while their fetches resolved, so
+  // the member watched the raw stacked sections pile up for 1–2 s
+  // before the hub replaced them. Now the first paint is the
+  // skeleton — or the cached hub on a repeat open — and the
+  // sections are built in a hidden, attached container (the
+  // builders that look their targets up by id need the nodes in
+  // the document) and only surface as the hub at the end.
+  const cached = settingsCacheRead();
+  if (cached) {
+    settingsHubUser = { first_name: cached.name,
+                        username: cached.username || null,
+                        photo_file_id: cached.photo_file_id || null,
+                        is_private: !!cached.is_private };
+    settingsPortfolio = { enabled: !!cached.portfolioEnabled };
+    settingsNotifSummary = cached.notifSummary || null;
+    settingsWalletSummary = cached.walletNetwork || null;
+    renderSettingsHub();
+  } else {
+    renderSettingsSkeleton();
+  }
+  // Hidden build container: attached (so id lookups work) but
+  // never visible.
+  const buildBox = document.createElement("div");
+  buildBox.className = "settings-build";
+  buildBox.style.display = "none";
+  box.appendChild(buildBox);
   try {
     // Phase 183 (audit L13): sections render independently
     // — the profile fetch failing must not kill the whole
@@ -6317,13 +6585,14 @@ async function loadSettings() {
     } catch (e) {
       u = null;
     }
-    box.innerHTML = "";
+    if (seq !== settingsLoadSeq) return;
     // Phase 199: the hub row + detail need the portfolio state.
     try {
       settingsPortfolio = await api("/me/portfolio");
     } catch (e) {
       settingsPortfolio = null;
     }
+    if (seq !== settingsLoadSeq) return;
     // Phase 187: sections are built exactly as before, but each is
     // registered under a hub key instead of staying stacked — the
     // hub renders at the end of this function and a row tap moves
@@ -6340,7 +6609,7 @@ async function loadSettings() {
       h.className = "settings-head";
       h.textContent = title;
       s.appendChild(h);
-      box.appendChild(s);
+      buildBox.appendChild(s);
       return s;
     };
     // 1. Profile — the same name/bio save as the profile edit
@@ -6510,6 +6779,7 @@ async function loadSettings() {
                                  cover_file_id: cur.cover_file_id || null,
                                  enabled: pfChk.checked }) });
         settingsPortfolio = r;
+        settingsCacheWrite();
         setStatus(pfChk.checked ? "Portfolio is now visible on your profile." : "Portfolio hidden.");
       } catch (e) {
         pfChk.checked = !!(settingsPortfolio && settingsPortfolio.enabled);
@@ -6531,7 +6801,7 @@ async function loadSettings() {
     pfSec.appendChild(pfEdit);
     // 2. Theme — the same picker as Me (themeCard is reused).
     const themeNode = reg("theme", themeCard());
-    box.appendChild(themeNode);
+    buildBox.appendChild(themeNode);
     // 3. Privacy — the same toggle as the profile edit form,
     // plus the blocked list with Unblock (GET /me/blocked,
     // POST /users/{id}/block toggles the block off).
@@ -6549,6 +6819,7 @@ async function loadSettings() {
         const r = await api("/me/privacy", { method: "POST",
           body: JSON.stringify({ is_private: privChk.checked }) });
         if (u) u.is_private = r.is_private;
+        settingsCacheWrite();
         setStatus(r.is_private ? "Your account is now private 🔒" : "Your account is now public.");
       } catch (e) {
         privChk.checked = !!(u && u.is_private);
@@ -6645,6 +6916,10 @@ async function loadSettings() {
     try {
       const d = await api("/me/notification-prefs");
       const prefs = d.prefs || {};
+      // Phase 200: the hub row shows the current state.
+      const offCount = NOTIF_PREF_META.filter(([key]) => prefs[key] === false).length;
+      settingsNotifSummary = offCount === 0 ? "All on"
+        : (offCount === NOTIF_PREF_META.length ? "All off" : offCount + " off");
       NOTIF_PREF_META.forEach(([key, label, desc]) => {
         const row = document.createElement("label");
         row.className = "privacy-row notif-row";
@@ -6679,7 +6954,7 @@ async function loadSettings() {
     const dataWrap = document.createElement("div");
     dataWrap.className = "settings-detail-body";
     dataWrap.append(dataCard(), rainCard());
-    box.appendChild(reg("data", dataWrap));
+    buildBox.appendChild(reg("data", dataWrap));
     // 6. Payout wallet — the same /me/wallet save as the
     // Monetization card. A small standalone form: loadPayoutBox
     // uses fixed ids (payout-network, payout-address), so calling
@@ -6692,6 +6967,8 @@ async function loadSettings() {
     wal.appendChild(walHint);
     try {
       const w = await api("/me/wallet");
+      // Phase 200: the hub row shows the current network.
+      settingsWalletSummary = w.wallet_network || null;
       const netSel = document.createElement("select");
       netSel.id = "settings-wallet-network";
       ["TON", "Gram", "USDT"].forEach(n => {
@@ -6742,13 +7019,13 @@ async function loadSettings() {
       err.textContent = "Could not load the rest of your profile cards.";
       more.appendChild(err);
     }
-    box.appendChild(more);
+    buildBox.appendChild(more);
     // 8. My QR — rendered inline (same loader as the QR view).
     const qrSec = reg("qr", sec("🔳 My QR"));
     const qrBox = document.createElement("div");
     qrBox.id = "settings-qr-box";
     qrSec.appendChild(qrBox);
-    box.appendChild(qrSec);
+    buildBox.appendChild(qrSec);
     try {
       await loadMyQrInto("settings-qr-box");
     } catch (e) {
@@ -6757,6 +7034,7 @@ async function loadSettings() {
       err.textContent = "Could not load your QR code.";
       qrSec.appendChild(err);
     }
+    if (seq !== settingsLoadSeq) return;
     // Phase 187: every section built — hand the nodes to the hub
     // and show the hub (profile card + ACCOUNT / PREFERENCES /
     // SUPPORT groups). The About detail is built here too: it is
@@ -6844,8 +7122,12 @@ async function loadSettings() {
     details.about = aboutSec;
     settingsDetails = details;
     settingsHubUser = u;
+    if (seq !== settingsLoadSeq) return;
     renderSettingsHub();
-  } catch (e) { box.textContent = "Could not load Settings."; }
+  } catch (e) {
+    if (!cached) box.textContent = "Could not load Settings.";
+    else setStatus("Could not refresh Settings.");
+  }
 }
 
 // ---------------------------------------------------------------- tasks ---

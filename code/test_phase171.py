@@ -345,21 +345,21 @@ for marker in ("albumItems", "albumFrame", "carousel-track",
                "composerFiles", "renderRichText", "loadSkills",
                "loadBlood", "MASCOT_TIPS_BY_VIEW", "totp-card"):
     assert marker in js, marker
-assert "app.js?v=199" in HTML
+assert "app.js?v=200" in HTML
 assert ("?v=17" + "0") not in HTML
-assert "style.css?v=199" in HTML
+assert "style.css?v=200" in HTML
 assert ".carousel-track" in CSS
 assert "#pv-prev" in CSS
 paths = {rt.path for rt in app.routes}
 assert len(paths) == 189, len(paths)
 assert "/posts/upload-media" in paths
 h = c.get("/admin/health", headers=ADMIN).json()
-assert h["version"] == 199, h
+assert h["version"] == 200, h
 r = c.get("/admin/backup", headers=ADMIN)
 assert r.status_code == 200, r.text
 assert len(r.json()["tables"]) == 54, len(r.json()["tables"])
 assert "post_media" in r.json()["tables"]
 assert len(_BACKUP_TABLES) == 54, len(_BACKUP_TABLES)
-print("client + version + routes + backup OK (174 routes, 48 tables, ?v=199)")
+print("client + version + routes + backup OK (174 routes, 48 tables, ?v=200)")
 
 print("PHASE 171 OK")

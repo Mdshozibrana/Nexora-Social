@@ -2944,6 +2944,25 @@ html[data-theme] .suggest-follow.on { background: var(--t-chip, #F3DCE7);
 .settings-back { background: transparent; color: var(--ink-dim); font-weight: 700; text-align: left; padding: 4px 2px 10px; }
 .settings-detail-body { display: flex; flex-direction: column; gap: 12px; }
 .settings-about-name { font-weight: 800; font-size: 16px; margin-top: 4px; }
+/* Phase 200: settings search, inline switches, skeleton. All
+   colours follow the member's theme (CSS vars); the skeleton is
+   a soft pulse of the tile colour, never a hard-coded palette. */
+.settings-search { width: 100%; padding: 10px 14px; border-radius: 999px; border: 1px solid var(--t-line, rgba(128,128,128,.4)); background: var(--t-tile, rgba(128,128,128,.12)); color: var(--ink); font-size: 14px; margin: 2px 0 4px; box-sizing: border-box; }
+.settings-search-empty { text-align: center; color: var(--ink-dim); padding: 24px 12px; font-size: 14px; }
+.settings-switch { flex: none; width: 44px; height: 26px; border-radius: 999px; background: var(--t-tile, rgba(128,128,128,.35)); position: relative; cursor: pointer; }
+.settings-switch-knob { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.3); transition: left .15s ease; }
+.settings-switch[aria-checked="true"] { background: var(--t-acc1, #2563EB); }
+.settings-switch[aria-checked="true"] .settings-switch-knob { left: 21px; }
+.settings-skel-search { height: 40px; border-radius: 999px; margin: 2px 0 4px; background: var(--t-tile, rgba(128,128,128,.18)); animation: settings-skel-pulse 1.2s ease-in-out infinite; }
+.settings-skel-ava { flex: none; width: 44px; height: 44px; border-radius: 50%; background: var(--t-tile, rgba(128,128,128,.18)); animation: settings-skel-pulse 1.2s ease-in-out infinite; }
+.settings-skel-lines { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.settings-skel-line { display: block; height: 13px; border-radius: 8px; background: var(--t-tile, rgba(128,128,128,.18)); animation: settings-skel-pulse 1.2s ease-in-out infinite; }
+.settings-skel-line.w60 { width: 60%; }
+.settings-skel-line.w40 { width: 40%; }
+.settings-skel-ic { flex: none; width: 36px; height: 36px; border-radius: 10px; background: var(--t-tile, rgba(128,128,128,.18)); animation: settings-skel-pulse 1.2s ease-in-out infinite; }
+.settings-skel-row { display: flex; align-items: center; gap: 12px; padding: 12px 14px; }
+.settings-skel-row + .settings-skel-row { border-top: 1px solid var(--t-line, rgba(128,128,128,.25)); }
+@keyframes settings-skel-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
 
 /* Phase 151: Blood donors — donor directory + open requests.
    Red accents on the Organic Clay look; the group badge is

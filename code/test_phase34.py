@@ -107,11 +107,16 @@ with TestClient(app) as c:
     assert design["author_id"] == 1, design
     assert design["author_name"] == "Nexora Social", design
     # ...and neither the admin's id nor name leaks anywhere in the
-    # upload response or the member-facing listing.
-    blob = json.dumps(design)
+    # upload response or the member-facing listing. (created_at is
+    # excluded from the check: a timestamp's microseconds can
+    # contain the digits 999 by chance — that is not an identity
+    # leak. Phase 200 fix for a flaky substring assertion.)
+    blob = json.dumps({k: v for k, v in design.items()
+                       if k != "created_at"})
     assert "999" not in blob and "ShozibAdmin" not in blob, blob
     r = c.get("/designs", headers=MEMBER)
-    blob = json.dumps(r.json())
+    blob = json.dumps([{k: v for k, v in d.items() if k != "created_at"}
+                       for d in r.json()["designs"]])
     assert "999" not in blob and "ShozibAdmin" not in blob, blob
     assert r.json()["designs"][0]["id"] == did
     print("poster identity hidden OK")

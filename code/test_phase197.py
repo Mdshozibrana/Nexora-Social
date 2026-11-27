@@ -627,10 +627,10 @@ with TestClient(app) as c:
 
     # 6. Served assets: version + markers + neighbours.
     html = c.get("/webapp/").text
-    assert html.count("?v=199") == 10, html.count("?v=199")
+    assert html.count("?v=200") == 10, html.count("?v=200")
     assert "?v=19" + "6" not in html
-    assert "app.js?v=199" in html and "style.css?v=199" in html
-    assert "games.js?v=199" in html and "three.min.js?v=199" in html
+    assert "app.js?v=200" in html and "style.css?v=200" in html
+    assert "games.js?v=200" in html and "three.min.js?v=200" in html
     served_games = c.get("/webapp/games.js").text
     for marker in ("forest-drive", "runner-rush", "_imm197",
                    "wrap.clientHeight", "fd-map", "fd-speed", "fd-touch",
@@ -650,12 +650,12 @@ with TestClient(app) as c:
     paths = {rt.path for rt in app.routes}
     assert len(paths) == 189, len(paths)
     h = c.get("/admin/health", headers=ADMIN).json()
-    assert h["version"] == 199, h
+    assert h["version"] == 200, h
     r = c.get("/admin/backup", headers=ADMIN)
     assert r.status_code == 200, r.text
     assert len(r.json()["tables"]) == 54, len(r.json()["tables"])
     bot_src = open(os.path.join(ROOT, "app/bot.py")).read()
-    assert 'menu_url.rstrip("/") + "/?v=199"' in bot_src
-    print("neighbours + version + routes OK (184 routes, 52 tables, ?v=199)")
+    assert 'menu_url.rstrip("/") + "/?v=200"' in bot_src
+    print("neighbours + version + routes OK (184 routes, 52 tables, ?v=200)")
 
 print("PHASE 197 OK")

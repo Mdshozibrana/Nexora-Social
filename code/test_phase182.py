@@ -479,11 +479,11 @@ print("L17/L18/M21 JS (foot profile, AbortController, 9 s budget, "
       "honest auth line, 10 s viewer race) OK")
 
 # --- 9. Version, markers, routes, backup tables --------------------------
-assert HTML.count("?v=199") == 10, HTML.count("?v=199")
+assert HTML.count("?v=200") == 10, HTML.count("?v=200")
 assert "?v=18" + "1" not in HTML
 r = c.get("/admin/health", headers=ADMIN)
 assert r.status_code == 200, r.text
-assert r.json()["version"] == 199, r.json()
+assert r.json()["version"] == 200, r.json()
 assert len(_BACKUP_TABLES) == 54, len(_BACKUP_TABLES)
 r = c.get("/admin/backup", headers=ADMIN)
 assert r.status_code == 200, r.text
@@ -494,6 +494,6 @@ for m in ("_looks_phone_like",
           "NB_SV_LOOKUP_BUDGET_MS",
           "NB_SV_ATTEMPT_MS"):
     assert m in MAIN or m in JS, m
-print("version ?v=199 x10 + health 182 + routes/backup markers OK")
+print("version ?v=200 x10 + health 182 + routes/backup markers OK")
 
 print("PHASE 182 OK")
