@@ -1,30 +1,32 @@
-"""Phase-86 tests — CONVERTED by Phase 152 (owner order Nov 20, 2026)
-into a removal guard, then CONVERTED AGAIN by Phase 201 (owner
-order Nov 27, 2026): the Museum is BACK as a new 3D-walkthrough
-feature, so the guards below prove the NEW Museum is present and
-only the OLD implementation is gone. The Design gallery (whose
-pictures the Museum re-displayed) stays exactly as it is.
+"""Phase-86 tests — CONVERTED by Phase 152 (owner order Nov 20, 2026):
+the Museum section is REMOVED entirely ("Museum এই সেকশনটা
+রিমুভ করো, লাগবে না"). This suite is kept as a removal guard:
+it proves Museum is gone instead of being deleted — a deleted
+suite leaves no proof. The Design gallery (whose pictures the
+Museum re-displayed) stays exactly as it is. Phase 201 rebuilt
+a NEW Museum (Nov 27, 2026); Phase 203 removed it again
+(Nov 28, 2026 — owner: "পছন্দ হয়নি আর অ্যাপস বড় হয়ে যাচ্ছে"),
+so the guards below are back to proving Museum is gone.
 """
 HTML = open("webapp/index.html").read()
 JS = open("webapp/app.js").read()
 CSS = open("webapp/style.css").read()
 BOT = open("app/bot.py").read()
 
-# Phase 201: the Museum is present in every client file; the bot
-# has no museum code (client-only feature), so that guard stays.
-assert "museum" in HTML.lower(), "museum missing from index.html"
-assert "museum" in JS.lower(), "museum missing from app.js"
-assert "museum" in CSS.lower(), "museum missing from style.css"
+# Museum is gone from every client file and the server.
+assert "museum" not in HTML.lower(), "museum in index.html"
+assert "museum" not in JS.lower(), "museum in app.js"
+assert "museum" not in CSS.lower(), "museum in style.css"
 assert "museum" not in BOT.lower(), "museum in bot.py"
-# Specifically: section, sidebar button, showView entry present.
-assert 'data-go="museum"' in HTML
-assert '<section id="view-museum"' in HTML
-assert '"nearby", "qr", "trending", "settings", "blood", "skills", "museum"]' in JS
-assert "openMuseum" in JS and "reloadMuseum" in JS
+# Specifically: no section, no sidebar button, no showView entry.
+assert 'data-go="museum"' not in HTML
+assert '<section id="view-museum"' not in HTML
+assert '"nearby", "qr", "trending", "settings", "blood", "skills"]' in JS
+assert "openMuseum" not in JS and "loadMuseum" not in JS
 assert "MUSEUM_THEMES" not in JS and "museumZoom" not in JS
 # Neighbours that shared the Museum's space are intact.
 assert 'data-go="blood"' in HTML and 'id="view-blood"' in HTML
 assert 'data-go="designs"' in HTML and 'id="view-designs"' in HTML
 assert "loadDesigns" in JS and "design-grid" in HTML
-assert "app.js?v=202" in HTML and "style.css?v=202" in HTML
-print("PHASE 86 OK (new Museum present, old Museum gone, neighbours intact)")
+assert "app.js?v=203" in HTML and "style.css?v=203" in HTML
+print("PHASE 86 REMOVAL GUARD OK (Museum gone, neighbours intact)")

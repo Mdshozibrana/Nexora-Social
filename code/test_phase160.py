@@ -16,7 +16,7 @@ Members browse, admin detail, Nearby list, story author +
 viewers); the old text-" ✓" ticks are gone (blue badge
 everywhere); 360px geometry for the 6 main sites with the
 owner's long name; Trending reuses postCard; neighbours; backup
-44 tables; routes 163; ?v=202 x10, no old-version literals.
+44 tables; routes 163; ?v=203 x10, no old-version literals.
 """
 import hashlib, hmac, json, os, re, subprocess, time, urllib.parse
 
@@ -185,7 +185,7 @@ assert 'ct.classList.add("vname")' in JS, "DM chat header"
 assert 'sa.classList.add("vname")' in JS, "story author"
 assert '<b class="vname">' in JS, "Nearby list"
 assert JS.count("vname-text") >= 17, JS.count("vname-text")
-assert JS.count("verifiedBadge()") == 20, "1 def + 19 call sites (20th: Phase 201 museum owner line)"
+assert JS.count("verifiedBadge()") == 19, "1 def + 18 call sites (19th: Phase 199 portfolio name)"
 print("all sites OK (shared pair at every name+tick render)")
 
 # 5. The old text-" ✓" ticks are gone at every name site — the
@@ -294,16 +294,16 @@ with TestClient(app) as c:
     assert len(r.json()["tables"]) == 55, len(r.json()["tables"])
     print("backup: 44 tables OK")
 paths = {rt.path for rt in app.routes}
-assert len(paths) == 193, len(paths)
+assert len(paths) == 189, len(paths)
 print("routes: 163 OK (no new endpoints)")
 
 # 12. Version.
-assert HTML.count("?v=202") == 10, HTML.count("?v=202")
+assert HTML.count("?v=203") == 10, HTML.count("?v=203")
 assert "?v=15" + "9" not in HTML
-assert "app.js?v=202" in HTML and "games.js?v=202" in HTML
-assert 'menu_url.rstrip("/") + "/?v=202"' in BOT
+assert "app.js?v=203" in HTML and "games.js?v=203" in HTML
+assert 'menu_url.rstrip("/") + "/?v=203"' in BOT
 assert "Phase 160" in CSS and "Phase 160" in JS and "Phase 160" in HTML
-print("version OK (?v=202 x10, no old-version literals)")
+print("version OK (?v=203 x10, no old-version literals)")
 
 # 13. Phase 162: the tick HUGS the name (owner: "blu tick naam
 # theke dure keno?"). Phase 160's .vname-text had flex-grow 1,
@@ -358,8 +358,8 @@ assert size == 12, size
 assert tick_left == 139, tick_left
 # Resize re-fit: a wider line re-grows the name to its base size.
 assert fit_size(em_width(LONG), 16, 300) == 16, "re-grow on resize"
-# Version: shell on ?v=202, no ?v=202 literal left anywhere.
-assert HTML.count("?v=202") == 10, HTML.count("?v=202")
+# Version: shell on ?v=203, no ?v=203 literal left anywhere.
+assert HTML.count("?v=203") == 10, HTML.count("?v=203")
 assert "?v=16" + "1" not in HTML
 print("Phase 162 hug OK (tick 5px after the name at all 6 sites)")
 

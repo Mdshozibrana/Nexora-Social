@@ -14,7 +14,7 @@ kind filter, exact skill, no phone keys, private + block visibility);
 matches (computed overlap); connect (notifies, 400/403/404 guards,
 pref gates delivery); profile exposure (skills hidden from private
 strangers); backup 44 tables; routes 166 (5 new paths, 6 route
-entries); ?v=202 x10, no old-version literals.
+entries); ?v=203 x10, no old-version literals.
 """
 import hashlib, hmac, json, os, re, time, urllib.parse
 
@@ -86,9 +86,9 @@ def add_skill(c, h, skill, kind, note=""):
 
 
 # 1. Client markers: Skills page + sidebar + Settings + profile + toggle.
-assert HTML.count("?v=202") == 10, HTML.count("?v=202")
+assert HTML.count("?v=203") == 10, HTML.count("?v=203")
 assert "?v=15" + "7" not in HTML
-assert 'menu_url.rstrip("/") + "/?v=202"' in BOT
+assert 'menu_url.rstrip("/") + "/?v=203"' in BOT
 assert 'data-go="skills"' in HTML
 assert 'id="view-skills"' in HTML
 assert "🤝 Skills" in HTML
@@ -97,7 +97,7 @@ for cid in ("skill-tab-directory", "skill-tab-matches",
             "skill-search", "skill-search-btn", "skill-kind-filters",
             "skill-directory-list", "skill-match-list", "skill-empty"):
     assert f'id="{cid}"' in HTML, cid
-assert '"settings", "blood", "skills", "museum"].forEach(v => {' in JS
+assert '"settings", "blood", "skills"].forEach(v => {' in JS
 assert 'if (name === "skills") loadSkills();' in JS
 assert "loadSkills" in JS and "loadSkillsDirectory" in JS
 assert "loadSkillsMatches" in JS and "loadMySkills" in JS
@@ -116,7 +116,7 @@ for rule in (".skill-tabs", ".skill-card", ".skill-chip-teach",
              ".settings-skill-row"):
     assert rule in CSS, rule
 assert "Phase 158" in CSS
-print("client markers OK (?v=202 x10, Skills page, Settings, profile, toggle)")
+print("client markers OK (?v=203 x10, Skills page, Settings, profile, toggle)")
 
 # 2. Server markers: model, backup, notify map, rate bucket.
 assert "class SkillEntry(Base):" in MODELS
@@ -352,7 +352,7 @@ with TestClient(app) as c:
     assert "skill_entries" in r.json()["tables"], r.json().keys()
     print("backup: 44 tables incl. skill_entries OK")
     paths = {rt.path for rt in app.routes}
-    assert len(paths) == 193, len(paths)
+    assert len(paths) == 189, len(paths)
     expected = {"/me/skills", "/me/skills/{entry_id}",
                 "/skills/directory", "/skills/matches",
                 "/skills/{user_id}/connect"}
@@ -361,8 +361,8 @@ with TestClient(app) as c:
     print("routes: 163 OK (5 new skill paths, nothing else)")
 
 # 15. Version.
-assert HTML.count("?v=202") == 10, HTML.count("?v=202")
+assert HTML.count("?v=203") == 10, HTML.count("?v=203")
 assert "?v=15" + "7" not in HTML
-assert 'menu_url.rstrip("/") + "/?v=202"' in BOT
+assert 'menu_url.rstrip("/") + "/?v=203"' in BOT
 assert "Phase 158" in CSS and "Phase 158" in HTML
 print("PHASE 158 OK")

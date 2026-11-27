@@ -37,7 +37,7 @@ TESTS:
 (c) backup: with a broadcast row present, _backup_payload runs
     clean, covers all 52 tables, and round-trips the row
     including delivered_targets.
-(d) version pins: shell ?v=202 (x10), old version gone, bot menu
+(d) version pins: shell ?v=203 (x10), old version gone, bot menu
     URL bumped, /admin/health version 192, backup 52 tables.
 No auth, no make_init_data — the admin endpoint is reached via
 a dependency override, like test_phase191.
@@ -143,19 +143,19 @@ print("backup payload OK (52 tables, broadcasts row round-trips)")
 c = TestClient(app, raise_server_exceptions=False)
 r = c.get("/health")
 assert r.status_code == 200, r.text
-assert HTML.count("?v=202") == 10, HTML.count("?v=202")
-assert "app.js?v=202" in HTML and "games.js?v=202" in HTML
+assert HTML.count("?v=203") == 10, HTML.count("?v=203")
+assert "app.js?v=203" in HTML and "games.js?v=203" in HTML
 assert ("?v=19" + "1") not in HTML
 BOT = open(os.path.join(BASE, "app", "bot.py")).read()
-assert 'menu_url.rstrip("/") + "/?v=202"' in BOT
+assert 'menu_url.rstrip("/") + "/?v=203"' in BOT
 app.dependency_overrides[admin_user] = lambda: object()
 try:
     r = c.get("/admin/health")
     assert r.status_code == 200, r.text
     h = r.json()
-    assert h["version"] == 202, h["version"]
+    assert h["version"] == 203, h["version"]
 finally:
     app.dependency_overrides.clear()
 assert len(main_mod._BACKUP_TABLES) == 55, len(main_mod._BACKUP_TABLES)
-print("version ?v=202 + routes 184 + backup 52 OK")
+print("version ?v=203 + routes 184 + backup 52 OK")
 print("PHASE 192 ALL OK")

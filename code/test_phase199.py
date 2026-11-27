@@ -401,15 +401,15 @@ assert '(currentTab === "portfolio" ? "Portfolio" : "Profile") + " ▾"' in JS
 assert "pf-cover" in CSS and ".pf-shade" in CSS and ".pf-work-grid" in CSS
 assert ".pf-dd-menu" in CSS and ".pf-edit-row" in CSS
 assert ".pf-work-card" in CSS and ".pf-picker" in CSS
-assert HTML.count("?v=202") == 10, HTML.count("?v=202")
+assert HTML.count("?v=203") == 10, HTML.count("?v=203")
 assert "?v=20" + "0" not in HTML
-assert "app.js?v=202" in HTML and "games.js?v=202" in HTML
+assert "app.js?v=203" in HTML and "games.js?v=203" in HTML
 BOT = open(os.path.join(ROOT, "code/app/bot.py")).read()
-assert "/?v=202" in BOT and "/?v=19" + "8" not in BOT
+assert "/?v=203" in BOT and "/?v=19" + "8" not in BOT
 paths = set()
 for route in app.routes:
     paths.add(route.path)
-assert len(paths) == 193, len(paths)
+assert len(paths) == 189, len(paths)
 for want in ("/users/{telegram_id}/portfolio", "/me/portfolio",
              "/me/portfolio/items",
              "/me/portfolio/items/{item_id}",

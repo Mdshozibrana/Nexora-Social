@@ -13,7 +13,7 @@ list order change. No backend/schema change.
 Checks: per-game icon SVG + scene markers + XML well-formedness,
 no old emoji icon anywhere in games.js, titles plain, list renders
 all 13 cards with the SVG icon, openGame renders icon + title in
-the head, version ?v=202 everywhere, CSS sizing rules present.
+the head, version ?v=203 everywhere, CSS sizing rules present.
 """
 import os
 import re
@@ -84,13 +84,13 @@ def test_icons_static():
 def test_version():
     html = open(os.path.join(ROOT, "webapp/index.html"),
                 encoding="utf-8").read()
-    assert html.count("?v=202") == 10, html.count("?v=202")
-    assert "app.js?v=202" in html and "games.js?v=202" in html
-    assert "?v=19" + "7" not in html, "stale ?v=202 in shell"
+    assert html.count("?v=203") == 10, html.count("?v=203")
+    assert "app.js?v=203" in html and "games.js?v=203" in html
+    assert "?v=19" + "7" not in html, "stale ?v=203 in shell"
     bot = open(os.path.join(ROOT, "app/bot.py"), encoding="utf-8").read()
-    assert '/?v=202' in bot, "menu button URL not ?v=202"
-    assert "?v=19" + "7" not in bot, "stale ?v=202 in bot.py"
-    print("version ?v=202 OK")
+    assert '/?v=203' in bot, "menu button URL not ?v=203"
+    assert "?v=19" + "7" not in bot, "stale ?v=203 in bot.py"
+    print("version ?v=203 OK")
 
 
 def test_css():
@@ -195,7 +195,7 @@ def main():
     test_version()
     test_css()
     test_node_harness()
-    print("phase198 OK: 13 clear SVG icons, grid + head render, ?v=202")
+    print("phase198 OK: 13 clear SVG icons, grid + head render, ?v=203")
 
 
 if __name__ == "__main__":

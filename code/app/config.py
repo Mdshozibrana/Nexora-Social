@@ -144,9 +144,6 @@ RATE_LIMITS = {
     "highlights": (120, 3600),
     # Phase 199: portfolio edits (upsert / items / reorder).
     "portfolio": (120, 3600),
-    # Phase 201: museum edits (hang a photo / place furniture /
-    # remove an item).
-    "museum": (120, 3600),
     # Phase 179 (audit M4): read/discovery budgets. Generous on
     # purpose — the feed is the hottest path (Explore/Following/
     # hashtag tabs, pull-to-refresh, "Load more" paging and the

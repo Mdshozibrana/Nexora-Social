@@ -20,10 +20,10 @@
 <meta name="twitter:description" content="Share photos, watch reels, discover designs and play classic games — all inside Telegram.">
 <meta name="twitter:image" content="https://nexora-9pip.onrender.com/webapp/og-image.png">
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
-<link rel="stylesheet" href="style.css?v=202">
-<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=202">
-<link rel="stylesheet" href="vendor/maplibre/maplibre-gl-4.7.1.css?v=202">
-<link rel="stylesheet" href="vendor/mapillary/mapillary.css?v=202">
+<link rel="stylesheet" href="style.css?v=203">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=203">
+<link rel="stylesheet" href="vendor/maplibre/maplibre-gl-4.7.1.css?v=203">
+<link rel="stylesheet" href="vendor/mapillary/mapillary.css?v=203">
 </head>
 <body>
 <div id="entry-screen">
@@ -217,30 +217,6 @@
 <!-- Phase 158: Skill Swap — teach what you know, learn what you don't. -->
 <!-- Phase 161: Archery corner controls REMOVED (owner reversal) — drag-to-aim is the only input again; mascot stays visible in Archery. -->
 <!-- Phase 160: one shared verified-name rule (.vname) — long names shrink so the blue tick stays on the same line, everywhere. -->
-<!-- Phase 201: Museum — the member's own 3D gallery. Walk room to
-     room, hang your photos on the walls, place furniture from the
-     catalog. Sidebar opens my museum; a profile's Museum button
-     opens that member's museum (view-only for visitors). -->
-<section id="view-museum" hidden>
-  <h2 class="view-title">🏛️ Museum</h2>
-  <p class="hint">Your own 3D gallery — hang your photos on the walls and place furniture in the rooms. Drag to look around, tap the room buttons to walk from room to room.</p>
-  <div id="mu-owner" class="card mu-owner"></div>
-  <div id="mu-room-tabs" class="mu-tabs"></div>
-  <div id="mu-stage" class="mu-stage">
-    <canvas id="mu-canvas"></canvas>
-    <div id="mu-nogl" class="mu-nogl" hidden>3D isn't available on this device — the rooms are listed below instead.</div>
-  </div>
-  <div class="mu-nav">
-    <button id="mu-prev" class="btn" type="button">‹ Prev room</button>
-    <span id="mu-room-name" class="mu-room-name"></span>
-    <button id="mu-next" class="btn" type="button">Next room ›</button>
-  </div>
-  <div id="mu-chips" class="mu-chips"></div>
-  <div id="mu-fallback" class="mu-fallback" hidden></div>
-  <div id="mu-sheet" class="mu-sheet" hidden></div>
-  <p id="mu-status" class="hint"></p>
-</section>
-
 <section id="view-skills" hidden>
   <h2 class="view-title">🤝 Skills</h2>
   <p class="hint">Swap skills, not money — list what you can teach and what you want to learn. Tap 🤝 Connect on a card and arrange the swap in a DM.</p>
@@ -854,7 +830,6 @@
   <button class="gb-item" data-go="nearby"><span class="gb-ic">📍</span><span class="gb-label">Nearby</span></button>
   <button class="gb-item" data-go="blood"><span class="gb-ic">🩸</span><span class="gb-label">Blood</span></button>
   <button class="gb-item" data-go="skills"><span class="gb-ic">🤝</span><span class="gb-label">Skills</span></button>
-  <button class="gb-item" data-go="museum"><span class="gb-ic">🏛️</span><span class="gb-label">Museum</span></button>
   <div class="gb-sec">LIBRARY</div>
   <button class="gb-item" data-go="messages"><span class="gb-ic">💬</span><span class="gb-label">Messages</span><span id="gb-msg-badge" class="gb-badge" hidden></span></button>
   <button class="gb-item" data-go="notifications"><span class="gb-ic">🔔</span><span class="gb-label">Notifications</span><span id="gb-bell-badge" class="gb-badge" hidden></span></button>
@@ -951,11 +926,11 @@ window.__nxBootWatchdog = setTimeout(function () {
   if (go) { go.disabled = false; go.textContent = "\u21bb RETRY"; go.onclick = function () { location.reload(); }; }
 }, 60000);
 </script>
-<script src="vendor/leaflet/leaflet.js?v=202"></script>
-<script src="vendor/maplibre/maplibre-gl-4.7.1.js?v=202"></script>
-<script src="vendor/mapillary/mapillary.js?v=202"></script>
-<script src="vendor/three/three.min.js?v=202"></script>
-<script src="app.js?v=202"></script>
-<script src="games.js?v=202"></script>
+<script src="vendor/leaflet/leaflet.js?v=203"></script>
+<script src="vendor/maplibre/maplibre-gl-4.7.1.js?v=203"></script>
+<script src="vendor/mapillary/mapillary.js?v=203"></script>
+<script src="vendor/three/three.min.js?v=203"></script>
+<script src="app.js?v=203"></script>
+<script src="games.js?v=203"></script>
 </body>
 </html>

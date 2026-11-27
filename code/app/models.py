@@ -356,7 +356,11 @@ class PortfolioItem(Base):
 
 
 class MuseumItem(Base):
-    """Phase 201: one thing hung or placed in a member's Museum —
+    """Phase 203: RETAINED but unused — the Museum was removed
+    Nov 28, 2026 (owner order), but the table stays so backups
+    taken since ?v=201 still restore (_restore_backup rejects
+    unknown tables). See Phase 169's via_inbox precedent.
+    Phase 201: one thing hung or placed in a member's Museum —
     a photo on a wall frame (kind photo, image_file_id from the
     owner's own content, optional ref to the source post/design
     so a deleted source drops out of the view) or a piece of

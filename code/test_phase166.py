@@ -282,9 +282,9 @@ with TestClient(app) as c:
 
     # 4. Neighbours + version + routes.
     html = c.get("/webapp/").text
-    assert html.count("?v=202") == 10, html.count("?v=202")
+    assert html.count("?v=203") == 10, html.count("?v=203")
     assert "?v=16" + "6" not in html
-    assert "app.js?v=202" in html and "style.css?v=202" in html
+    assert "app.js?v=203" in html and "style.css?v=203" in html
     assert "qrcode" not in html, "no QR library must be referenced"
     js = c.get("/webapp/app.js").text
     for marker in ("vname-text", "fitVerifiedNames", "totpGateAdmin",
@@ -309,15 +309,15 @@ with TestClient(app) as c:
     css = c.get("/webapp/style.css").text
     assert "composer-row" in css
     paths = {rt.path for rt in app.routes}
-    assert len(paths) == 193, len(paths)
+    assert len(paths) == 189, len(paths)
     for p in ("/admin/totp/status", "/admin/totp/setup",
               "/admin/totp/verify"):
         assert p in paths, p
     h = c.get("/admin/health", headers=ADMIN).json()
-    assert h["version"] == 202, h
+    assert h["version"] == 203, h
     r = c.get("/admin/backup", headers=ADMIN)
     assert r.status_code == 200, r.text
     assert len(r.json()["tables"]) == 55, len(r.json()["tables"])
-    print("neighbours + version + routes OK (174 routes, 48 tables, ?v=202)")
+    print("neighbours + version + routes OK (174 routes, 48 tables, ?v=203)")
 
 print("PHASE 166 OK")

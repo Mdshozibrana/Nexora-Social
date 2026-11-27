@@ -304,16 +304,16 @@ assert r.status_code == 404, r.status_code
 print("thumb auth OK (401 without token, 404 for dead file)")
 
 # --- 6. Version, routes, backup ------------------------------------
-assert "app.js?v=202" in HTML
+assert "app.js?v=203" in HTML
 assert ("?v=20" + "1") not in HTML
-assert "style.css?v=202" in HTML
-assert "games.js?v=202" in HTML
+assert "style.css?v=203" in HTML
+assert "games.js?v=203" in HTML
 paths = {rt.path for rt in app.routes}
-assert len(paths) == 193, len(paths)
+assert len(paths) == 189, len(paths)
 assert "/media/{file_id}" in paths
 assert "/designs" in paths
-assert _health_version() == 202, _health_version()
+assert _health_version() == 203, _health_version()
 assert len(_BACKUP_TABLES) == 55, len(_BACKUP_TABLES)
-print("version + routes + backup OK (193 routes, 55 tables, ?v=202)")
+print("version + routes + backup OK (193 routes, 55 tables, ?v=203)")
 
 print("PHASE 202 OK")

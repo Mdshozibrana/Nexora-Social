@@ -3317,26 +3317,3 @@ body.game-open #mascot-wrap { display: none; }
 .pf-edit-title { flex: 1; min-width: 0; font-weight: 600; font-size: 14px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pf-edit-row button { flex: none; border-radius: 10px; padding: 6px 10px; }
-
-/* ---------- Phase 201: Museum ---------- */
-.mu-owner { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.mu-tabs { display: flex; gap: 8px; margin: 12px 0; }
-.mu-tab { flex: 1; padding: 9px 4px; border-radius: 12px; border: 1px solid var(--hatch-widget-border); background: var(--hatch-widget-surface); color: var(--hatch-widget-text); font-weight: 600; font-size: 13px; }
-.mu-tab.active { background: var(--hatch-widget-accent); color: var(--hatch-widget-on-accent); border-color: var(--hatch-widget-accent); }
-.mu-stage { position: relative; border-radius: 16px; overflow: hidden; background: #241c14; }
-.mu-stage canvas { display: block; width: 100%; height: 224px; touch-action: none; }
-.mu-nogl { padding: 24px 16px; text-align: center; color: var(--hatch-widget-muted); font-size: 14px; }
-.mu-nav { display: flex; align-items: center; gap: 8px; margin: 10px 0; }
-.mu-nav .btn { flex: 0 0 auto; }
-.mu-room-name { flex: 1; text-align: center; font-weight: 700; color: var(--hatch-widget-text); }
-.mu-chips { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0; }
-.mu-chip { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 6px; border-radius: 12px; border: 1px solid var(--hatch-widget-border); background: var(--hatch-widget-surface); color: var(--hatch-widget-text); font-size: 13px; font-weight: 600; }
-.mu-chip img { width: 100%; height: 84px; object-fit: cover; border-radius: 8px; display: block; }
-.mu-fallback { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0; }
-.mu-fb-card { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; min-height: 110px; padding: 10px 6px; border-radius: 12px; border: 1px solid var(--hatch-widget-border); background: var(--hatch-widget-surface); color: var(--hatch-widget-text); font-size: 13px; font-weight: 600; }
-.mu-fb-card img { width: 100%; height: 110px; object-fit: cover; border-radius: 8px; display: block; }
-.mu-sheet { margin: 12px 0; padding: 12px; border-radius: 16px; border: 1px solid var(--hatch-widget-border); background: var(--hatch-widget-surface); }
-.mu-sheet-head { display: flex; align-items: center; justify-content: space-between; font-weight: 700; color: var(--hatch-widget-text); margin-bottom: 10px; }
-.mu-sheet-x { border: none; background: transparent; color: var(--hatch-widget-muted); font-size: 18px; padding: 4px 8px; }
-.mu-sheet-body { display: flex; flex-direction: column; gap: 8px; }
-.mu-cat-row { text-align: left; }

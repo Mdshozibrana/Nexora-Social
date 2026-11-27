@@ -726,18 +726,6 @@ def _media_visible(db, viewer_id: int, file_id: str) -> bool:
                      or not _muted_by(db, viewer_id, pf.user_id)) \
                 and _can_see_posts(db, viewer_id, pf.user_id):
             return True
-    # Phase 201: a photo hung on a museum wall is visible
-    # exactly when the museum itself is — the viewer may see
-    # the owner's profile (block either way, muted, private
-    # non-followed all hide it). Grant only, like the portfolio
-    # branch above: an explicit publication wins over the
-    # private-source rules below, and a viewer who may not see
-    # the museum falls through to the file's own source.
-    mu = db.query(models.MuseumItem).filter_by(
-        image_file_id=file_id, kind="photo").first()
-    if mu is not None and _museum_visible_to(
-            db, viewer_id, mu.user_id):
-        return True
     post = db.query(models.Post).filter(
         (models.Post.media_file_id == file_id)
         | (models.Post.thumb_file_id == file_id),
@@ -3731,214 +3719,6 @@ def reorder_portfolio_items(body: PortfolioReorderIn,
     db.commit()
     return {"reordered": True, "count": len(ids)}
 
-
-
-# ---------------------------------------------------------------------------
-# Phase 201: Museum — a member's own 3D gallery (owner order Nov 27,
-# model confirmed the same evening). Sidebar opens MY museum; a
-# profile's Museum button opens THAT member's museum (view-only).
-# Wall photos are picked from the owner's own posts/designs (no new
-# upload path — same rule as Phase 199); furniture comes from a
-# built-in catalog. Three rooms, four wall frames + four floor
-# spots each (24 items max — slots bound it). Visibility reuses
-# the Phase 136/174 rules. No points, no payments.
-# ---------------------------------------------------------------------------
-
-MUSEUM_ROOMS = ("entrance", "lounge", "family")
-MUSEUM_FURNITURE = ("chair", "table", "lamp", "plant", "sofa", "rug")
-MUSEUM_SLOTS = 4
-
-
-class MuseumItemIn(BaseModel):
-    room: str = Field(default="entrance", max_length=16)
-    kind: str = Field(default="photo", max_length=16)
-    slot: int = Field(default=0)
-    image_file_id: Optional[str] = Field(default=None, max_length=256)
-    ref_kind: Optional[str] = Field(default=None, max_length=16)
-    ref_id: Optional[int] = None
-    furniture_type: Optional[str] = Field(default=None, max_length=32)
-
-
-def _museum_visible_to(db, viewer_id, owner_id):
-    """May viewer_id see owner_id's museum at all? Same three
-    rules as post/portfolio visibility: no block either way, not
-    muted by the viewer, and a private owner must be followed
-    (own museum always passes)."""
-    if viewer_id == owner_id:
-        return True
-    if (_blocked_by(db, owner_id, viewer_id)
-            or _blocked_by(db, viewer_id, owner_id)):
-        return False
-    if _muted_by(db, viewer_id, owner_id):
-        return False
-    return _can_see_posts(db, viewer_id, owner_id)
-
-
-def _museum_item_dict(db, viewer_id, it):
-    """One hung photo or placed furniture, resolved for the
-    viewer: a photo whose source post was deleted (or is no
-    longer visible) drops out; a design source that is gone
-    drops out too. A photo hung from the raw photo picker
-    (no ref) stays — the owner explicitly hung that file.
-    Returns None for a dropped item."""
-    if it.kind == "photo":
-        if it.ref_kind == "post":
-            p = db.get(models.Post, it.ref_id) if it.ref_id else None
-            if p is None or p.is_deleted:
-                return None
-            if not _post_visible_to(db, viewer_id, p):
-                return None
-        elif it.ref_kind == "design":
-            if db.get(models.Design, it.ref_id) is None:
-                return None
-        return {"id": it.id, "room": it.room, "kind": "photo",
-                "slot": it.slot, "image_file_id": it.image_file_id,
-                "ref_kind": it.ref_kind, "ref_id": it.ref_id,
-                "furniture_type": None}
-    return {"id": it.id, "room": it.room, "kind": "furniture",
-            "slot": it.slot, "image_file_id": None,
-            "ref_kind": None, "ref_id": None,
-            "furniture_type": it.furniture_type}
-
-
-def _museum_out(db, viewer_id, owner_id):
-    """The public shape of a museum: owner fields + items
-    grouped by room (empty rooms list empty)."""
-    owner = db.get(models.User, owner_id)
-    rooms = {r: [] for r in MUSEUM_ROOMS}
-    for it in db.query(models.MuseumItem).filter_by(
-            user_id=owner_id).order_by(
-            models.MuseumItem.room, models.MuseumItem.kind,
-            models.MuseumItem.slot).all():
-        if it.room not in rooms:
-            continue
-        d = _museum_item_dict(db, viewer_id, it)
-        if d is not None:
-            rooms[it.room].append(d)
-    return {
-        "user_id": owner_id,
-        "first_name": owner.first_name if owner else "",
-        "username": owner.username if owner else None,
-        "photo_file_id": owner.photo_file_id if owner else None,
-        "is_verified": bool(owner and owner.is_verified),
-        "rooms": rooms,
-    }
-
-
-@app.get("/users/{telegram_id}/museum")
-def get_user_museum(telegram_id: int,
-                    user: models.User = Depends(current_user),
-                    db: Session = Depends(get_db)):
-    """Phase 201: one member's museum. 404 when there is no
-    such member, or the viewer may not see this member (block
-    either way, muted, private and not followed) — the same
-    hiding as the profile itself. An empty museum still
-    returns its rooms (empty)."""
-    _enforce_rate("user_posts", f"u{user.telegram_id}")
-    target = db.get(models.User, telegram_id)
-    if target is None:
-        raise HTTPException(404, "User not found")
-    if not _museum_visible_to(db, user.telegram_id, telegram_id):
-        raise HTTPException(404, "Museum not available")
-    return _museum_out(db, user.telegram_id, telegram_id)
-
-
-@app.get("/me/museum")
-def get_my_museum(user: models.User = Depends(current_user),
-                  db: Session = Depends(get_db)):
-    """Phase 201: my own museum — always visible to me, even
-    empty, so the owner can hang the first photo."""
-    _enforce_rate("user_posts", f"u{user.telegram_id}")
-    return _museum_out(db, user.telegram_id, user.telegram_id)
-
-
-@app.post("/me/museum/items")
-def add_museum_item(body: MuseumItemIn,
-                    user: models.User = Depends(current_user),
-                    db: Session = Depends(get_db)):
-    """Phase 201: hang a photo on a wall frame, or place a
-    piece of furniture on a floor spot. Hanging/placing on an
-    occupied slot REPLACES it (one row per room+kind+slot).
-    A photo must come from my own content: a post (own, live),
-    a design (exists), or a raw photo from my own files."""
-    _enforce_rate("museum", f"u{user.telegram_id}")
-    if body.room not in MUSEUM_ROOMS:
-        raise HTTPException(400, "room must be entrance, lounge or family")
-    if body.kind not in ("photo", "furniture"):
-        raise HTTPException(400, "kind must be photo or furniture")
-    if body.slot is None or not 0 <= body.slot < MUSEUM_SLOTS:
-        raise HTTPException(400, "slot must be 0 to 3")
-    image_file_id = None
-    ref_kind = None
-    ref_id = None
-    furniture_type = None
-    if body.kind == "photo":
-        if body.ref_kind == "post":
-            if not body.ref_id:
-                raise HTTPException(400, "A post photo needs a post")
-            p = db.get(models.Post, body.ref_id)
-            if p is None or p.is_deleted or p.user_id != user.telegram_id:
-                raise HTTPException(404, "Post not found")
-            image_file_id = (p.thumb_file_id if p.type == "video"
-                             else p.media_file_id)
-            if not image_file_id:
-                raise HTTPException(
-                    400, "That post has no photo to hang")
-            ref_kind, ref_id = "post", body.ref_id
-        elif body.ref_kind == "design":
-            if not body.ref_id:
-                raise HTTPException(400, "A design photo needs a design")
-            d = db.get(models.Design, body.ref_id)
-            if d is None:
-                raise HTTPException(404, "Design not found")
-            image_file_id = d.image_file_id
-            ref_kind, ref_id = "design", body.ref_id
-        elif body.ref_kind:
-            raise HTTPException(400, "ref_kind must be post or design")
-        else:
-            if not body.image_file_id:
-                raise HTTPException(400, "A photo needs an image")
-            if body.image_file_id not in _own_media_file_ids(
-                    db, user.telegram_id):
-                raise HTTPException(
-                    400, "Photo must be one of your own photos")
-            image_file_id = body.image_file_id
-    else:  # furniture
-        if body.furniture_type not in MUSEUM_FURNITURE:
-            raise HTTPException(
-                400, "furniture_type must be one of the catalog")
-        furniture_type = body.furniture_type
-    old = db.query(models.MuseumItem).filter_by(
-        user_id=user.telegram_id, room=body.room,
-        kind=body.kind, slot=body.slot).first()
-    if old is not None:
-        db.delete(old)
-        db.flush()
-    it = models.MuseumItem(user_id=user.telegram_id, room=body.room,
-                           kind=body.kind, slot=body.slot,
-                           image_file_id=image_file_id,
-                           ref_kind=ref_kind, ref_id=ref_id,
-                           furniture_type=furniture_type)
-    db.add(it)
-    db.commit()
-    db.refresh(it)
-    return _museum_item_dict(db, user.telegram_id, it)
-
-
-@app.delete("/me/museum/items/{item_id}")
-def remove_museum_item(item_id: int,
-                       user: models.User = Depends(current_user),
-                       db: Session = Depends(get_db)):
-    """Phase 201: take a photo off a wall, or remove a piece
-    of furniture from my museum. Only my own items."""
-    _enforce_rate("museum", f"u{user.telegram_id}")
-    it = db.query(models.MuseumItem).filter_by(
-        id=item_id, user_id=user.telegram_id).first()
-    if it is None:
-        raise HTTPException(404, "Museum item not found")
-    db.delete(it)
-    db.commit()
-    return {"removed": True}
 
 @app.get("/me/following")
 def my_following(user: models.User = Depends(current_user),
@@ -9283,7 +9063,11 @@ _BACKUP_TABLES = [
     # Phase 199: member portfolios + work samples.
     ("portfolios", models.Portfolio),
     ("portfolio_items", models.PortfolioItem),
-    # Phase 201: museum wall photos + placed furniture.
+    # Phase 203: museum_items is RETAINED but unused — the
+    # Museum was removed Nov 28, 2026, but _restore_backup
+    # rejects backups with unknown tables, so dropping this
+    # entry would make every backup since ?v=201
+    # unrestorable (Phase 169 precedent: via_inbox).
     ("museum_items", models.MuseumItem),
 ]
 _BACKUP_MODELS = {name: m for name, m in _BACKUP_TABLES}
@@ -10949,13 +10733,6 @@ _NEXA_SYSTEM = (
     "change once every 60 days; the @username belongs to "
     "Telegram and cannot be changed here. Profiles show "
     "followers and following counts. "
-    "MUSEUM: the sidebar has a Museum — your own 3D gallery. "
-    "Hang your photos on the walls of its rooms and place "
-    "furniture from the catalog; drag to look around and tap "
-    "the room buttons to walk from room to room. A member's "
-    "Museum button sits on one side of their profile; a "
-    "private member's museum is visible only to followers. "
-    "The museum gives no points. "
     "THEME COLOURS: in Settings, the Theme section lets you "
     "pick a colour shade — one shade can "
     "recolour the whole app, or you can assign different "
