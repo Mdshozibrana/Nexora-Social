@@ -9,7 +9,7 @@ member's 404, cancel unknown 404; sweeper publishes a due post
 hashtags extracted) and skips future rows; sweeper marks a
 screening-rejected post failed with a short human error, logs a
 screen_reject event, and does NOT retry it on the next sweep;
-backup carries 39 tables incl. scheduled_posts rows; ?v=193 x5,
+backup carries 39 tables incl. scheduled_posts rows; ?v=194 x5,
 no ?v=134; scheduled-post client markers + Phase 123-134
 markers intact.
 """
@@ -223,7 +223,7 @@ with TestClient(app) as c:
 
     # 8. Client markers + asset version.
     html = open("webapp/index.html").read()
-    assert html.count("?v=193") == 10, html.count("?v=193")
+    assert html.count("?v=194") == 10, html.count("?v=194")
     assert "?v=134" not in html
     assert 'id="composer-schedule-toggle"' in html
     assert 'id="composer-schedule"' in html
@@ -240,6 +240,6 @@ with TestClient(app) as c:
               "loadBackupStatus", "openTipSheet", "openInsights",
               "ins-chart", "ins-table"):
         assert m in js, m
-    print("client markers + ?v=193 OK")
+    print("client markers + ?v=194 OK")
 
 print("PHASE-135 TESTS PASSED")

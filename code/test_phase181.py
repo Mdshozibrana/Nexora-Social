@@ -466,7 +466,7 @@ with TestClient(app) as c:
     bk = r.json()
     assert len(bk["tables"]) == 52, len(bk["tables"])
     assert len(_BACKUP_TABLES) == 52, len(_BACKUP_TABLES)
-    assert HTML.count("?v=193") == 10, HTML.count("?v=193")
+    assert HTML.count("?v=194") == 10, HTML.count("?v=194")
     assert "?v=18" + "0" not in HTML
     for m in ("totp_verify_failed", "totp_setup_fetch",
               "delivered_targets", "Encrypted backup required",
@@ -476,7 +476,7 @@ with TestClient(app) as c:
     assert "Last public IP" in GEOIP and "_public_ip" in GEOIP, GEOIP
     r = c.get("/admin/health", headers=ADMIN)
     assert r.status_code == 200, r.text
-    assert r.json()["version"] == 193, r.json()
-    print("backup 52 tables + markers + ?v=193 OK")
+    assert r.json()["version"] == 194, r.json()
+    print("backup 52 tables + markers + ?v=194 OK")
 
 print("PHASE 181 OK")

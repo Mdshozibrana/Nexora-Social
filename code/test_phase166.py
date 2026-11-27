@@ -90,7 +90,17 @@ function makeEl(tag) {
     tag, children: [], hidden: false, id: "", className: "",
     textContent: "", value: "", type: "", inputMode: "",
     maxLength: 0, placeholder: "", onclick: null, parent: null,
+    style: { setProperty(k, v) { this[k] = v; } },
+    dataset: {},
+    _handlers: {},
+    _cls: new Set(),
+    classList: { add(...c) { c.forEach(x => el._cls.add(x)); }, remove(...c) { c.forEach(x => el._cls.delete(x)); }, contains(x) { return el._cls.has(x); } },
+    addEventListener(t, fn) { (el._handlers[t] = el._handlers[t] || []).push(fn); },
+    _fire(t, ev) { (el._handlers[t] || []).forEach(fn => fn(ev || {})); },
+    focus() { focusedEl = el; },
+    setAttribute(k, v) { el[k] = v; },
     append(...kids) { for (const k of kids) { k.parent = el; el.children.push(k); } },
+    appendChild(k) { k.parent = el; el.children.push(k); return k; },
     prepend(...kids) { for (let i = kids.length - 1; i >= 0; i--) { kids[i].parent = el; el.children.unshift(kids[i]); } },
     remove() { if (el.parent) { const i = el.parent.children.indexOf(el); if (i >= 0) el.parent.children.splice(i, 1); el.parent = null; } },
   };
@@ -104,6 +114,8 @@ function findById(node, id) {
 }
 function $(id) { for (const r of roots) { const f = findById(r, id); if (f) return f; } return null; }
 let apiImpl = null;
+let focusedEl = null;
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 async function api(path, opts) { return apiImpl(path, opts); }
 let loadAdminCalls = 0;
 async function loadAdmin() { loadAdminCalls++; }
@@ -117,6 +129,12 @@ function findInput(el) {
   if (el.tag === "input") return el;
   for (const ch of el.children) { const f = findInput(ch); if (f) return f; }
   return null;
+}
+function collectInputs(el, out) {
+  out = out || [];
+  if (el.tag === "input") out.push(el);
+  for (const ch of el.children) collectInputs(ch, out);
+  return out;
 }
 function visibleText(el) {
   let t = el.textContent || "";
@@ -163,12 +181,11 @@ HARNESS_MAIN = r'''
   assert(!tags.includes("canvas") && !tags.includes("img"),
          "Phase 166: no QR rendering (no canvas/img) in the admin view, tags: " + tags.join(","));
   // --- Scenario 2: verify success ---
-  const input = findInput(gate);
-  assert(input, "code input present");
-  input.value = "123456";
-  const verifyBtn = findBtn(gate, "Verify");
-  assert(verifyBtn, "Verify button present");
-  await verifyBtn.onclick();
+  // Phase 194: six digit boxes — typing the 6th digit auto-verifies.
+  const boxes = collectInputs(gate);
+  assert(boxes.length === 6, "six digit boxes, got " + boxes.length);
+  for (let i = 0; i < 6; i++) { boxes[i].value = "123456"[i]; boxes[i]._fire("input", {}); }
+  await sleep(1200);
   assert($("totp-gate") === null, "gate removed after verify");
   assert(!c1.hidden && !c2.hidden, "panel cards un-hidden after verify");
   assert(card && !card.hidden, "setup card still visible after verify");
@@ -265,9 +282,9 @@ with TestClient(app) as c:
 
     # 4. Neighbours + version + routes.
     html = c.get("/webapp/").text
-    assert html.count("?v=193") == 10, html.count("?v=193")
+    assert html.count("?v=194") == 10, html.count("?v=194")
     assert "?v=16" + "6" not in html
-    assert "app.js?v=193" in html and "style.css?v=193" in html
+    assert "app.js?v=194" in html and "style.css?v=194" in html
     assert "qrcode" not in html, "no QR library must be referenced"
     js = c.get("/webapp/app.js").text
     for marker in ("vname-text", "fitVerifiedNames", "totpGateAdmin",
@@ -297,10 +314,10 @@ with TestClient(app) as c:
               "/admin/totp/verify"):
         assert p in paths, p
     h = c.get("/admin/health", headers=ADMIN).json()
-    assert h["version"] == 193, h
+    assert h["version"] == 194, h
     r = c.get("/admin/backup", headers=ADMIN)
     assert r.status_code == 200, r.text
     assert len(r.json()["tables"]) == 52, len(r.json()["tables"])
-    print("neighbours + version + routes OK (174 routes, 48 tables, ?v=193)")
+    print("neighbours + version + routes OK (174 routes, 48 tables, ?v=194)")
 
 print("PHASE 166 OK")

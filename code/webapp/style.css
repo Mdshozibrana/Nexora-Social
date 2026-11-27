@@ -3067,3 +3067,25 @@ html[data-theme] .suggest-follow.on { background: var(--t-chip, #F3DCE7);
 .follow-list-name { flex: 1; text-align: left; overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap; }
 .follow-list-state { font-size: 13px; opacity: .75; white-space: nowrap; }
+
+/* Phase 194: glassy OTP gate — the owner's "Glassy OTP V4" video:
+   dark frosted card, blue glow, glass digit boxes, green-check
+   success + confetti. Scoped to the TOTP gate only; member themes
+   are untouched. */
+.totp-glass { position: relative; overflow: hidden; background: linear-gradient(160deg, rgba(13, 27, 48, .93), rgba(6, 12, 24, .95)); border: 1px solid rgba(147, 197, 253, .28); border-radius: 18px; box-shadow: 0 18px 50px rgba(2, 132, 199, .28), 0 0 42px rgba(37, 99, 235, .22); color: #F1F5F9; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+.totp-glass::before { content: ""; position: absolute; inset: -40% -20%; background: radial-gradient(ellipse 55% 40% at 50% 0%, rgba(59, 130, 246, .35), transparent 70%); pointer-events: none; }
+.totp-glass > * { position: relative; }
+.totp-glass b { color: #F8FAFC; }
+.totp-glass .hint { color: rgba(226, 232, 240, .72); }
+.totp-otp-row { display: flex; gap: 8px; justify-content: center; margin: 14px 0 6px; }
+.totp-digit { width: 44px; height: 52px; flex: 0 0 auto; padding: 0; text-align: center; font-size: 24px; font-weight: 700; color: #F8FAFC; background: rgba(148, 163, 184, .14); border: 1px solid rgba(148, 163, 184, .35); border-radius: 12px; outline: none; caret-color: #60A5FA; }
+.totp-digit:focus { border-color: #3B82F6; box-shadow: 0 0 0 3px rgba(59, 130, 246, .35), 0 0 18px rgba(59, 130, 246, .45); background: rgba(59, 130, 246, .16); }
+.totp-digit.totp-error { border-color: #F87171; background: rgba(248, 113, 113, .14); }
+@media (max-width: 380px) { .totp-digit { width: 38px; height: 46px; font-size: 21px; } .totp-otp-row { gap: 6px; } }
+.totp-shake { animation: totp-shake .45s ease; }
+@keyframes totp-shake { 0%, 100% { transform: translateX(0); } 20% { transform: translateX(-7px); } 40% { transform: translateX(7px); } 60% { transform: translateX(-5px); } 80% { transform: translateX(5px); } }
+.totp-success { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 18px 0 8px; }
+.totp-check { width: 56px; height: 56px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 30px; font-weight: 700; color: #052E16; background: #34D399; box-shadow: 0 0 0 6px rgba(52, 211, 153, .18), 0 0 26px rgba(52, 211, 153, .55); }
+.totp-confetti { position: relative; width: 100%; height: 40px; }
+.totp-confetti-piece { position: absolute; top: 0; width: 7px; height: 7px; border-radius: 2px; animation: totp-confetti-fall .9s ease-out forwards; }
+@keyframes totp-confetti-fall { from { transform: translate(0, 0) rotate(0deg); opacity: 1; } to { transform: translate(var(--dx, 0px), 34px) rotate(200deg); opacity: 0; } }

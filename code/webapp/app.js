@@ -9304,39 +9304,113 @@ async function totpGateAdmin() {
   // secret must never be visible on this screen, in any form.
   [...view.children].forEach(el => { if (el.id !== "totp-card") el.hidden = true; });
   const gate = document.createElement("div");
-  gate.className = "card";
+  gate.className = "card totp-glass";
   gate.id = "totp-gate";
   const title = document.createElement("b");
   title.textContent = "🔐 Admin verification";
   const hint = document.createElement("p");
   hint.className = "hint";
   hint.textContent = "Enter the 6-digit code from your authenticator app to open the Admin Panel.";
-  const input = document.createElement("input");
-  input.id = "totp-code";
-  input.type = "text";
-  input.inputMode = "numeric";
-  input.maxLength = 6;
-  input.placeholder = "123456";
-  const btn = document.createElement("button");
-  btn.className = "btn";
-  btn.textContent = "Verify";
   const msg = document.createElement("p");
   msg.className = "hint";
   msg.id = "totp-msg";
-  btn.onclick = async () => {
+  // Phase 194: glassy OTP — six digit boxes in the style of the
+  // owner's "Glassy OTP V4" reference video (4 boxes there; TOTP
+  // codes are 6 digits, so 6 boxes here). Typing auto-advances,
+  // paste fills all boxes, a full code auto-verifies — no button.
+  const row = document.createElement("div");
+  row.className = "totp-otp-row";
+  const boxes = [];
+  let verifying = false;
+  const readCode = () => boxes.map(b => b.value).join("");
+  const clearBoxes = () => { boxes.forEach(b => { b.value = ""; }); };
+  const verify = async () => {
+    if (verifying) return;
+    const code = readCode();
+    if (code.length !== 6) return;
+    verifying = true;
     msg.textContent = "Checking…";
     try {
       await api("/admin/totp/verify", { method: "POST",
-        body: JSON.stringify({ code: input.value.trim() }) });
-      gate.remove();
-      [...view.children].forEach(el => { el.hidden = false; });
-      loadAdmin();
+        body: JSON.stringify({ code }) });
+      // Success state (video): green check + "Verified" + a small
+      // confetti burst, then the panel opens as before.
+      row.hidden = true;
+      msg.hidden = true;
+      const ok = document.createElement("div");
+      ok.className = "totp-success";
+      const tick = document.createElement("span");
+      tick.className = "totp-check";
+      tick.textContent = "✓";
+      const okText = document.createElement("b");
+      okText.textContent = "Verified";
+      const burst = document.createElement("div");
+      burst.className = "totp-confetti";
+      const colours = ["#34D399", "#60A5FA", "#FBBF24", "#F8FAFC", "#22D3EE"];
+      for (let i = 0; i < 24; i++) {
+        const piece = document.createElement("span");
+        piece.className = "totp-confetti-piece";
+        piece.style.background = colours[i % colours.length];
+        piece.style.left = (8 + (i * 37) % 84) + "%";
+        piece.style.setProperty("--dx", (((i * 53) % 120) - 60) + "px");
+        piece.style.animationDelay = ((i % 8) * 40) + "ms";
+        burst.appendChild(piece);
+      }
+      ok.append(tick, okText, burst);
+      gate.appendChild(ok);
+      setTimeout(() => {
+        gate.remove();
+        [...view.children].forEach(el => { el.hidden = false; });
+        loadAdmin();
+      }, 900);
     } catch (e) {
+      verifying = false;
       msg.textContent = e.message || "Wrong code — try again.";
+      row.classList.add("totp-shake");
+      boxes.forEach(b => b.classList.add("totp-error"));
+      clearBoxes();
+      boxes[0].focus();
+      setTimeout(() => { row.classList.remove("totp-shake"); }, 500);
     }
   };
-  gate.append(title, hint, input, btn, msg);
+  for (let i = 0; i < 6; i++) {
+    const box = document.createElement("input");
+    box.className = "totp-digit";
+    box.type = "text";
+    box.inputMode = "numeric";
+    box.maxLength = 1;
+    box.autocomplete = "one-time-code";
+    box.setAttribute("aria-label", "Digit " + (i + 1));
+    box.addEventListener("input", () => {
+      box.value = box.value.replace(/\D/g, "").slice(0, 1);
+      boxes.forEach(b => b.classList.remove("totp-error"));
+      if (box.value && i < 5) boxes[i + 1].focus();
+      if (readCode().length === 6) verify();
+    });
+    box.addEventListener("keydown", (ev) => {
+      if (ev.key === "Backspace" && !box.value && i > 0) {
+        ev.preventDefault();
+        boxes[i - 1].value = "";
+        boxes[i - 1].focus();
+      }
+    });
+    box.addEventListener("paste", (ev) => {
+      ev.preventDefault();
+      const pasted = ev.clipboardData && ev.clipboardData.getData
+        ? ev.clipboardData.getData("text") : "";
+      const digits = pasted.replace(/\D/g, "").slice(0, 6);
+      if (!digits) return;
+      for (let j = 0; j < digits.length; j++) boxes[j].value = digits[j];
+      boxes.forEach(b => b.classList.remove("totp-error"));
+      boxes[Math.min(digits.length, 5)].focus();
+      if (digits.length === 6) verify();
+    });
+    boxes.push(box);
+    row.appendChild(box);
+  }
+  gate.append(title, hint, row, msg);
   view.prepend(gate);
+  boxes[0].focus();
   return true;
 }
 

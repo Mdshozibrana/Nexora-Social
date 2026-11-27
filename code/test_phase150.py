@@ -27,7 +27,7 @@ tabs unchanged; JS wiring for all five controls intact;
 Phase 123 (drafts) and Phase 135 (scheduled) behaviour
 still works end to end; backup still 42 tables and the route
 count unchanged (no schema change, no new endpoints);
-?v=193 x9, no old-version literals.
+?v=194 x9, no old-version literals.
 """
 import hashlib, hmac, json, os, re, time, urllib.parse
 from datetime import datetime, timedelta
@@ -168,10 +168,10 @@ for tid, tlabel in (("tab-explore", "Explore"),
     assert f'id="{tid}"' in HTML, tid
     assert tlabel in HTML, tlabel
 # Asset version + menu URL.
-assert HTML.count("?v=193") == 10, HTML.count("?v=193")
+assert HTML.count("?v=194") == 10, HTML.count("?v=194")
 assert "?v=14" + "9" not in HTML
-assert 'menu_url.rstrip("/") + "/?v=193"' in BOT
-print("composer HTML OK (5 controls + textarea + tip + tabs + ?v=193)")
+assert 'menu_url.rstrip("/") + "/?v=194"' in BOT
+print("composer HTML OK (5 controls + textarea + tip + tabs + ?v=194)")
 
 # 5. JS wiring for all five controls + Phase 123/135 markers intact.
 for expr in ('$("composer-media").onclick',

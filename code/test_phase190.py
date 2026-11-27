@@ -119,7 +119,7 @@ print("boot harness OK (6/6: watchdog + hung/typeerror/503/401/no-telegram)")
 
 # --- 3. Shell watchdog: inline, before app.js, 60s, RETRY ---------
 assert "__nxBootWatchdog" in HTML, "no inline watchdog in shell"
-assert HTML.index("__nxBootWatchdog") < HTML.index("app.js?v=193"), \
+assert HTML.index("__nxBootWatchdog") < HTML.index("app.js?v=194"), \
     "watchdog must precede the app.js script tag"
 wd = HTML[HTML.index("// Phase 190: boot watchdog"):]
 wd = wd[:wd.index("</script>")]
@@ -176,11 +176,11 @@ assert "-m 25" not in kb, "keepalive still mentions -m 25"
 print("keepalive OK (saved job pings with -m 60)")
 
 # --- 7. Version + routes + backup pins ------------------------------
-assert HTML.count("?v=193") == 10, HTML.count("?v=193")
+assert HTML.count("?v=194") == 10, HTML.count("?v=194")
 assert "?v=18" + "9" not in HTML
-assert "app.js?v=193" in HTML and "games.js?v=193" in HTML
+assert "app.js?v=194" in HTML and "games.js?v=194" in HTML
 BOT = open(os.path.join(ROOT, "code/app/bot.py")).read()
-assert 'menu_url.rstrip("/") + "/?v=193"' in BOT
+assert 'menu_url.rstrip("/") + "/?v=194"' in BOT
 paths = {rt.path for rt in app.routes}
 assert len(paths) == 184, len(paths)
 assert len(_BACKUP_TABLES) == 52, len(_BACKUP_TABLES)
@@ -188,7 +188,7 @@ with TestClient(app) as cx:
     r = cx.get("/admin/health", headers=ADMIN)
     assert r.status_code == 200, r.text
     h = r.json()
-    assert h["version"] == 193, h["version"]
-print("version ?v=193 + routes 184 + backup 52 OK")
+    assert h["version"] == 194, h["version"]
+print("version ?v=194 + routes 184 + backup 52 OK")
 
 print("PHASE 190 OK")
