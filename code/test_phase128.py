@@ -264,7 +264,7 @@ with TestClient(app) as c:
     assert b["format"] == "nexora-backup" and b["version"] == 1
     from app.main import _BACKUP_TABLES  # noqa: E402
     assert set(b["tables"]) == {n for n, _ in _BACKUP_TABLES}
-    assert len(b["tables"]) == 52, len(b["tables"])
+    assert len(b["tables"]) == 54, len(b["tables"])
     assert "security_events" in b["tables"]
     assert len(b["tables"]["security_events"]) == 1000, \
         len(b["tables"]["security_events"])
@@ -286,9 +286,9 @@ with TestClient(app) as c:
     print("backup restore round-trip: security rows back identical OK")
 
     # ------------------------------------------------------------- client --
-    assert HTML.count("?v=198") == 10, HTML.count("?v=198")
+    assert HTML.count("?v=199") == 10, HTML.count("?v=199")
     assert "?v=127" not in HTML
-    assert "app.js?v=198" in HTML and "style.css?v=198" in HTML
+    assert "app.js?v=199" in HTML and "style.css?v=199" in HTML
     for marker in ("loadSecurityLog", "renderSecLog", "secKind",
                    "secEntries", "/admin/security-log"):
         assert marker in JS, marker
@@ -302,6 +302,6 @@ with TestClient(app) as c:
                    "loadPayoutBox", "loadPayoutList", "loadPayouts",
                    "decidePayout", "markPayoutPaid"):
         assert marker in JS, marker
-    print("client: ?v=198 + security markers + 123-127 markers OK")
+    print("client: ?v=199 + security markers + 123-127 markers OK")
 
 print("ALL PHASE-128 CHECKS PASSED")

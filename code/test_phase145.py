@@ -97,7 +97,7 @@ with TestClient(app) as c:
     # 3. Backup still 42 tables (no schema change).
     r = c.get("/admin/backup", headers=ALICE)
     assert r.status_code == 200, r.text
-    assert len(r.json()["tables"]) == 52, len(r.json()["tables"])
+    assert len(r.json()["tables"]) == 54, len(r.json()["tables"])
     print("backup: 42 tables OK")
 
     # 4. Profile render path: ONE openProfile for own, other and
@@ -146,13 +146,13 @@ with TestClient(app) as c:
 
     # 6. Client markers + asset version.
     HTML = open("webapp/index.html").read()
-    assert HTML.count("?v=198") == 10, HTML.count("?v=198")
+    assert HTML.count("?v=199") == 10, HTML.count("?v=199")
     assert "?v=14" + "4" not in HTML
     for m in ("loadSettings", "renderLevelBlock", "openTipSheet",
               "loadProfilePosts", "openProfile", "loadMe",
               "loadDrafts", "loadScheduled", "loadFollowRequests",
               "themeCard", "dataCard", "loadBlocked"):
         assert m in JS, m
-    print("client markers + ?v=198 OK")
+    print("client markers + ?v=199 OK")
 
 print("PHASE-145 TESTS PASSED")

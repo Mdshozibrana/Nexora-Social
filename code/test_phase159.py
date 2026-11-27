@@ -13,7 +13,7 @@ and works exactly as before Phase 159 (same aim state, same
 clamp, same release); the mascot is NOT hidden while Archery is
 open; the help text is back to its pre-159 wording; Solo + 2
 Players intact; neighbours (incl. Phase 160 .vname); backup 44
-tables; routes 163; ?v=198 x10, no old version literals.
+tables; routes 163; ?v=199 x10, no old version literals.
 """
 import hashlib, hmac, json, os, re, subprocess, time, urllib.parse
 
@@ -156,17 +156,17 @@ print("neighbours OK (incl. Phase 160 .vname)")
 with TestClient(app) as c:
     r = c.get("/admin/backup", headers=ALICE)
     assert r.status_code == 200, r.text
-    assert len(r.json()["tables"]) == 52, len(r.json()["tables"])
+    assert len(r.json()["tables"]) == 54, len(r.json()["tables"])
     print("backup: 44 tables OK")
 paths = {rt.path for rt in app.routes}
-assert len(paths) == 184, len(paths)
+assert len(paths) == 189, len(paths)
 print("routes: 163 OK (no new endpoints)")
 
 # 10. Version.
-assert HTML.count("?v=198") == 10, HTML.count("?v=198")
+assert HTML.count("?v=199") == 10, HTML.count("?v=199")
 assert "?v=16" + "0" not in HTML
-assert "app.js?v=198" in HTML and "games.js?v=198" in HTML
-assert 'menu_url.rstrip("/") + "/?v=198"' in BOT
+assert "app.js?v=199" in HTML and "games.js?v=199" in HTML
+assert 'menu_url.rstrip("/") + "/?v=199"' in BOT
 assert "Phase 161" in HTML
-print("version OK (?v=198 x10, no old-version literals)")
+print("version OK (?v=199 x10, no old-version literals)")
 print("PHASE 159 REMOVAL OK")

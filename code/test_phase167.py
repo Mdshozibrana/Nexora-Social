@@ -123,9 +123,9 @@ with TestClient(app) as c:
         "boolean DEFAULT 0 present"
     assert 'via_inbox = Column(Boolean, default=False)' in \
         open(os.path.join(ROOT, "code/app/models.py")).read()
-    assert HTML.count("?v=198") == 10, HTML.count("?v=198")
+    assert HTML.count("?v=199") == 10, HTML.count("?v=199")
     assert "?v=16" + "8" not in HTML
-    assert "app.js?v=198" in HTML and "style.css?v=198" in HTML
+    assert "app.js?v=199" in HTML and "style.css?v=199" in HTML
     print("page removal OK (no Inbox page/box/endpoint, column retained)")
 
     # 4. Neighbours + version + routes.
@@ -137,13 +137,13 @@ with TestClient(app) as c:
         assert marker in js, marker
     assert "Show setup code" not in js, "Phase 166 removal guard"
     paths = {rt.path for rt in app.routes}
-    assert len(paths) == 184, len(paths)
+    assert len(paths) == 189, len(paths)
     assert "/inbox-posts" not in paths, paths
     h = c.get("/admin/health", headers=ADMIN).json()
-    assert h["version"] == 198, h
+    assert h["version"] == 199, h
     r = c.get("/admin/backup", headers=ADMIN)
     assert r.status_code == 200, r.text
-    assert len(r.json()["tables"]) == 52, len(r.json()["tables"])
-    print("neighbours + version + routes OK (174 routes, 48 tables, ?v=198)")
+    assert len(r.json()["tables"]) == 54, len(r.json()["tables"])
+    print("neighbours + version + routes OK (174 routes, 48 tables, ?v=199)")
 
 print("PHASE 167 REMOVAL GUARDS OK")

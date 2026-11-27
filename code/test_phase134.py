@@ -6,7 +6,7 @@ days, 15-day-old activity outside the window); best_day is the
 highest-view day; author 200 / other member 403 / unknown 404 /
 unauthenticated 401; /me/insights totals + top-5 ordering;
 GET /posts/{id} single-post fetch; backup still 39 tables;
-?v=198 x5, no ?v=133; insights client markers + Phase 123-133
+?v=199 x5, no ?v=133; insights client markers + Phase 123-133
 markers intact.
 """
 import hashlib, hmac, json, os, time, urllib.parse
@@ -199,12 +199,12 @@ with TestClient(app) as c:
     # 6. Backup still 39 tables (no new table this phase).
     r = c.get("/admin/backup", headers=ALICE)
     assert r.status_code == 200, r.status_code
-    assert len(r.json()["tables"]) == 52, len(r.json()["tables"])
+    assert len(r.json()["tables"]) == 54, len(r.json()["tables"])
     print("backup: 39 tables OK")
 
     # 7. Client markers + asset version.
     html = open("webapp/index.html").read()
-    assert html.count("?v=198") == 10, html.count("?v=198")
+    assert html.count("?v=199") == 10, html.count("?v=199")
     assert "?v=133" not in html
     js = open("webapp/app.js").read()
     for m in ("openInsights", "openTopPost", "My insights",
@@ -221,6 +221,6 @@ with TestClient(app) as c:
               "loadBackupStatus", "openTipSheet", "My tips",
               "loadMyQr"):
         assert m in js, m
-    print("client markers + ?v=198 OK")
+    print("client markers + ?v=199 OK")
 
 print("PHASE-134 TESTS PASSED")

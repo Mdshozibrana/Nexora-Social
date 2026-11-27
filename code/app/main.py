@@ -696,6 +696,36 @@ def _media_visible(db, viewer_id: int, file_id: str) -> bool:
     closed (404): a token alone never opens a file."""
     if not file_id:
         return False
+    # Phase 199 (fixup): a portfolio cover or work-sample
+    # image is visible exactly when the portfolio itself is —
+    # enabled, and the viewer may see the owner's profile
+    # (block either way, muted, private non-followed all hide
+    # it). An explicit publication wins over the private-source
+    # rules below: a DM photo, draft, scheduled post or expired
+    # story the owner chose to display is public while the
+    # portfolio is on. A disabled portfolio falls through, so
+    # the same file still loads where it otherwise lives
+    # (e.g. its post).
+    pf = db.query(models.Portfolio).filter_by(
+        cover_file_id=file_id).first()
+    if pf is None:
+        it = db.query(models.PortfolioItem).filter_by(
+            image_file_id=file_id).first()
+        if it is not None:
+            pf = db.get(models.Portfolio, it.portfolio_id)
+    if pf is not None and pf.enabled:
+        # Grant only — never deny here. A viewer who may see the
+        # portfolio may load the cover / sample image; anyone
+        # else falls through to the file's own source below (a DM
+        # participant still loads a DM photo in the thread, and a
+        # blocked/muted viewer still hits the post branch's own
+        # block/mute check there).
+        if not (_blocked_by(db, pf.user_id, viewer_id) or _blocked_by(
+                db, viewer_id, pf.user_id)) \
+                and (pf.user_id == viewer_id
+                     or not _muted_by(db, viewer_id, pf.user_id)) \
+                and _can_see_posts(db, viewer_id, pf.user_id):
+            return True
     post = db.query(models.Post).filter(
         (models.Post.media_file_id == file_id)
         | (models.Post.thumb_file_id == file_id),
@@ -3371,6 +3401,324 @@ def remove_from_collection(cid: int, post_id: int,
     return {"removed": n > 0}
 
 
+
+# ---------------------------------------------------------------------------
+# Phase 199: Portfolio — a member's showcase page (owner pick:
+# sample #1 Organic Clay, Nov 27). One portfolio per member
+# (about, role, cover photo, enabled flag) + work-sample items
+# (post / design / project). Invisible everywhere until the
+# owner turns it on in Settings; the profile then shows a
+# Profile/Portfolio dropdown, defaulting to Profile. No points,
+# no payments. Visibility reuses the Phase 136/174 rules.
+# ---------------------------------------------------------------------------
+
+class PortfolioIn(BaseModel):
+    about: str = Field(default="", max_length=1000)
+    role: str = Field(default="", max_length=100)
+    cover_file_id: Optional[str] = Field(default=None, max_length=256)
+    enabled: bool = False
+
+
+class PortfolioItemIn(BaseModel):
+    kind: str = Field(default="post", max_length=16)
+    ref_id: Optional[int] = None
+    title: str = Field(default="", max_length=100)
+    image_file_id: Optional[str] = Field(default=None, max_length=256)
+
+
+class PortfolioReorderIn(BaseModel):
+    item_ids: list = Field(default_factory=list)
+
+
+def _portfolio_enabled(db, user_id):
+    """True when user_id has a portfolio AND turned it on."""
+    pf = db.query(models.Portfolio).filter_by(user_id=user_id).first()
+    return bool(pf is not None and pf.enabled)
+
+
+def _get_my_portfolio(db, user_id):
+    """My portfolio row, creating the (disabled) row on first use
+    so the editor always has something to save into."""
+    pf = db.query(models.Portfolio).filter_by(user_id=user_id).first()
+    if pf is None:
+        pf = models.Portfolio(user_id=user_id)
+        db.add(pf)
+        db.commit()
+        db.refresh(pf)
+    return pf
+
+
+def _own_media_file_ids(db, user_id):
+    """Every Telegram file_id the member already owns — their
+    posts (single + album media), photos they sent in DMs, and
+    their profile/cover photo. Portfolio covers and project
+    thumbnails must come from this set: pick-from-own-content
+    is the path (in-app upload is fragile on the owner's phone,
+    and no new upload-fix work belongs in this phase)."""
+    ids = set()
+    for (fid,) in db.query(models.Post.media_file_id).filter_by(
+            user_id=user_id).all():
+        if fid:
+            ids.add(fid)
+    for (fid,) in db.query(models.Post.thumb_file_id).filter_by(
+            user_id=user_id).all():
+        if fid:
+            ids.add(fid)
+    post_ids = [r[0] for r in db.query(models.Post.id).filter_by(
+        user_id=user_id).all()]
+    if post_ids:
+        for (fid,) in db.query(models.PostMedia.file_id).filter(
+                models.PostMedia.post_id.in_(post_ids)).all():
+            if fid:
+                ids.add(fid)
+    for (fid,) in db.query(models.Message.media_file_id).filter_by(
+            sender_id=user_id).all():
+        if fid:
+            ids.add(fid)
+    u = db.get(models.User, user_id)
+    if u is not None:
+        if u.photo_file_id:
+            ids.add(u.photo_file_id)
+        if u.cover_file_id:
+            ids.add(u.cover_file_id)
+    return ids
+
+
+def _portfolio_visible_to(db, viewer_id, owner_id):
+    """May viewer_id see owner_id's portfolio at all? Same three
+    rules as post visibility: no block either way, not muted by
+    the viewer, and a private owner must be followed (own
+    portfolio always passes)."""
+    if viewer_id == owner_id:
+        return True
+    if (_blocked_by(db, owner_id, viewer_id)
+            or _blocked_by(db, viewer_id, owner_id)):
+        return False
+    if _muted_by(db, viewer_id, owner_id):
+        return False
+    return _can_see_posts(db, viewer_id, owner_id)
+
+
+def _portfolio_item_dict(db, viewer_id, it):
+    """One work sample, resolved for the viewer: a post item
+    whose post was deleted (or is no longer visible) drops
+    out; a design item whose design is gone drops out too.
+    Returns None for a dropped item."""
+    if it.kind == "post":
+        p = db.get(models.Post, it.ref_id) if it.ref_id else None
+        if p is None or p.is_deleted:
+            return None
+        if not _post_visible_to(db, viewer_id, p):
+            return None
+    elif it.kind == "design":
+        if db.get(models.Design, it.ref_id) is None:
+            return None
+    return {"id": it.id, "kind": it.kind, "ref_id": it.ref_id,
+            "title": it.title or "",
+            "image_file_id": it.image_file_id}
+
+
+def _portfolio_out(db, viewer_id, pf):
+    """The public shape of a portfolio (owner fields + resolved
+    items in position order)."""
+    owner = db.get(models.User, pf.user_id)
+    items = db.query(models.PortfolioItem).filter_by(
+        portfolio_id=pf.id).order_by(
+        models.PortfolioItem.position,
+        models.PortfolioItem.id).all()
+    out_items = []
+    for it in items:
+        d = _portfolio_item_dict(db, viewer_id, it)
+        if d is not None:
+            out_items.append(d)
+    return {
+        "user_id": pf.user_id,
+        "first_name": owner.first_name if owner else "",
+        "username": owner.username if owner else None,
+        "photo_file_id": owner.photo_file_id if owner else None,
+        "is_verified": bool(owner and owner.is_verified),
+        "about": pf.about or "",
+        "role": pf.role or "",
+        "cover_file_id": pf.cover_file_id,
+        "enabled": bool(pf.enabled),
+        "items": out_items,
+    }
+
+
+@app.get("/users/{telegram_id}/portfolio")
+def get_user_portfolio(telegram_id: int,
+                       user: models.User = Depends(current_user),
+                       db: Session = Depends(get_db)):
+    """Phase 199: one member's public portfolio. 404 when there
+    is no portfolio, it is switched off, or the viewer may not
+    see this member (block either way, muted, private and not
+    followed) — the same hiding as the profile itself."""
+    _enforce_rate("user_posts", f"u{user.telegram_id}")
+    target = db.get(models.User, telegram_id)
+    if target is None:
+        raise HTTPException(404, "User not found")
+    pf = db.query(models.Portfolio).filter_by(
+        user_id=telegram_id).first()
+    if pf is None or not pf.enabled:
+        raise HTTPException(404, "Portfolio not available")
+    if not _portfolio_visible_to(db, user.telegram_id, telegram_id):
+        raise HTTPException(404, "Portfolio not available")
+    return _portfolio_out(db, user.telegram_id, pf)
+
+
+@app.get("/me/portfolio")
+def get_my_portfolio(user: models.User = Depends(current_user),
+                     db: Session = Depends(get_db)):
+    """Phase 199: my own portfolio for the editor — even while
+    disabled, so the owner can fill it in before turning it on."""
+    _enforce_rate("user_posts", f"u{user.telegram_id}")
+    pf = db.query(models.Portfolio).filter_by(
+        user_id=user.telegram_id).first()
+    if pf is None:
+        return {"user_id": user.telegram_id,
+                "first_name": user.first_name,
+                "username": user.username,
+                "photo_file_id": user.photo_file_id,
+                "is_verified": bool(user.is_verified),
+                "about": "", "role": "", "cover_file_id": None,
+                "enabled": False, "items": []}
+    return _portfolio_out(db, user.telegram_id, pf)
+
+
+@app.post("/me/portfolio")
+def save_my_portfolio(body: PortfolioIn,
+                      user: models.User = Depends(current_user),
+                      db: Session = Depends(get_db)):
+    """Phase 199: save my portfolio (about, role, cover, on/off).
+    About/role go through the banned-word list; the cover must
+    be one of my own photos (pick-from-own-content)."""
+    _enforce_rate("portfolio", f"u{user.telegram_id}")
+    if banned_word_in(db, body.about) or banned_word_in(db, body.role):
+        raise HTTPException(400, BANNED_WORD_MESSAGE)
+    if body.cover_file_id:
+        if body.cover_file_id not in _own_media_file_ids(
+                db, user.telegram_id):
+            raise HTTPException(
+                400, "Cover photo must be one of your own photos")
+    pf = _get_my_portfolio(db, user.telegram_id)
+    pf.about = (body.about or "").strip()
+    pf.role = (body.role or "").strip()
+    pf.cover_file_id = body.cover_file_id or None
+    pf.enabled = bool(body.enabled)
+    db.commit()
+    db.refresh(pf)
+    return _portfolio_out(db, user.telegram_id, pf)
+
+
+@app.post("/me/portfolio/items")
+def add_portfolio_item(body: PortfolioItemIn,
+                       user: models.User = Depends(current_user),
+                       db: Session = Depends(get_db)):
+    """Phase 199: add one work sample (max 20). A post item
+    must be one of my own live posts (image from the post —
+    the thumb for a video post); a design item must be a real
+    design (image from it); a project item needs a title and
+    a photo of my own."""
+    _enforce_rate("portfolio", f"u{user.telegram_id}")
+    if body.kind not in ("post", "design", "project"):
+        raise HTTPException(400, "kind must be post, design or project")
+    pf = _get_my_portfolio(db, user.telegram_id)
+    if db.query(models.PortfolioItem).filter_by(
+            portfolio_id=pf.id).count() >= 20:
+        raise HTTPException(400, "You can have up to 20 work samples")
+    title = (body.title or "").strip()
+    image_file_id = None
+    if body.kind == "post":
+        if not body.ref_id:
+            raise HTTPException(400, "A post sample needs a post")
+        p = db.get(models.Post, body.ref_id)
+        if p is None or p.is_deleted or p.user_id != user.telegram_id:
+            raise HTTPException(404, "Post not found")
+        if p.type == "video":
+            image_file_id = p.thumb_file_id
+        else:
+            image_file_id = p.media_file_id
+        if not image_file_id:
+            raise HTTPException(
+                400, "That post has no photo to show")
+        if not title:
+            title = (p.caption or "").strip()[:60] or "Post"
+    elif body.kind == "design":
+        if not body.ref_id:
+            raise HTTPException(400, "A design sample needs a design")
+        d = db.get(models.Design, body.ref_id)
+        if d is None:
+            raise HTTPException(404, "Design not found")
+        image_file_id = d.image_file_id
+        if not title:
+            title = (d.prompt or "").strip()[:60] or "Design"
+    else:  # project
+        if not title:
+            raise HTTPException(400, "A project sample needs a title")
+        if not body.image_file_id:
+            raise HTTPException(400, "A project sample needs a photo")
+        if body.image_file_id not in _own_media_file_ids(
+                db, user.telegram_id):
+            raise HTTPException(
+                400, "Project photo must be one of your own photos")
+        image_file_id = body.image_file_id
+    if banned_word_in(db, title):
+        raise HTTPException(400, BANNED_WORD_MESSAGE)
+    last = db.query(models.PortfolioItem).filter_by(
+        portfolio_id=pf.id).order_by(
+        models.PortfolioItem.position.desc()).first()
+    pos = (last.position + 1) if last is not None else 0
+    it = models.PortfolioItem(portfolio_id=pf.id, kind=body.kind,
+                              ref_id=body.ref_id, title=title[:100],
+                              image_file_id=image_file_id,
+                              position=pos)
+    db.add(it)
+    db.commit()
+    db.refresh(it)
+    return {"id": it.id, "kind": it.kind, "ref_id": it.ref_id,
+            "title": it.title, "image_file_id": it.image_file_id}
+
+
+@app.delete("/me/portfolio/items/{item_id}")
+def remove_portfolio_item(item_id: int,
+                          user: models.User = Depends(current_user),
+                          db: Session = Depends(get_db)):
+    """Phase 199: remove one work sample from my portfolio."""
+    _enforce_rate("portfolio", f"u{user.telegram_id}")
+    pf = db.query(models.Portfolio).filter_by(
+        user_id=user.telegram_id).first()
+    if pf is None:
+        raise HTTPException(404, "Work sample not found")
+    it = db.query(models.PortfolioItem).filter_by(
+        id=item_id, portfolio_id=pf.id).first()
+    if it is None:
+        raise HTTPException(404, "Work sample not found")
+    db.delete(it)
+    db.commit()
+    return {"removed": True}
+
+
+@app.post("/me/portfolio/items/reorder")
+def reorder_portfolio_items(body: PortfolioReorderIn,
+                            user: models.User = Depends(current_user),
+                            db: Session = Depends(get_db)):
+    """Phase 199: reorder my work samples — item_ids is the full
+    new order; anything missing or foreign is a 400."""
+    _enforce_rate("portfolio", f"u{user.telegram_id}")
+    pf = db.query(models.Portfolio).filter_by(
+        user_id=user.telegram_id).first()
+    mine = {it.id for it in db.query(models.PortfolioItem).filter_by(
+        portfolio_id=pf.id).all()} if pf is not None else set()
+    ids = [int(i) for i in (body.item_ids or [])]
+    if set(ids) != mine or len(ids) != len(set(ids)):
+        raise HTTPException(
+            400, "item_ids must list all of your work samples once")
+    for pos, item_id in enumerate(ids):
+        db.query(models.PortfolioItem).filter_by(id=item_id).update(
+            {"position": pos}, synchronize_session=False)
+    db.commit()
+    return {"reordered": True, "count": len(ids)}
+
 @app.get("/me/following")
 def my_following(user: models.User = Depends(current_user),
                  db: Session = Depends(get_db)):
@@ -3814,6 +4162,9 @@ def public_profile(telegram_id: int, user: models.User = Depends(current_user),
         "blocked_by_me": _blocked_by(db, user.telegram_id, telegram_id),
         # Phase 174: whether the viewer has muted this member.
         "muted_by_me": _muted_by(db, user.telegram_id, telegram_id),
+        # Phase 199: whether this member's portfolio is enabled
+        # (the Profile/Portfolio dropdown shows only then).
+        "portfolio_enabled": _portfolio_enabled(db, telegram_id),
         "name_locked_days": name_locked_days,
         # Phase 137: level (from lifetime points) + badges.
         "level": level_badges["level"],
@@ -8708,6 +9059,9 @@ _BACKUP_TABLES = [
     # Phase 172: story highlights.
     ("story_highlights", models.StoryHighlight),
     ("highlight_stories", models.HighlightStory),
+    # Phase 199: member portfolios + work samples.
+    ("portfolios", models.Portfolio),
+    ("portfolio_items", models.PortfolioItem),
 ]
 _BACKUP_MODELS = {name: m for name, m in _BACKUP_TABLES}
 _BACKUP_MAX_BYTES = 50 * 1024 * 1024

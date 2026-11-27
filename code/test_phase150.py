@@ -27,7 +27,7 @@ tabs unchanged; JS wiring for all five controls intact;
 Phase 123 (drafts) and Phase 135 (scheduled) behaviour
 still works end to end; backup still 42 tables and the route
 count unchanged (no schema change, no new endpoints);
-?v=198 x9, no old-version literals.
+?v=199 x9, no old-version literals.
 """
 import hashlib, hmac, json, os, re, time, urllib.parse
 from datetime import datetime, timedelta
@@ -168,10 +168,10 @@ for tid, tlabel in (("tab-explore", "Explore"),
     assert f'id="{tid}"' in HTML, tid
     assert tlabel in HTML, tlabel
 # Asset version + menu URL.
-assert HTML.count("?v=198") == 10, HTML.count("?v=198")
+assert HTML.count("?v=199") == 10, HTML.count("?v=199")
 assert "?v=14" + "9" not in HTML
-assert 'menu_url.rstrip("/") + "/?v=198"' in BOT
-print("composer HTML OK (5 controls + textarea + tip + tabs + ?v=198)")
+assert 'menu_url.rstrip("/") + "/?v=199"' in BOT
+print("composer HTML OK (5 controls + textarea + tip + tabs + ?v=199)")
 
 # 5. JS wiring for all five controls + Phase 123/135 markers intact.
 for expr in ('$("composer-media").onclick',
@@ -219,10 +219,10 @@ with TestClient(app) as c:
     print("plain text post OK")
     r = c.get("/admin/backup", headers=ALICE)
     assert r.status_code == 200, r.text
-    assert len(r.json()["tables"]) == 52, len(r.json()["tables"])
+    assert len(r.json()["tables"]) == 54, len(r.json()["tables"])
     print("backup: 42 tables OK (no schema change)")
     paths = {rt.path for rt in app.routes}
-    assert len(paths) == 184, len(paths)
+    assert len(paths) == 189, len(paths)
     assert not any("150" in p for p in paths), paths
     print("routes: 158 OK (6 blood endpoints added in Phase 151)")
 

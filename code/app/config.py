@@ -142,6 +142,8 @@ RATE_LIMITS = {
     "admin_mutation": (120, 3600),
     # Phase 172: story highlights — create/rename/delete/add.
     "highlights": (120, 3600),
+    # Phase 199: portfolio edits (upsert / items / reorder).
+    "portfolio": (120, 3600),
     # Phase 179 (audit M4): read/discovery budgets. Generous on
     # purpose — the feed is the hottest path (Explore/Following/
     # hashtag tabs, pull-to-refresh, "Load more" paging and the
@@ -152,7 +154,7 @@ RATE_LIMITS = {
     # /saved/collections* reads and /me/shared; post_read covers
     # GET /posts/{id} + GET /posts/{id}/comments; stories covers
     # GET /stories; highlight_read covers the highlight reads;
-    # user_posts covers GET /users/{id}/posts.
+    # user_posts covers GET /users/{id}/posts + the portfolio reads.
     "feed": (600, 3600),
     "saved": (240, 3600),
     "post_read": (600, 3600),

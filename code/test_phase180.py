@@ -582,16 +582,16 @@ with TestClient(app) as c:
     r = c.get("/admin/backup", headers=ADMIN)
     assert r.status_code == 200, r.text
     bk = r.json()
-    assert len(bk["tables"]) == 52, len(bk["tables"])
+    assert len(bk["tables"]) == 54, len(bk["tables"])
     assert "task_follow_events" in bk["tables"], list(bk["tables"])
-    assert len(_BACKUP_TABLES) == 52, len(_BACKUP_TABLES)
-    assert HTML.count("?v=198") == 10, HTML.count("?v=198")
+    assert len(_BACKUP_TABLES) == 54, len(_BACKUP_TABLES)
+    assert HTML.count("?v=199") == 10, HTML.count("?v=199")
     assert "?v=17" + "9" not in HTML
     for m in ("_find_adoptable_post", "ADS_PROVIDER_LIVE",
               "_stamp_auto_backup_attempt", "_last_manual_backup_at",
               "auto-backup loop failed", "scheduled-posts sweep failed",
               "_DHAKA_TZ", "TaskFollowEvent"):
         assert m in MAIN, m
-    print("backup 52 tables + markers + ?v=198 OK")
+    print("backup 52 tables + markers + ?v=199 OK")
 
 print("PHASE 180 OK")

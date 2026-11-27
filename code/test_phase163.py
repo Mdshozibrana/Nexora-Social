@@ -140,7 +140,7 @@ assert "fitVerifiedNamesSoon(box);" in BLOOD, "re-fit after render"
 assert "Phase 163" in BLOOD, "client marker missing"
 assert JS.count('className = "blood-name vname"') == 1, \
     "only the donor card uses the vname line"
-assert JS.count("verifiedBadge()") == 18, "1 def + 17 call sites"
+assert JS.count("verifiedBadge()") == 19, "1 def + 18 call sites (19th: Phase 199 portfolio name)"
 assert JS.count("vname-text") >= 18, JS.count("vname-text")
 print("donor card code OK (shared .vname line, conditional badge)")
 
@@ -258,17 +258,17 @@ with TestClient(app) as c:
                   json={"initData": ALICE["X-Init-Data"]}).status_code == 200
     r = c.get("/admin/backup", headers=ALICE)
     assert r.status_code == 200, r.text
-    assert len(r.json()["tables"]) == 52, len(r.json()["tables"])
+    assert len(r.json()["tables"]) == 54, len(r.json()["tables"])
     print("backup: 44 tables OK")
 paths = {rt.path for rt in app.routes}
-assert len(paths) == 184, len(paths)
+assert len(paths) == 189, len(paths)
 print("routes: 163 OK (no new endpoints)")
 
 # 10. Version.
-assert HTML.count("?v=198") == 10, HTML.count("?v=198")
+assert HTML.count("?v=199") == 10, HTML.count("?v=199")
 assert "?v=16" + "2" not in HTML
-assert 'menu_url.rstrip("/") + "/?v=198"' in BOT
+assert 'menu_url.rstrip("/") + "/?v=199"' in BOT
 assert "Phase 163" in CSS and "Phase 163" in JS and "Phase 163" in MAIN
-print("version OK (?v=198 x10, no old-version literals)")
+print("version OK (?v=199 x10, no old-version literals)")
 
 print("PHASE 163 OK")

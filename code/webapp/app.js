@@ -39,6 +39,11 @@ let tab = "explore";
 let feedCursor = null;
 let profileId = null;
 let profileCursor = null;
+// Phase 199: Portfolio — the profile view has two tabs (Profile
+// default, Portfolio when enabled); no new showView view, so the
+// back button, nav and mascot behaviour are unchanged.
+let profileTab = "profile";
+let profileUser = null;
 
 const $ = id => document.getElementById(id);
 
@@ -4548,6 +4553,10 @@ async function openProfile(userId) {
   $("profile-posts").innerHTML = "";
   try {
     const u = await api("/users/" + userId);
+    // Phase 199: the portfolio tab renders from this user —
+    // the default tab is always Profile.
+    profileTab = "profile";
+    profileUser = u;
     box.innerHTML = "";
     // Phase 40: the cover banner tops every profile (a soft
     // gradient placeholder until the member sets one).
@@ -4667,6 +4676,15 @@ async function openProfile(userId) {
     // shared level renderer stays: Settings still uses it.
     box.appendChild(hero);
     await loadHighlights(userId, box);
+    // Phase 199: Profile/Portfolio dropdown — only when this
+    // member's portfolio is on and the viewer may see it
+    // (a muted member's portfolio stays hidden, as does a
+    // private-not-followed one; the server 404s it too).
+    if (u.portfolio_enabled && !u.muted_by_me
+        && (ownProfile || !u.is_private || u.following)) {
+      box.insertBefore(portfolioDropdownEl(userId, "profile"),
+                       box.firstChild);
+    }
     fitVerifiedNames(box);
     const wave = document.createElement("div");
     wave.className = "wave-div";
@@ -4851,6 +4869,499 @@ async function openProfile(userId) {
       await loadProfilePosts(true);
     }
   } catch (e) { box.textContent = "Could not load the profile."; }
+}
+
+
+// ---------- Phase 199: Portfolio -----------------------------------------
+// A member's showcase page (owner pick: sample #1 Organic Clay):
+// full-bleed cover photo + soft shadow + name/role over it, About,
+// Work grid. Invisible until the owner turns it on in Settings.
+// The portfolio renders inside the profile view — openProfile
+// stays the Profile tab and renderPortfolioTab the Portfolio tab.
+function portfolioDropdownEl(userId, currentTab) {
+  const wrap = document.createElement("div");
+  wrap.className = "pf-dd-wrap";
+  const btn = document.createElement("button");
+  btn.className = "pf-dd-btn";
+  btn.type = "button";
+  btn.textContent = (currentTab === "portfolio" ? "Portfolio" : "Profile") + " ▾";
+  const menu = document.createElement("div");
+  menu.className = "pf-dd-menu";
+  menu.hidden = true;
+  const mkOpt = (label, tab) => {
+    const b = document.createElement("button");
+    b.className = "pf-dd-opt" + (tab === currentTab ? " active" : "");
+    b.type = "button";
+    b.textContent = (tab === currentTab ? "✓ " : "") + label;
+    b.onclick = async () => {
+      menu.hidden = true;
+      if (tab === currentTab) return;
+      if (tab === "portfolio") {
+        profileTab = "portfolio";
+        await renderPortfolioTab(userId);
+      } else {
+        await openProfile(userId);
+      }
+    };
+    return b;
+  };
+  menu.append(mkOpt("Profile", "profile"), mkOpt("Portfolio", "portfolio"));
+  btn.onclick = () => { menu.hidden = !menu.hidden; };
+  wrap.append(btn, menu);
+  return wrap;
+}
+
+async function renderPortfolioTab(userId) {
+  const box = $("profile-box");
+  const postsEl = $("profile-posts");
+  const moreBtn = $("profile-more");
+  if (postsEl) postsEl.innerHTML = "";
+  if (moreBtn) moreBtn.hidden = true;
+  if (!box) return;
+  box.innerHTML = "Loading…";
+  try {
+    const pf = await api("/users/" + userId + "/portfolio");
+    box.innerHTML = "";
+    box.appendChild(portfolioDropdownEl(userId, "portfolio"));
+    // Cover: full-bleed photo with a soft light gradient shadow
+    // across the lower part; name + role sit over the shadow.
+    const cover = document.createElement("div");
+    cover.className = "pf-cover";
+    if (pf.cover_file_id) {
+      const img = document.createElement("img");
+      img.src = mediaUrl(pf.cover_file_id);
+      img.alt = "";
+      cover.appendChild(img);
+    } else {
+      cover.classList.add("pf-cover-empty");
+    }
+    const shade = document.createElement("div");
+    shade.className = "pf-shade";
+    const nm = document.createElement("div");
+    nm.className = "pf-name vname";
+    const nmText = document.createElement("span");
+    nmText.className = "vname-text";
+    nmText.textContent = pf.first_name || "";
+    nm.appendChild(nmText);
+    if (pf.is_verified) nm.appendChild(verifiedBadge());
+    const role = document.createElement("div");
+    role.className = "pf-role";
+    role.textContent = pf.role || "";
+    shade.append(nm, role);
+    cover.appendChild(shade);
+    box.appendChild(cover);
+    // Follow / Message — the same actions as the profile hero.
+    const ownPf = me && userId === me.telegram_id;
+    if (!ownPf) {
+      const row = document.createElement("div");
+      row.className = "pf-actions";
+      const fBtn = document.createElement("button");
+      fBtn.className = "pf-follow";
+      fBtn.type = "button";
+      const paintF = () => {
+        fBtn.textContent = profileUser && profileUser.has_pending_request
+          ? "Requested ✓"
+          : (profileUser && profileUser.following ? "Unfollow" : "Follow");
+      };
+      paintF();
+      fBtn.onclick = async () => {
+        try {
+          if (profileUser && profileUser.has_pending_request) {
+            await api("/users/" + userId + "/follow-request",
+                      { method: "DELETE" });
+            profileUser.has_pending_request = false;
+            paintF();
+            return;
+          }
+          const r = await api("/users/" + userId + "/follow",
+                              { method: "POST" });
+          if (profileUser) {
+            profileUser.following = r.following;
+            profileUser.has_pending_request = !!r.requested;
+          }
+          paintF();
+        } catch (e) { setStatus("Could not update follow."); }
+      };
+      const mBtn = document.createElement("button");
+      mBtn.className = "pf-msg";
+      mBtn.type = "button";
+      mBtn.textContent = "💬 Message";
+      mBtn.onclick = () => openChat(userId);
+      row.append(fBtn, mBtn);
+      box.appendChild(row);
+    }
+    // About.
+    const aboutH = document.createElement("div");
+    aboutH.className = "pf-sec-title";
+    aboutH.textContent = "About";
+    const about = document.createElement("p");
+    about.className = "pf-about";
+    about.textContent = pf.about || "No about yet.";
+    box.append(aboutH, about);
+    // Work — 2-column grid of sample cards (title under each).
+    const workH = document.createElement("div");
+    workH.className = "pf-sec-title";
+    workH.textContent = "Work";
+    box.appendChild(workH);
+    const grid = document.createElement("div");
+    grid.className = "pf-work-grid";
+    (pf.items || []).forEach(it => {
+      const card = document.createElement("div");
+      card.className = "pf-work-card";
+      const th = document.createElement("img");
+      th.src = mediaUrl(it.image_file_id);
+      th.alt = "";
+      th.loading = "lazy";
+      const ti = document.createElement("div");
+      ti.className = "pf-work-title";
+      ti.textContent = it.title || "";
+      card.append(th, ti);
+      grid.appendChild(card);
+    });
+    if (!(pf.items || []).length) {
+      const none = document.createElement("p");
+      none.className = "hint";
+      none.textContent = "No work samples yet.";
+      grid.appendChild(none);
+    }
+    box.appendChild(grid);
+    if (ownPf) {
+      const eBtn = document.createElement("button");
+      eBtn.className = "wide";
+      eBtn.textContent = "✏️ Edit portfolio";
+      eBtn.onclick = () => openPortfolioEditor();
+      box.appendChild(eBtn);
+    }
+    fitVerifiedNames(box);
+    const sc = $("app-scroll");
+    if (sc) sc.scrollTop = 0;
+  } catch (e) {
+    box.textContent = "Portfolio is not available.";
+  }
+}
+
+// Pickers — everything comes from the member's own content:
+// their post photos (cover + project thumbnails), their posts
+// (post samples) and the public Design gallery (design samples).
+async function portfolioPickPhotos(container, onPick, extraIds) {
+  container.innerHTML = "Loading…";
+  const seen = new Set();
+  const btns = [];
+  const addBtn = (fid) => {
+    if (!fid || seen.has(fid)) return;
+    seen.add(fid);
+    const b = document.createElement("button");
+    b.type = "button";
+    const im = document.createElement("img");
+    im.src = mediaUrl(fid);
+    im.alt = "";
+    im.loading = "lazy";
+    b.appendChild(im);
+    b.onclick = () => onPick(fid);
+    btns.push(b);
+  };
+  (extraIds || []).forEach(addBtn);
+  try {
+    const d = await api("/users/" + me.telegram_id + "/posts");
+    (d.posts || []).forEach(p => {
+      if (p.thumb_file_id) addBtn(p.thumb_file_id);
+      if (p.media_file_id) addBtn(p.media_file_id);
+      (p.media || []).forEach(m => addBtn(m.file_id));
+    });
+  } catch (e) { /* picker keeps what it has */ }
+  container.innerHTML = "";
+  if (!btns.length) {
+    container.textContent = "No photos yet — post one first.";
+    return;
+  }
+  btns.forEach(b => container.appendChild(b));
+}
+
+async function portfolioPickPosts(container, onPick) {
+  container.innerHTML = "Loading…";
+  let rows = [];
+  try {
+    const d = await api("/users/" + me.telegram_id + "/posts");
+    rows = (d.posts || []).filter(p => p.media_file_id
+      || (p.media && p.media.length) || p.thumb_file_id);
+  } catch (e) { rows = []; }
+  container.innerHTML = "";
+  if (!rows.length) {
+    container.textContent = "No posts with photos yet.";
+    return;
+  }
+  rows.forEach(p => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "pf-pick-post";
+    const im = document.createElement("img");
+    const fid = p.thumb_file_id || p.media_file_id
+      || (p.media && p.media[0] && p.media[0].file_id) || "";
+    im.src = mediaUrl(fid);
+    im.alt = "";
+    im.loading = "lazy";
+    b.appendChild(im);
+    const ti = document.createElement("div");
+    ti.className = "pf-pick-title";
+    ti.textContent = (p.caption || "").slice(0, 40) || "Post";
+    b.appendChild(ti);
+    b.onclick = () => onPick(p);
+    container.appendChild(b);
+  });
+}
+
+async function portfolioPickDesigns(container, onPick) {
+  container.innerHTML = "Loading…";
+  let rows = [];
+  try {
+    const d = await api("/designs?limit=20");
+    rows = d.designs || [];
+  } catch (e) { rows = []; }
+  container.innerHTML = "";
+  if (!rows.length) {
+    container.textContent = "No designs yet.";
+    return;
+  }
+  rows.forEach(dg => {
+    const b = document.createElement("button");
+    b.type = "button";
+    const im = document.createElement("img");
+    im.src = mediaUrl(dg.image_file_id);
+    im.alt = "";
+    im.loading = "lazy";
+    b.appendChild(im);
+    b.onclick = () => onPick(dg);
+    container.appendChild(b);
+  });
+}
+
+async function openPortfolioEditor() {
+  const box = $("profile-box");
+  if (!box || !me) return;
+  profileTab = "portfolio";
+  box.innerHTML = "Loading…";
+  let pf = null;
+  try {
+    pf = await api("/me/portfolio");
+  } catch (e) {
+    box.textContent = "Could not load your portfolio.";
+    return;
+  }
+  box.innerHTML = "";
+  const back = document.createElement("button");
+  back.className = "settings-back";
+  back.type = "button";
+  back.textContent = "‹ Portfolio";
+  back.onclick = () => renderPortfolioTab(me.telegram_id);
+  box.appendChild(back);
+  const head = document.createElement("b");
+  head.className = "settings-head";
+  head.textContent = "🖼️ Edit portfolio";
+  box.appendChild(head);
+  // Enable toggle — saves immediately, like the Privacy toggle.
+  const enRow = document.createElement("label");
+  enRow.className = "privacy-row";
+  const enChk = document.createElement("input");
+  enChk.type = "checkbox";
+  enChk.checked = !!pf.enabled;
+  const enTx = document.createElement("span");
+  enTx.textContent = "Show my portfolio — Profile/Portfolio dropdown appears on my profile.";
+  enRow.append(enChk, enTx);
+  box.appendChild(enRow);
+  // Role + About.
+  const roleIn = document.createElement("input");
+  roleIn.type = "text";
+  roleIn.maxLength = 100;
+  roleIn.placeholder = "What you do — e.g. Graphic Designer & Photographer";
+  roleIn.value = pf.role || "";
+  const aboutIn = document.createElement("textarea");
+  aboutIn.rows = 3;
+  aboutIn.maxLength = 1000;
+  aboutIn.placeholder = "About you…";
+  aboutIn.value = pf.about || "";
+  box.append(roleIn, aboutIn);
+  // Cover photo — pick from your own photos.
+  let coverFileId = pf.cover_file_id || null;
+  const coverPrev = document.createElement("div");
+  coverPrev.className = "pf-edit-cover";
+  const paintCover = () => {
+    coverPrev.innerHTML = "";
+    if (coverFileId) {
+      const im = document.createElement("img");
+      im.src = mediaUrl(coverFileId);
+      im.alt = "";
+      coverPrev.appendChild(im);
+    } else {
+      coverPrev.textContent = "No cover photo yet.";
+    }
+  };
+  paintCover();
+  const coverBtn = document.createElement("button");
+  coverBtn.className = "wide";
+  coverBtn.textContent = "📷 Choose cover photo";
+  const coverPick = document.createElement("div");
+  coverPick.className = "pf-picker";
+  coverBtn.onclick = () => {
+    if (coverPick.children.length) { coverPick.innerHTML = ""; return; }
+    portfolioPickPhotos(coverPick, (fid) => {
+      coverFileId = fid;
+      paintCover();
+      coverPick.innerHTML = "";
+    }, pf.photo_file_id ? [pf.photo_file_id] : []);
+  };
+  box.append(coverPrev, coverBtn, coverPick);
+  // Save.
+  const saveBtn = document.createElement("button");
+  saveBtn.className = "wide btn";
+  saveBtn.textContent = "Save portfolio";
+  saveBtn.onclick = async () => {
+    try {
+      pf = await api("/me/portfolio", { method: "POST",
+        body: JSON.stringify({ about: aboutIn.value,
+                               role: roleIn.value,
+                               cover_file_id: coverFileId,
+                               enabled: enChk.checked }) });
+      settingsPortfolio = pf;
+      setStatus("Portfolio saved.");
+      renderPortfolioTab(me.telegram_id);
+    } catch (e) { setStatus("Could not save the portfolio."); }
+  };
+  box.appendChild(saveBtn);
+  enChk.onchange = async () => {
+    try {
+      pf = await api("/me/portfolio", { method: "POST",
+        body: JSON.stringify({ about: aboutIn.value,
+                               role: roleIn.value,
+                               cover_file_id: coverFileId,
+                               enabled: enChk.checked }) });
+      settingsPortfolio = pf;
+      setStatus(enChk.checked ? "Portfolio is now visible on your profile." : "Portfolio hidden.");
+    } catch (e) {
+      enChk.checked = !!pf.enabled;
+      setStatus("Could not change the portfolio setting.");
+    }
+  };
+  // Work samples — list with move/remove, then add.
+  const workH = document.createElement("b");
+  workH.className = "settings-head";
+  workH.textContent = "Work samples";
+  box.appendChild(workH);
+  const workList = document.createElement("div");
+  workList.id = "pf-edit-list";
+  box.appendChild(workList);
+  const loadWork = () => {
+    workList.innerHTML = "";
+    (pf.items || []).forEach((it, idx) => {
+      const row = document.createElement("div");
+      row.className = "pf-edit-row";
+      const th = document.createElement("img");
+      th.src = mediaUrl(it.image_file_id);
+      th.alt = "";
+      const ti = document.createElement("span");
+      ti.className = "pf-edit-title";
+      ti.textContent = it.title || "";
+      const up = document.createElement("button");
+      up.textContent = "↑";
+      up.disabled = idx === 0;
+      up.onclick = () => moveWork(idx, -1);
+      const dn = document.createElement("button");
+      dn.textContent = "↓";
+      dn.disabled = idx === pf.items.length - 1;
+      dn.onclick = () => moveWork(idx, 1);
+      const rm = document.createElement("button");
+      rm.textContent = "✕";
+      rm.onclick = async () => {
+        try {
+          await api("/me/portfolio/items/" + it.id, { method: "DELETE" });
+          pf.items = pf.items.filter(x => x.id !== it.id);
+          loadWork();
+        } catch (e) { setStatus("Could not remove the sample."); }
+      };
+      row.append(th, ti, up, dn, rm);
+      workList.appendChild(row);
+    });
+    if (!(pf.items || []).length) workList.textContent = "No work samples yet.";
+  };
+  const moveWork = async (idx, dir) => {
+    const ids = pf.items.map(x => x.id);
+    const j = idx + dir;
+    if (j < 0 || j >= ids.length) return;
+    const tmp = ids[idx]; ids[idx] = ids[j]; ids[j] = tmp;
+    try {
+      await api("/me/portfolio/items/reorder", { method: "POST",
+        body: JSON.stringify({ item_ids: ids }) });
+      const items = pf.items.slice();
+      const t2 = items[idx]; items[idx] = items[j]; items[j] = t2;
+      pf.items = items;
+      loadWork();
+    } catch (e) { setStatus("Could not reorder the samples."); }
+  };
+  loadWork();
+  const addSample = async (payload) => {
+    try {
+      await api("/me/portfolio/items", { method: "POST",
+        body: JSON.stringify(payload) });
+      pf = await api("/me/portfolio");
+      loadWork();
+      setStatus("Work sample added.");
+    } catch (e) { setStatus("Could not add the sample."); }
+  };
+  const addH = document.createElement("div");
+  addH.className = "settings-sub";
+  addH.textContent = "Add a work sample";
+  box.appendChild(addH);
+  const kindSel = document.createElement("select");
+  ["post", "design", "project"].forEach(k => {
+    const o = document.createElement("option");
+    o.value = k;
+    o.textContent = k === "post" ? "From one of my posts"
+      : k === "design" ? "From the Design gallery"
+      : "Project (my own photo)";
+    kindSel.appendChild(o);
+  });
+  const titleIn = document.createElement("input");
+  titleIn.type = "text";
+  titleIn.maxLength = 100;
+  titleIn.placeholder = "Project title";
+  titleIn.hidden = true;
+  const pickBtn = document.createElement("button");
+  pickBtn.className = "wide";
+  const addBox = document.createElement("div");
+  addBox.className = "pf-picker";
+  const paintAdd = () => {
+    addBox.innerHTML = "";
+    const kind = kindSel.value;
+    titleIn.hidden = kind !== "project";
+    if (kind === "post") {
+      pickBtn.textContent = "📷 Choose one of my posts";
+      pickBtn.onclick = () => portfolioPickPosts(addBox, async (p) => {
+        await addSample({ kind: "post", ref_id: p.id,
+                          title: titleIn.value });
+        addBox.innerHTML = "";
+      });
+    } else if (kind === "design") {
+      pickBtn.textContent = "🎨 Choose a design";
+      pickBtn.onclick = () => portfolioPickDesigns(addBox, async (dg) => {
+        await addSample({ kind: "design", ref_id: dg.id,
+                          title: titleIn.value });
+        addBox.innerHTML = "";
+      });
+    } else {
+      pickBtn.textContent = "🖼️ Choose a photo";
+      pickBtn.onclick = () => portfolioPickPhotos(addBox, async (fid) => {
+        if (!titleIn.value.trim()) {
+          setStatus("Give the project a title first.");
+          return;
+        }
+        await addSample({ kind: "project", title: titleIn.value,
+                          image_file_id: fid });
+        addBox.innerHTML = "";
+      }, pf.photo_file_id ? [pf.photo_file_id] : []);
+    }
+  };
+  kindSel.onchange = paintAdd;
+  paintAdd();
+  box.append(kindSel, titleIn, pickBtn, addBox);
 }
 
 async function loadProfilePosts(reset) {
@@ -5638,6 +6149,8 @@ const NOTIF_PREF_META = [
 // ---------------------------------------------------------------------------
 let settingsDetails = {};
 let settingsHubUser = null;
+// Phase 199: the hub row + detail read the portfolio state.
+let settingsPortfolio = null;
 let settingsDetailKey = null;
 
 function settingsVersion() {
@@ -5734,6 +6247,10 @@ function renderSettingsHub() {
   box.appendChild(settingsGroupEl("ACCOUNT", [
     settingsHubRow("👤", "Profile", null, null,
                    () => openSettingsDetail("profile")),
+    settingsHubRow("🖼️", "Portfolio", null,
+                   settingsPortfolio
+                     ? (settingsPortfolio.enabled ? "On" : "Off") : null,
+                   () => openSettingsDetail("portfolio")),
     settingsHubRow("🔒", "Privacy", null,
                    u ? (u.is_private ? "Private" : "Public") : null,
                    () => openSettingsDetail("privacy")),
@@ -5801,6 +6318,12 @@ async function loadSettings() {
       u = null;
     }
     box.innerHTML = "";
+    // Phase 199: the hub row + detail need the portfolio state.
+    try {
+      settingsPortfolio = await api("/me/portfolio");
+    } catch (e) {
+      settingsPortfolio = null;
+    }
     // Phase 187: sections are built exactly as before, but each is
     // registered under a hub key instead of staying stacked — the
     // hub renders at the end of this function and a row tap moves
@@ -5965,6 +6488,47 @@ async function loadSettings() {
     skillHint.textContent = "Teach what you know, learn what you don't — no money, just time. Your skills show on your profile and in the Skills directory.";
     prof.append(skillHead, skillName, skillKind, skillNote, skillAdd, skillList, skillHint);
     loadMySkills();
+    // Phase 199: Portfolio — the toggle lives here (Settings is
+    // where the owner asked for it); the editor itself opens
+    // from the profile page.
+    const pfSec = reg("portfolio", sec("🖼️ Portfolio"));
+    const pfRow = document.createElement("label");
+    pfRow.className = "privacy-row";
+    const pfChk = document.createElement("input");
+    pfChk.type = "checkbox";
+    pfChk.checked = !!(settingsPortfolio && settingsPortfolio.enabled);
+    const pfTx = document.createElement("span");
+    pfTx.textContent = "Show my portfolio — Profile/Portfolio dropdown appears on my profile.";
+    pfRow.append(pfChk, pfTx);
+    pfSec.appendChild(pfRow);
+    pfChk.onchange = async () => {
+      try {
+        const cur = settingsPortfolio || {};
+        const r = await api("/me/portfolio", { method: "POST",
+          body: JSON.stringify({ about: cur.about || "",
+                                 role: cur.role || "",
+                                 cover_file_id: cur.cover_file_id || null,
+                                 enabled: pfChk.checked }) });
+        settingsPortfolio = r;
+        setStatus(pfChk.checked ? "Portfolio is now visible on your profile." : "Portfolio hidden.");
+      } catch (e) {
+        pfChk.checked = !!(settingsPortfolio && settingsPortfolio.enabled);
+        setStatus("Could not change the portfolio setting.");
+      }
+    };
+    const pfHint = document.createElement("p");
+    pfHint.className = "hint";
+    pfHint.textContent = "Your portfolio shows a full-screen cover photo, your role, an About text and your work samples. Add samples from your posts, the Design gallery or your own photos.";
+    pfSec.appendChild(pfHint);
+    const pfEdit = document.createElement("button");
+    pfEdit.className = "wide";
+    pfEdit.textContent = "✏️ Edit portfolio";
+    pfEdit.onclick = async () => {
+      await openProfile(me.telegram_id);
+      await renderPortfolioTab(me.telegram_id);
+      openPortfolioEditor();
+    };
+    pfSec.appendChild(pfEdit);
     // 2. Theme — the same picker as Me (themeCard is reused).
     const themeNode = reg("theme", themeCard());
     box.appendChild(themeNode);

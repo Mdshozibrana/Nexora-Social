@@ -319,6 +319,42 @@ class SavedCollectionPost(Base):
         UniqueConstraint("collection_id", "post_id"),)
 
 
+class Portfolio(Base):
+    """Phase 199: a member's portfolio page (owner pick: sample #1
+    Organic Clay). One row per member: about text, role/title,
+    cover photo file_id and the Settings enable flag. The row
+    exists even while disabled — GET /users/{id}/portfolio
+    404s until the owner turns it on."""
+    __tablename__ = "portfolios"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("users.telegram_id"),
+                     unique=True, index=True)
+    about = Column(Text, default="")
+    role = Column(String(100), default="")
+    cover_file_id = Column(String(256), nullable=True)
+    enabled = Column(Boolean, default=False)
+    updated_at = Column(DateTime, default=datetime.utcnow,
+                        onupdate=datetime.utcnow)
+
+
+class PortfolioItem(Base):
+    """Phase 199: one work sample on a portfolio — a post
+    (ref_id = own post id), a design (ref_id = design id) or
+    a project (custom title + an image from the owner's own
+    content). position orders the grid; image_file_id is the
+    thumbnail the client renders through /media."""
+    __tablename__ = "portfolio_items"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    portfolio_id = Column(Integer, ForeignKey("portfolios.id"),
+                          index=True)
+    kind = Column(String(16), nullable=False)  # post | design | project
+    ref_id = Column(Integer, nullable=True)
+    title = Column(String(100), default="")
+    image_file_id = Column(String(256), nullable=False)
+    position = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class PostShare(Base):
     """In-app share: one member sends a post/video to another member
     (owner request, Oct 31). The receiver finds it under 'Shared with me'
