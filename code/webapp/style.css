@@ -3367,6 +3367,19 @@ body.game-open #mascot-wrap { display: none; }
   border-radius: 12px; display: block; }
 .pf-work-title { text-align: center; font-size: 13.5px; font-weight: 600;
   padding: 7px 2px 2px; }
+/* Phase 207 (owner): Portfolio Profile + Work as two cards with
+   two colours/designs, like the Me section's profile — the
+   gradient hero zone (Profile card) + the plain body zone
+   (Work card). Both cards are theme-var based, so they follow
+   the member's theme. */
+.pf-card { border-radius: 24px; overflow: hidden; margin: 0 0 14px;
+  box-shadow: var(--clay-shadow-sm, 0 6px 18px rgba(0,0,0,.14)); }
+.pf-card-profile { background: linear-gradient(160deg, var(--t-glow1, #8ED4F7), var(--t-glow2, #F6F1E7)); }
+.pf-card-profile .pf-actions { margin: 12px 14px 4px; }
+.pf-card-profile .pf-sec-title { margin: 14px 16px 6px; }
+.pf-card-profile .pf-about { margin: 0 16px 16px; }
+.pf-card-work { background: var(--t-card, var(--tg-theme-secondary-bg-color, #fff)); padding: 14px; border-top: 3px solid var(--t-acc1, #8ED4F7); }
+.pf-card-work .pf-sec-title { margin: 0 2px 10px; }
 .pf-picker { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 8px 0; }
 .pf-picker img { width: 100%; aspect-ratio: 1; object-fit: cover;
   border-radius: 10px; display: block; }

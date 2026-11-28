@@ -10,7 +10,7 @@ reactions (react -> count 1 + my_reaction; same again removes;
 different replaces; second user counts; non-participant 403;
 invalid emoji 400; unknown message 404; unauthenticated 401;
 reactions in the thread list; block guard 403); backup 40
-tables incl. message_reactions rows; ?v=206 x5, no ?v=137;
+tables incl. message_reactions rows; ?v=207 x5, no ?v=137;
 DM photo/reaction client markers + Phase 123-137 markers intact.
 """
 import hashlib, hmac, json, os, time, urllib.parse
@@ -265,7 +265,7 @@ with TestClient(app) as c:
 
     # 8. Client markers + asset version.
     html = open("webapp/index.html").read()
-    assert html.count("?v=206") == 10, html.count("?v=206")
+    assert html.count("?v=207") == 10, html.count("?v=207")
     assert "?v=137" not in html
     js = open("webapp/app.js").read()
     for m in ("DM_REACTIONS", "reactToMessage", "chat-photo", "chat-file",
@@ -291,6 +291,6 @@ with TestClient(app) as c:
     css = open("webapp/style.css").read()
     assert ".bubble-photo" in css and ".react-chip" in css \
         and ".react-picker" in css
-    print("client markers + ?v=206 OK")
+    print("client markers + ?v=207 OK")
 
 print("PHASE-138 TESTS PASSED")

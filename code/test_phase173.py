@@ -335,11 +335,11 @@ for m in JS_MARKS:
     assert m in JS, f"missing JS marker: {m}"
 assert ".bubble-voice" in CSS and ".voice-track" in CSS
 assert 'id="chat-mic"' in HTML
-assert HTML.count("?v=206") == 10, HTML.count("?v=206")
+assert HTML.count("?v=207") == 10, HTML.count("?v=207")
 # Split so the sweep never rewrites the negative: ?v=182 is gone.
 assert "?v=18" + "2" not in HTML
 BOT = open(os.path.join(ROOT, "code/app/bot.py")).read()
-assert "/?v=206" in BOT and "/?v=18" + "2" not in BOT
+assert "/?v=207" in BOT and "/?v=18" + "2" not in BOT
 paths = set()
 for route in app.routes:
     paths.add(route.path)

@@ -265,10 +265,10 @@ assert len(paths) == 191, len(paths)
 print("routes: 163 OK (no new endpoints)")
 
 # 10. Version.
-assert HTML.count("?v=206") == 10, HTML.count("?v=206")
+assert HTML.count("?v=207") == 10, HTML.count("?v=207")
 assert "?v=16" + "2" not in HTML
-assert 'menu_url.rstrip("/") + "/?v=206"' in BOT
+assert 'menu_url.rstrip("/") + "/?v=207"' in BOT
 assert "Phase 163" in CSS and "Phase 163" in JS and "Phase 163" in MAIN
-print("version OK (?v=206 x10, no old-version literals)")
+print("version OK (?v=207 x10, no old-version literals)")
 
 print("PHASE 163 OK")

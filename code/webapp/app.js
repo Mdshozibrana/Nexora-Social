@@ -4955,7 +4955,14 @@ async function renderPortfolioTab(userId) {
     role.textContent = pf.role || "";
     shade.append(nm, role);
     cover.appendChild(shade);
-    box.appendChild(cover);
+    // Phase 207 (owner): Profile + Work are two cards with two
+    // colours/designs, like the Me section's profile — the
+    // gradient hero zone (Profile card) + the plain body zone
+    // (Work card). The Profile card holds the cover, the
+    // actions and About; the Work card holds the grid.
+    const pcard = document.createElement("div");
+    pcard.className = "pf-card pf-card-profile";
+    pcard.appendChild(cover);
     // Follow / Message — the same actions as the profile hero.
     const ownPf = me && userId === me.telegram_id;
     if (!ownPf) {
@@ -4994,7 +5001,7 @@ async function renderPortfolioTab(userId) {
       mBtn.textContent = "💬 Message";
       mBtn.onclick = () => openChat(userId);
       row.append(fBtn, mBtn);
-      box.appendChild(row);
+      pcard.appendChild(row);
     }
     // About.
     const aboutH = document.createElement("div");
@@ -5003,12 +5010,15 @@ async function renderPortfolioTab(userId) {
     const about = document.createElement("p");
     about.className = "pf-about";
     about.textContent = pf.about || "No about yet.";
-    box.append(aboutH, about);
+    pcard.append(aboutH, about);
+    box.appendChild(pcard);
     // Work — 2-column grid of sample cards (title under each).
     const workH = document.createElement("div");
     workH.className = "pf-sec-title";
     workH.textContent = "Work";
-    box.appendChild(workH);
+    const wcard = document.createElement("div");
+    wcard.className = "pf-card pf-card-work";
+    wcard.appendChild(workH);
     const grid = document.createElement("div");
     grid.className = "pf-work-grid";
     (pf.items || []).forEach(it => {
@@ -5030,7 +5040,8 @@ async function renderPortfolioTab(userId) {
       none.textContent = "No work samples yet.";
       grid.appendChild(none);
     }
-    box.appendChild(grid);
+    wcard.appendChild(grid);
+    box.appendChild(wcard);
     if (ownPf) {
       const eBtn = document.createElement("button");
       eBtn.className = "wide";

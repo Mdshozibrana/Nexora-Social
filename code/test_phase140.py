@@ -11,7 +11,7 @@ it — repost rows carry no hashtags, exactly like the #tag
 search); private accounts (a private author's hashtagged posts
 stay hidden from non-followers, visible to followers, and
 going private hides even older posts); backup 42 tables incl.
-hashtag_follows rows; ?v=206 x5; hashtag-follow client markers
+hashtag_follows rows; ?v=207 x5; hashtag-follow client markers
 + Phase 123-139 markers intact.
 
 Survey note: hashtags live as a space-joined lowercase string
@@ -171,7 +171,7 @@ with TestClient(app) as c:
 
     # 6. Client markers + asset version.
     html = open("webapp/index.html").read()
-    assert html.count("?v=206") == 10, html.count("?v=206")
+    assert html.count("?v=207") == 10, html.count("?v=207")
     assert "?v=13" + "9" not in html
     js = open("webapp/app.js").read()
     for m in ("tab-hashtags", "search-tag-follow", "hashtag-card",
@@ -200,6 +200,6 @@ with TestClient(app) as c:
         assert m in js, m
     css = open("webapp/style.css").read()
     assert ".hashtag-row" in css
-    print("client markers + ?v=206 OK")
+    print("client markers + ?v=207 OK")
 
 print("PHASE-140 TESTS PASSED")
