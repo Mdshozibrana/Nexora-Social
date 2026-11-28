@@ -683,14 +683,14 @@ assert r.status_code == 200, r.text
 print("12. M4 rate buckets 429 with Retry-After, restore works OK")
 
 # 13. Client markers, version, routes, backup tables, health.
-assert HTML.count("?v=203") == 10, HTML.count("?v=203")
+assert HTML.count("?v=204") == 10, HTML.count("?v=204")
 assert "?v=17" + "8" not in HTML
-assert "/?v=203" in BOT and "/?v=17" + "8" not in BOT
-assert "app.js?v=203" in HTML and "style.css?v=203" in HTML
+assert "/?v=204" in BOT and "/?v=17" + "8" not in BOT
+assert "app.js?v=204" in HTML and "style.css?v=204" in HTML
 paths = set()
 for route in app.routes:
     paths.add(route.path)
-assert len(paths) == 189, len(paths)
+assert len(paths) == 191, len(paths)
 r = c.get("/admin/backup", headers=ADMIN)
 assert r.status_code == 200, r.text
 b = r.json()
@@ -699,7 +699,7 @@ assert len(_BACKUP_TABLES) == 55, len(_BACKUP_TABLES)
 r = c.get("/health")
 assert r.status_code == 200, r.text
 h = c.get("/admin/health", headers=ADMIN).json()
-assert h["version"] == 203, h
+assert h["version"] == 204, h
 print("13. version + routes + backup + health OK")
 
 print("PHASE 179 OK")

@@ -388,8 +388,8 @@ print("9. _media_visible for portfolio cover OK")
 
 # --- 10. Client markers, version, routes, backup. -------------------------
 JS_MARKS = ["portfolioDropdownEl", "renderPortfolioTab",
-            "openPortfolioEditor", "portfolioPickPhotos",
-            "portfolioPickPosts", "portfolioPickDesigns",
+            "openPortfolioEditor", "/me/portfolio/cover/upload",
+            "/me/portfolio/items/upload",
             "settingsPortfolio", "Profile/Portfolio",
             "Show my portfolio", "Edit portfolio",
             "pf-cover", "pf-shade", "pf-work-grid", "pf-dd-menu",
@@ -397,19 +397,30 @@ JS_MARKS = ["portfolioDropdownEl", "renderPortfolioTab",
             "settingsHubRow(\"🖼️\", \"Portfolio\""]
 for m in JS_MARKS:
     assert m in JS, f"missing JS marker: {m}"
+# Phase 204: the pickers are gone — cover + work come fresh
+# from the phone gallery now.
+for m in ("async function portfolioPickPhotos",
+          "async function portfolioPickPosts",
+          "async function portfolioPickDesigns",
+          "portfolioPickPhotos(", "portfolioPickPosts(",
+          "portfolioPickDesigns(", "Choose cover photo",
+          "Choose one of my posts", "Choose a design",
+          "Choose a photo", "From one of my posts",
+          "From the Design gallery", "Project (my own photo)"):
+    assert m not in JS, f"removed picker marker still present: {m}"
 assert '(currentTab === "portfolio" ? "Portfolio" : "Profile") + " ▾"' in JS
 assert "pf-cover" in CSS and ".pf-shade" in CSS and ".pf-work-grid" in CSS
 assert ".pf-dd-menu" in CSS and ".pf-edit-row" in CSS
 assert ".pf-work-card" in CSS and ".pf-picker" in CSS
-assert HTML.count("?v=203") == 10, HTML.count("?v=203")
+assert HTML.count("?v=204") == 10, HTML.count("?v=204")
 assert "?v=20" + "0" not in HTML
-assert "app.js?v=203" in HTML and "games.js?v=203" in HTML
+assert "app.js?v=204" in HTML and "games.js?v=204" in HTML
 BOT = open(os.path.join(ROOT, "code/app/bot.py")).read()
-assert "/?v=203" in BOT and "/?v=19" + "8" not in BOT
+assert "/?v=204" in BOT and "/?v=19" + "8" not in BOT
 paths = set()
 for route in app.routes:
     paths.add(route.path)
-assert len(paths) == 189, len(paths)
+assert len(paths) == 191, len(paths)
 for want in ("/users/{telegram_id}/portfolio", "/me/portfolio",
              "/me/portfolio/items",
              "/me/portfolio/items/{item_id}",
@@ -644,7 +655,7 @@ try {
   assert(__nx199.getTab() === "profile", "Carol default tab is Profile");
   assert(findByClass(box, "pf-dd-wrap").length === 0,
     "no dropdown when the portfolio is off");
-  // 5. Editor (as Bob): toggle + role/about + save + work list + picker.
+  // 5. Editor (as Bob): toggle + role/about + save + work list + gallery upload.
   __nx199.setMe({ telegram_id: 1992, first_name: "Bob", username: "bob",
     is_admin: false, photo_file_id: "pf_bob_photo", media_token: "" });
   await __nx199.openPortfolioEditor();
@@ -671,23 +682,60 @@ try {
   // created itself).
   const rows = findByClass(box, "pf-edit-row");
   assert(rows.length === 2, "2 work rows, got " + rows.length);
-  const coverBtn = findBtn(box, "📷 Choose cover photo");
-  assert(coverBtn, "cover picker button");
-  coverBtn.onclick();
-  await sleep(10);
-  const picker = findByClass(box, "pf-picker")[0];
-  assert(picker, "cover picker opens");
-  const pickImgs = [];
-  const walkImgs = (el) => {
+  const coverBtn = findBtn(box, "📷 Upload cover from gallery");
+  assert(coverBtn, "cover upload button");
+  // Phase 204: the cover button opens the phone gallery — the
+  // hidden file input's click, not a picker. The stub input's
+  // click is a no-op, so record it first.
+  const fileInputs = [];
+  const walkFiles = (el) => {
     for (const ch of el.children) {
-      if (ch.tag === "img") pickImgs.push(ch);
-      walkImgs(ch);
+      if (ch.tag === "input" && ch.type === "file") fileInputs.push(ch);
+      walkFiles(ch);
     }
   };
-  walkImgs(picker);
-  assert(pickImgs.length === 1 && pickImgs[0].src.indexOf("pf_photo_1") >= 0,
-    "picker lists my own post photo, got " + pickImgs.length);
-  console.log("APP HARNESS OK (phase-199: dropdown default Profile, portfolio render, editor + picker)");
+  walkFiles(box);
+  assert(fileInputs.length === 2,
+    "cover + work file inputs, got " + fileInputs.length);
+  fileInputs.forEach((fi) => {
+    assert(fi.accept === "image/*", "file input accepts images only");
+    assert(fi.hidden === true, "file input is hidden");
+  });
+  let coverClicked = false;
+  fileInputs[0].click = () => { coverClicked = true; };
+  coverBtn.onclick();
+  assert(coverClicked, "cover button opens the gallery file input");
+  assert(typeof fileInputs[0].onchange === "function",
+    "cover input has an upload handler");
+  // Work add: title + one gallery upload button, no kind select,
+  // no pick buttons.
+  const upBtn = findBtn(box, "📷 Upload from gallery");
+  assert(upBtn, "work upload button");
+  let titleIn = null;
+  const walkTitle = (el) => {
+    for (const ch of el.children) {
+      if (ch.tag === "input" && ch.type === "text"
+          && ch.placeholder === "Work sample title") titleIn = ch;
+      walkTitle(ch);
+    }
+  };
+  walkTitle(box);
+  assert(titleIn, "work title input");
+  let selects = 0;
+  const walkSel = (el) => {
+    for (const ch of el.children) {
+      if (ch.tag === "select") selects++;
+      walkSel(ch);
+    }
+  };
+  walkSel(box);
+  assert(selects === 0, "no kind select in the editor, got " + selects);
+  assert(!findBtn(box, "📷 Choose one of my posts"), "no post picker");
+  assert(!findBtn(box, "🎨 Choose a design"), "no design picker");
+  assert(!findBtn(box, "🖼️ Choose a photo"), "no photo picker");
+  assert(typeof fileInputs[1].onchange === "function",
+    "work input has an upload handler");
+  console.log("APP HARNESS OK (phase-199: dropdown default Profile, portfolio render, editor + gallery upload)");
   process.exit(0);
 })().catch(e => { console.error(e.stack || e); process.exit(1); });
 '''
@@ -709,7 +757,7 @@ def _run_app_harness():
     assert "EVAL_OK" in r.stdout, (r.stdout, r.stderr)
     assert "APP HARNESS OK" in r.stdout, (r.stdout, r.stderr)
     print("app node harness OK (dropdown default Profile, portfolio "
-          "render, editor + picker)")
+          "render, editor + gallery upload)")
 
 
 _run_app_harness()

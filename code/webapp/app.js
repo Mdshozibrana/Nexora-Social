@@ -5049,97 +5049,13 @@ async function renderPortfolioTab(userId) {
 // Pickers — everything comes from the member's own content:
 // their post photos (cover + project thumbnails), their posts
 // (post samples) and the public Design gallery (design samples).
-async function portfolioPickPhotos(container, onPick, extraIds) {
-  container.innerHTML = "Loading…";
-  const seen = new Set();
-  const btns = [];
-  const addBtn = (fid) => {
-    if (!fid || seen.has(fid)) return;
-    seen.add(fid);
-    const b = document.createElement("button");
-    b.type = "button";
-    const im = document.createElement("img");
-    im.src = mediaUrl(fid);
-    im.alt = "";
-    im.loading = "lazy";
-    b.appendChild(im);
-    b.onclick = () => onPick(fid);
-    btns.push(b);
-  };
-  (extraIds || []).forEach(addBtn);
-  try {
-    const d = await api("/users/" + me.telegram_id + "/posts");
-    (d.posts || []).forEach(p => {
-      if (p.thumb_file_id) addBtn(p.thumb_file_id);
-      if (p.media_file_id) addBtn(p.media_file_id);
-      (p.media || []).forEach(m => addBtn(m.file_id));
-    });
-  } catch (e) { /* picker keeps what it has */ }
-  container.innerHTML = "";
-  if (!btns.length) {
-    container.textContent = "No photos yet — post one first.";
-    return;
-  }
-  btns.forEach(b => container.appendChild(b));
-}
-
-async function portfolioPickPosts(container, onPick) {
-  container.innerHTML = "Loading…";
-  let rows = [];
-  try {
-    const d = await api("/users/" + me.telegram_id + "/posts");
-    rows = (d.posts || []).filter(p => p.media_file_id
-      || (p.media && p.media.length) || p.thumb_file_id);
-  } catch (e) { rows = []; }
-  container.innerHTML = "";
-  if (!rows.length) {
-    container.textContent = "No posts with photos yet.";
-    return;
-  }
-  rows.forEach(p => {
-    const b = document.createElement("button");
-    b.type = "button";
-    b.className = "pf-pick-post";
-    const im = document.createElement("img");
-    const fid = p.thumb_file_id || p.media_file_id
-      || (p.media && p.media[0] && p.media[0].file_id) || "";
-    im.src = mediaUrl(fid);
-    im.alt = "";
-    im.loading = "lazy";
-    b.appendChild(im);
-    const ti = document.createElement("div");
-    ti.className = "pf-pick-title";
-    ti.textContent = (p.caption || "").slice(0, 40) || "Post";
-    b.appendChild(ti);
-    b.onclick = () => onPick(p);
-    container.appendChild(b);
-  });
-}
-
-async function portfolioPickDesigns(container, onPick) {
-  container.innerHTML = "Loading…";
-  let rows = [];
-  try {
-    const d = await api("/designs?limit=20");
-    rows = d.designs || [];
-  } catch (e) { rows = []; }
-  container.innerHTML = "";
-  if (!rows.length) {
-    container.textContent = "No designs yet.";
-    return;
-  }
-  rows.forEach(dg => {
-    const b = document.createElement("button");
-    b.type = "button";
-    const im = document.createElement("img");
-    im.src = mediaUrl(dg.image_file_id);
-    im.alt = "";
-    im.loading = "lazy";
-    b.appendChild(im);
-    b.onclick = () => onPick(dg);
-    container.appendChild(b);
-  });
-}
+// Phase 204 (owner): the portfolio pickers are GONE — cover
+// and work samples come FRESH from the phone gallery now, not
+// from previous posts/designs. The editor below opens a file
+// input and uploads through /me/portfolio/cover/upload and
+// /me/portfolio/items/upload (shrink + progress + retry, like
+// every other upload point). portfolioPickPhotos,
+// portfolioPickPosts and portfolioPickDesigns were deleted here.
 
 async function openPortfolioEditor() {
   const box = $("profile-box");
@@ -5186,7 +5102,10 @@ async function openPortfolioEditor() {
   aboutIn.placeholder = "About you…";
   aboutIn.value = pf.about || "";
   box.append(roleIn, aboutIn);
-  // Cover photo — pick from your own photos.
+  // Phase 204 (owner): the cover comes FRESH from the phone
+  // gallery — not from previous posts/designs. The upload goes
+  // up at once (shrink + progress + retry, like every other
+  // upload point) and the preview updates from the response.
   let coverFileId = pf.cover_file_id || null;
   const coverPrev = document.createElement("div");
   coverPrev.className = "pf-edit-cover";
@@ -5202,20 +5121,39 @@ async function openPortfolioEditor() {
     }
   };
   paintCover();
+  const coverInput = document.createElement("input");
+  coverInput.type = "file";
+  coverInput.accept = "image/*";
+  coverInput.hidden = true;
   const coverBtn = document.createElement("button");
   coverBtn.className = "wide";
-  coverBtn.textContent = "📷 Choose cover photo";
-  const coverPick = document.createElement("div");
-  coverPick.className = "pf-picker";
-  coverBtn.onclick = () => {
-    if (coverPick.children.length) { coverPick.innerHTML = ""; return; }
-    portfolioPickPhotos(coverPick, (fid) => {
-      coverFileId = fid;
+  coverBtn.textContent = "📷 Upload cover from gallery";
+  coverBtn.onclick = () => coverInput.click();
+  coverInput.onchange = async () => {
+    const f = coverInput.files[0];
+    coverInput.value = "";
+    if (!f) return;
+    coverBtn.disabled = true;
+    coverBtn.textContent = "Uploading cover…";
+    try {
+      const form = new FormData();
+      form.append("file", await shrinkForUpload(f));
+      const up = await apiFormProgress("/me/portfolio/cover/upload",
+        form, pct => {
+          coverBtn.textContent = pct === null ? "Uploading cover…"
+            : "Uploading cover… " + pct + "%";
+        }, newUploadId());
+      coverFileId = up.cover_file_id || coverFileId;
+      pf = up;
       paintCover();
-      coverPick.innerHTML = "";
-    }, pf.photo_file_id ? [pf.photo_file_id] : []);
+      setStatus("Cover photo updated.");
+    } catch (e) {
+      setStatus(e.message || "Could not upload the cover photo.");
+    }
+    coverBtn.disabled = false;
+    coverBtn.textContent = "📷 Upload cover from gallery";
   };
-  box.append(coverPrev, coverBtn, coverPick);
+  box.append(coverPrev, coverBtn, coverInput);
   // Save.
   const saveBtn = document.createElement("button");
   saveBtn.className = "wide btn";
@@ -5303,71 +5241,58 @@ async function openPortfolioEditor() {
     } catch (e) { setStatus("Could not reorder the samples."); }
   };
   loadWork();
-  const addSample = async (payload) => {
-    try {
-      await api("/me/portfolio/items", { method: "POST",
-        body: JSON.stringify(payload) });
-      pf = await api("/me/portfolio");
-      loadWork();
-      setStatus("Work sample added.");
-    } catch (e) { setStatus("Could not add the sample."); }
-  };
+  // Phase 204 (owner): a work sample comes FRESH from the
+  // phone gallery — not from previous posts/designs. The kind
+  // select and the three pick buttons are gone; a title plus
+  // one gallery upload is the whole add flow now.
   const addH = document.createElement("div");
   addH.className = "settings-sub";
   addH.textContent = "Add a work sample";
   box.appendChild(addH);
-  const kindSel = document.createElement("select");
-  ["post", "design", "project"].forEach(k => {
-    const o = document.createElement("option");
-    o.value = k;
-    o.textContent = k === "post" ? "From one of my posts"
-      : k === "design" ? "From the Design gallery"
-      : "Project (my own photo)";
-    kindSel.appendChild(o);
-  });
   const titleIn = document.createElement("input");
   titleIn.type = "text";
   titleIn.maxLength = 100;
-  titleIn.placeholder = "Project title";
-  titleIn.hidden = true;
-  const pickBtn = document.createElement("button");
-  pickBtn.className = "wide";
-  const addBox = document.createElement("div");
-  addBox.className = "pf-picker";
-  const paintAdd = () => {
-    addBox.innerHTML = "";
-    const kind = kindSel.value;
-    titleIn.hidden = kind !== "project";
-    if (kind === "post") {
-      pickBtn.textContent = "📷 Choose one of my posts";
-      pickBtn.onclick = () => portfolioPickPosts(addBox, async (p) => {
-        await addSample({ kind: "post", ref_id: p.id,
-                          title: titleIn.value });
-        addBox.innerHTML = "";
-      });
-    } else if (kind === "design") {
-      pickBtn.textContent = "🎨 Choose a design";
-      pickBtn.onclick = () => portfolioPickDesigns(addBox, async (dg) => {
-        await addSample({ kind: "design", ref_id: dg.id,
-                          title: titleIn.value });
-        addBox.innerHTML = "";
-      });
-    } else {
-      pickBtn.textContent = "🖼️ Choose a photo";
-      pickBtn.onclick = () => portfolioPickPhotos(addBox, async (fid) => {
-        if (!titleIn.value.trim()) {
-          setStatus("Give the project a title first.");
-          return;
-        }
-        await addSample({ kind: "project", title: titleIn.value,
-                          image_file_id: fid });
-        addBox.innerHTML = "";
-      }, pf.photo_file_id ? [pf.photo_file_id] : []);
+  titleIn.placeholder = "Work sample title";
+  const workInput = document.createElement("input");
+  workInput.type = "file";
+  workInput.accept = "image/*";
+  workInput.hidden = true;
+  const upBtn = document.createElement("button");
+  upBtn.className = "wide";
+  upBtn.textContent = "📷 Upload from gallery";
+  upBtn.onclick = () => {
+    if (!titleIn.value.trim()) {
+      setStatus("Give the work sample a title first.");
+      return;
     }
+    workInput.click();
   };
-  kindSel.onchange = paintAdd;
-  paintAdd();
-  box.append(kindSel, titleIn, pickBtn, addBox);
+  workInput.onchange = async () => {
+    const f = workInput.files[0];
+    workInput.value = "";
+    if (!f) return;
+    upBtn.disabled = true;
+    upBtn.textContent = "Uploading…";
+    try {
+      const form = new FormData();
+      form.append("file", await shrinkForUpload(f));
+      form.append("title", titleIn.value.trim());
+      await apiFormProgress("/me/portfolio/items/upload", form,
+        pct => {
+          upBtn.textContent = pct === null ? "Uploading…"
+            : "Uploading… " + pct + "%";
+        }, newUploadId());
+      pf = await api("/me/portfolio");
+      titleIn.value = "";
+      loadWork();
+      setStatus("Work sample added.");
+    } catch (e) {
+      setStatus(e.message || "Could not add the sample.");
+    }
+    upBtn.disabled = false;
+    upBtn.textContent = "📷 Upload from gallery";
+  };
+  box.append(titleIn, upBtn, workInput);
 }
 
 async function loadProfilePosts(reset) {
@@ -6794,7 +6719,7 @@ async function loadSettings() {
     };
     const pfHint = document.createElement("p");
     pfHint.className = "hint";
-    pfHint.textContent = "Your portfolio shows a full-screen cover photo, your role, an About text and your work samples. Add samples from your posts, the Design gallery or your own photos.";
+    pfHint.textContent = "Your portfolio shows a full-screen cover photo, your role, an About text and your work samples. Add samples fresh from your phone gallery.";
     pfSec.appendChild(pfHint);
     const pfEdit = document.createElement("button");
     pfEdit.className = "wide";
@@ -7639,7 +7564,10 @@ $("composer-post").onclick = async () => {
         btn.textContent = "Uploading photo " + (i + 1) + "/" + composerFiles.length + "…";
         const form = new FormData();
         form.append("file", await shrinkForUpload(composerFiles[i]));
-        const r = await apiFormProgress("/posts/upload-media", form, () => {});
+        // Phase 204: each staged album photo carries its own
+        // upload id — a network-level retry replays that photo's
+        // staged result instead of staging it twice.
+        const r = await apiFormProgress("/posts/upload-media", form, () => {}, newUploadId());
         ids.push(r.file_id);
       }
       fill.style.width = "100%";
@@ -7733,27 +7661,39 @@ $("composer-post").onclick = async () => {
   btn.textContent = "Post";
 };
 
+// Phase 204: profile photo goes through the shared hardened
+// upload path (progress + once-only fetch retry + upload-id
+// dedupe), like the composer — not plain apiForm.
 $("profile-file").onchange = async () => {
   const f = $("profile-file").files[0];
   $("profile-file").value = "";
   if (!f) return;
   const form = new FormData();
   form.append("file", await shrinkForUpload(f));
+  setStatus("Uploading photo…");
   try {
-    const r = await apiForm("/me/photo/upload", form);
+    const r = await apiFormProgress("/me/photo/upload", form,
+      pct => { if (pct !== null) setStatus("Uploading photo… " + pct + "%"); },
+      newUploadId());
     if (me) me.photo_file_id = r.photo_file_id;
     setStatus("Profile photo updated.");
     if (me) openProfile(me.telegram_id);
   } catch (e) { setStatus(e.message || "Could not update the photo."); }
 };
+// Phase 204: cover photo goes through the shared hardened
+// upload path (progress + once-only fetch retry + upload-id
+// dedupe), like the composer — not plain apiForm.
 $("cover-file").onchange = async () => {
   const f = $("cover-file").files[0];
   $("cover-file").value = "";
   if (!f) return;
   const form = new FormData();
   form.append("file", await shrinkForUpload(f));
+  setStatus("Uploading cover…");
   try {
-    await apiForm("/me/cover/upload", form);
+    await apiFormProgress("/me/cover/upload", form,
+      pct => { if (pct !== null) setStatus("Uploading cover… " + pct + "%"); },
+      newUploadId());
     setStatus("Cover photo updated.");
     if (me) openProfile(me.telegram_id);
   } catch (e) { setStatus(e.message || "Could not update the cover."); }
@@ -9051,8 +8991,13 @@ $("ds-edit-save").onclick = async () => {
     form.append("file", await shrinkForUpload(dsEditFile));
   }
   try {
-    const updated = await apiForm(
-      "/designs/" + currentDesign.id + "/edit", form);
+    // Phase 204: design edit goes through the shared hardened
+    // upload path (progress + once-only fetch retry + upload-id
+    // dedupe), like the design post — not plain apiForm.
+    const updated = await apiFormProgress(
+      "/designs/" + currentDesign.id + "/edit", form,
+      pct => { st.textContent = pct === null ? "Uploading…"
+        : "Uploading… " + pct + "%"; }, newUploadId());
     dsEditFile = null;
     setStatus("Design updated.");
     openDesignSheet(updated);
@@ -11845,10 +11790,13 @@ $("story-file").addEventListener("change", async () => {
   try {
     const form = new FormData();
     form.append("file", await shrinkForUpload(f));
+    // Phase 204: a story upload carries its own upload id now
+    // (was null) — a network-level retry replays the first
+    // attempt instead of posting the story twice.
     await apiFormProgress("/stories/upload", form, pct => {
       setStatus(pct === null ? "Posting your story… finishing"
                              : "Posting your story… " + pct + "%");
-    }, null);
+    }, newUploadId());
     setStatus("📸 Story posted — it stays up for 24 hours.");
     loadStories();
   } catch (e) {

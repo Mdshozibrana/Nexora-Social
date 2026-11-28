@@ -2265,6 +2265,7 @@ def _dedupe_put(user_id, upload_id, status_code, body):
 
 @app.post("/posts/upload-media")
 async def upload_media_staged(file: UploadFile = File(...),
+                              x_upload_id: Optional[str] = Header(None),
                               user: models.User = Depends(current_user),
                               db: Session = Depends(get_db)):
     """Phase 171: stage ONE photo for an album — upload it to
@@ -2274,6 +2275,9 @@ async def upload_media_staged(file: UploadFile = File(...),
     {media_file_ids}. Videos are refused here BEFORE any upload
     (albums hold photos only — a video still goes through
     /posts/upload on its own), so no stray video job is scheduled."""
+    hit = _dedupe_get(user.telegram_id, x_upload_id)
+    if hit:
+        return JSONResponse(status_code=hit[0], content=hit[1])
     kind = tgupload.classify(file.content_type or "",
                              file.filename or "")
     if kind != "photo":
@@ -2281,7 +2285,9 @@ async def upload_media_staged(file: UploadFile = File(...),
             400, "Albums hold photos — post a video on its own")
     _enforce_rate("upload", f"u{user.telegram_id}")
     kind, file_id = await _telegram_upload_or_400(user, file)
-    return {"file_id": file_id, "kind": kind}
+    body = {"file_id": file_id, "kind": kind}
+    _dedupe_put(user.telegram_id, x_upload_id, 200, body)
+    return body
 
 
 @app.post("/posts/upload")
@@ -3451,10 +3457,10 @@ def _get_my_portfolio(db, user_id):
 def _own_media_file_ids(db, user_id):
     """Every Telegram file_id the member already owns — their
     posts (single + album media), photos they sent in DMs, and
-    their profile/cover photo. Portfolio covers and project
-    thumbnails must come from this set: pick-from-own-content
-    is the path (in-app upload is fragile on the owner's phone,
-    and no new upload-fix work belongs in this phase)."""
+    their profile/cover photo, plus photos they uploaded fresh
+    to their own portfolio (cover + work samples, Phase 204).
+    Portfolio covers and project thumbnails must come from
+    this set."""
     ids = set()
     for (fid,) in db.query(models.Post.media_file_id).filter_by(
             user_id=user_id).all():
@@ -3481,6 +3487,19 @@ def _own_media_file_ids(db, user_id):
             ids.add(u.photo_file_id)
         if u.cover_file_id:
             ids.add(u.cover_file_id)
+    # Phase 204: a photo the member uploaded fresh to their own
+    # portfolio (cover or work sample) is one of their own photos
+    # too — otherwise saving the portfolio after a fresh cover
+    # upload would 400 on its own cover_file_id.
+    pf = db.query(models.Portfolio).filter_by(user_id=user_id).first()
+    if pf is not None:
+        if pf.cover_file_id:
+            ids.add(pf.cover_file_id)
+        for (fid,) in db.query(
+                models.PortfolioItem.image_file_id).filter_by(
+                portfolio_id=pf.id).all():
+            if fid:
+                ids.add(fid)
     return ids
 
 
@@ -3608,6 +3627,80 @@ def save_my_portfolio(body: PortfolioIn,
     db.commit()
     db.refresh(pf)
     return _portfolio_out(db, user.telegram_id, pf)
+
+
+@app.post("/me/portfolio/cover/upload")
+async def upload_portfolio_cover(file: UploadFile = File(...),
+                                 x_upload_id: Optional[str] = Header(None),
+                                 user: models.User = Depends(current_user),
+                                 db: Session = Depends(get_db)):
+    """Phase 204 (owner): the portfolio cover comes FRESH from
+    the phone gallery — not from previous posts/designs. The
+    photo is screened exactly like a post, then set as the
+    cover at once. It cannot go through save_my_portfolio: a
+    freshly staged file_id is never in _own_media_file_ids,
+    so that path would 400 on its own cover. Videos are
+    refused before any upload."""
+    hit = _dedupe_get(user.telegram_id, x_upload_id)
+    if hit:
+        return JSONResponse(status_code=hit[0], content=hit[1])
+    if tgupload.classify(file.content_type or "",
+                         file.filename or "") != "photo":
+        raise HTTPException(
+            400, "Please choose a photo (JPG, PNG, WebP or HEIC)")
+    _enforce_rate("portfolio", f"u{user.telegram_id}")
+    _, file_id = await _telegram_upload_or_400(user, file)
+    pf = _get_my_portfolio(db, user.telegram_id)
+    pf.cover_file_id = file_id
+    db.commit()
+    db.refresh(pf)
+    body = _portfolio_out(db, user.telegram_id, pf)
+    _dedupe_put(user.telegram_id, x_upload_id, 200, body)
+    return body
+
+
+@app.post("/me/portfolio/items/upload")
+async def upload_portfolio_item(file: UploadFile = File(...),
+                                title: str = Form(""),
+                                x_upload_id: Optional[str] = Header(None),
+                                user: models.User = Depends(current_user),
+                                db: Session = Depends(get_db)):
+    """Phase 204 (owner): a work sample comes FRESH from the
+    phone gallery — not from previous posts/designs. The photo
+    is screened exactly like a post, then saved as a project
+    sample (max 20, same cap as the picker path)."""
+    hit = _dedupe_get(user.telegram_id, x_upload_id)
+    if hit:
+        return JSONResponse(status_code=hit[0], content=hit[1])
+    if tgupload.classify(file.content_type or "",
+                         file.filename or "") != "photo":
+        raise HTTPException(
+            400, "Please choose a photo (JPG, PNG, WebP or HEIC)")
+    title = (title or "").strip()
+    if not title:
+        raise HTTPException(400, "A work sample needs a title")
+    if banned_word_in(db, title):
+        raise HTTPException(400, BANNED_WORD_MESSAGE)
+    _enforce_rate("portfolio", f"u{user.telegram_id}")
+    pf = _get_my_portfolio(db, user.telegram_id)
+    if db.query(models.PortfolioItem).filter_by(
+            portfolio_id=pf.id).count() >= 20:
+        raise HTTPException(400, "You can have up to 20 work samples")
+    _, file_id = await _telegram_upload_or_400(user, file)
+    last = db.query(models.PortfolioItem).filter_by(
+        portfolio_id=pf.id).order_by(
+        models.PortfolioItem.position.desc()).first()
+    pos = (last.position + 1) if last is not None else 0
+    it = models.PortfolioItem(portfolio_id=pf.id, kind="project",
+                              ref_id=None, title=title[:100],
+                              image_file_id=file_id, position=pos)
+    db.add(it)
+    db.commit()
+    db.refresh(it)
+    body = {"id": it.id, "kind": it.kind, "ref_id": it.ref_id,
+            "title": it.title, "image_file_id": it.image_file_id}
+    _dedupe_put(user.telegram_id, x_upload_id, 200, body)
+    return body
 
 
 @app.post("/me/portfolio/items")
@@ -5212,11 +5305,15 @@ async def sync_photo(user: models.User = Depends(current_user),
 
 @app.post("/me/photo/upload")
 async def upload_my_photo(file: UploadFile = File(...),
+                          x_upload_id: Optional[str] = Header(None),
                           user: models.User = Depends(current_user),
                           db: Session = Depends(get_db)):
     """Set the member's profile picture from a photo picked in the app.
     The upload goes to Telegram (as the bot) for its file_id; the new
     photo then appears everywhere avatars render."""
+    hit = _dedupe_get(user.telegram_id, x_upload_id)
+    if hit:
+        return JSONResponse(status_code=hit[0], content=hit[1])
     if tgupload.classify(file.content_type or "",
                          file.filename or "") != "photo":
         raise HTTPException(400, "Please choose a photo (JPG, PNG, WebP or HEIC)")
@@ -5224,16 +5321,22 @@ async def upload_my_photo(file: UploadFile = File(...),
     _, file_id = await _telegram_upload_or_400(user, file)
     user.photo_file_id = file_id
     db.commit()
-    return {"photo_file_id": file_id}
+    body = {"photo_file_id": file_id}
+    _dedupe_put(user.telegram_id, x_upload_id, 200, body)
+    return body
 
 
 @app.post("/me/cover/upload")
 async def upload_my_cover(file: UploadFile = File(...),
+                          x_upload_id: Optional[str] = Header(None),
                           user: models.User = Depends(current_user),
                           db: Session = Depends(get_db)):
     """Phase 40 (owner: a cover photo option on the profile).
     Mirrors the profile-photo upload: the image goes to Telegram
     for its file_id and shows as the banner atop the profile."""
+    hit = _dedupe_get(user.telegram_id, x_upload_id)
+    if hit:
+        return JSONResponse(status_code=hit[0], content=hit[1])
     if tgupload.classify(file.content_type or "",
                          file.filename or "") != "photo":
         raise HTTPException(400, "Please choose a photo (JPG, PNG, WebP or HEIC)")
@@ -5241,7 +5344,9 @@ async def upload_my_cover(file: UploadFile = File(...),
     _, file_id = await _telegram_upload_or_400(user, file)
     user.cover_file_id = file_id
     db.commit()
-    return {"cover_file_id": file_id}
+    body = {"cover_file_id": file_id}
+    _dedupe_put(user.telegram_id, x_upload_id, 200, body)
+    return body
 
 
 class MyProfileIn(BaseModel):
@@ -8220,12 +8325,16 @@ async def upload_design(prompt: str = Form(""),
 async def edit_design(design_id: int,
                       prompt: str = Form(None),
                       file: UploadFile = File(None),
+                      x_upload_id: Optional[str] = Header(None),
                       user: models.User = Depends(current_user),
                       db: Session = Depends(get_db)):
     """Phase 46 (owner: designs must be editable as needed).
     The admin — from his own account only, the same Phase 34
     rule as posting — can fix a design's prompt text and/or
     replace its image after posting. Likes and views stay."""
+    hit = _dedupe_get(user.telegram_id, x_upload_id)
+    if hit:
+        return JSONResponse(status_code=hit[0], content=hit[1])
     real_id = getattr(user, "_real_id", user.telegram_id)
     if user.telegram_id not in settings.ADMIN_IDS \
             or real_id != user.telegram_id:
@@ -8252,7 +8361,9 @@ async def edit_design(design_id: int,
     _audit(db, user, "design_edit", detail=f"design {design_id}")
     db.commit()
     db.refresh(design)
-    return _design_dict(db, design, user)
+    body = _design_dict(db, design, user)
+    _dedupe_put(user.telegram_id, x_upload_id, 200, body)
+    return body
 
 
 @app.post("/designs/{design_id}/like")

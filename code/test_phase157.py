@@ -151,12 +151,12 @@ with TestClient(app) as c:
     assert r.status_code == 200, r.text
     assert len(r.json()["tables"]) == 55, len(r.json()["tables"])
     paths = {rt.path for rt in app.routes}
-    assert len(paths) == 189, len(paths)
+    assert len(paths) == 191, len(paths)
     print("routes 158 + backup 43 tables OK (no new endpoints, no schema change)")
 
 # 7. Version.
-assert HTML.count("?v=203") == 10, HTML.count("?v=203")
+assert HTML.count("?v=204") == 10, HTML.count("?v=204")
 assert "?v=15" + "6" not in HTML
-assert 'menu_url.rstrip("/") + "/?v=203"' in BOT
+assert 'menu_url.rstrip("/") + "/?v=204"' in BOT
 assert "Phase 157" in CSS and "Phase 157" in HTML
 print("PHASE 157 OK")

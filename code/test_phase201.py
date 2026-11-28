@@ -117,7 +117,7 @@ assert "MUSEUM:" not in MAIN, "Nexa MUSEUM paragraph left"
 assert "/museum" not in MAIN
 assert "museum" not in RATE_LIMITS, RATE_LIMITS
 paths = {rt.path for rt in app.routes}
-assert len(paths) == 189, len(paths)
+assert len(paths) == 191, len(paths)
 assert not any("museum" in p for p in paths), paths
 r = c.get("/me/museum", headers=ALICE)
 assert r.status_code == 404, r.text
@@ -143,12 +143,12 @@ assert "museum_items" not in RLS
 print("3. museum_items retained (backup compat) OK")
 
 # --- 4. Version. ----------------------------------------------------------
-assert HTML.count("?v=203") == 10, HTML.count("?v=203")
-assert "?v=20" + "2" not in HTML
-assert "app.js?v=203" in HTML and "games.js?v=203" in HTML
-assert 'menu_url.rstrip("/") + "/?v=203"' in BOT
+assert HTML.count("?v=204") == 10, HTML.count("?v=204")
+assert "?v=20" + "3" not in HTML
+assert "app.js?v=204" in HTML and "games.js?v=204" in HTML
+assert 'menu_url.rstrip("/") + "/?v=204"' in BOT
 assert ("/?v=20" + "2") not in BOT
-print("4. version ?v=203 OK")
+print("4. version ?v=204 OK")
 
 # --- 5. app.js still parses. ----------------------------------------------
 r = subprocess.run(["node", "--check",

@@ -44,10 +44,10 @@ with TestClient(app) as c:
     r = c.get("/health")
     assert r.status_code == 200, r.text
 
-# 1. Asset version bumped to ?v=203 (x5), ?v=124 gone from the shell.
-assert HTML.count("?v=203") == 10, HTML.count("?v=203")
+# 1. Asset version bumped to ?v=204 (x5), ?v=124 gone from the shell.
+assert HTML.count("?v=204") == 10, HTML.count("?v=204")
 assert "?v=124" not in HTML
-assert "app.js?v=203" in HTML and "style.css?v=203" in HTML
+assert "app.js?v=204" in HTML and "style.css?v=204" in HTML
 
 # 2. The fix: topScroller helper picks the open view's scroller.
 assert 'const topScroller = () => current() === "videos"' in JS

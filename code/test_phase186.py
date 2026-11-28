@@ -21,8 +21,8 @@ DB session + role-script table audit + _migrate() permission tolerance.
    (anonymous + identified), and the admin endpoints all still work,
    including a post created and then read after several commits in
    the same flow (the case the after_begin listener exists for).
-5. Version + routes + backup pins: shell ?v=203 (x10), bot menu
-   /?v=203, ?v=185 gone from the shell, 183 routes, 52 backup
+5. Version + routes + backup pins: shell ?v=204 (x10), bot menu
+   /?v=204, ?v=185 gone from the shell, 183 routes, 52 backup
    tables, /admin/health version 186.
 The live-Postgres proof (policy matrix, write enforcement, identity
 surviving COMMIT, app boot under the app role) is NOT in this file —
@@ -352,7 +352,7 @@ assert r.status_code == 401, (r.status_code, r.text)
 # Admin endpoints still work under the bound admin identity.
 r = c.get("/admin/health", headers=ADMIN)
 assert r.status_code == 200, r.text
-assert r.json()["version"] == 203, r.json()
+assert r.json()["version"] == 204, r.json()
 r = c.get("/admin/dashboard", headers=ADMIN)
 assert r.status_code == 200, r.text
 print("4. behavioural checks OK (auth, posts, feed, DMs, /p/ anon + "
@@ -360,17 +360,17 @@ print("4. behavioural checks OK (auth, posts, feed, DMs, /p/ anon + "
 
 
 # --- 5. Version + routes + backup pins ----------------------------------
-assert HTML.count("?v=203") == 10, HTML.count("?v=203")
+assert HTML.count("?v=204") == 10, HTML.count("?v=204")
 assert "?v=18" + "5" not in HTML
-assert "/?v=203" in BOT and "/?v=18" + "5" not in BOT
+assert "/?v=204" in BOT and "/?v=18" + "5" not in BOT
 paths = {rt.path for rt in app.routes}
-assert len(paths) == 189, len(paths)
+assert len(paths) == 191, len(paths)
 r = c.get("/admin/backup", headers=ADMIN)
 assert r.status_code == 200, r.text
 assert len(r.json()["tables"]) == 55, len(r.json()["tables"])
 assert len(_BACKUP_TABLES) == 55, len(_BACKUP_TABLES)
 r = c.get("/admin/health", headers=ADMIN)
-assert r.json()["version"] == 203, r.json()
-print("5. version ?v=203 + routes 183 + backup 52 OK")
+assert r.json()["version"] == 204, r.json()
+print("5. version ?v=204 + routes 183 + backup 52 OK")
 
 print("PHASE 186 OK")

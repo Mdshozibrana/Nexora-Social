@@ -20,7 +20,7 @@ text is accepted while a genuinely banned word still rejects
 (the GEMINI media screening is image-only and never touches
 this text flow); /auth + /users/{id} expose blood_group only
 when opted in; backup 43 tables; routes 158 (6 new blood paths);
-?v=203 x9, no old-version literals.
+?v=204 x9, no old-version literals.
 """
 import hashlib, hmac, json, os, re, time, urllib.parse
 
@@ -84,9 +84,9 @@ def count_type(c, h, ntype):
 
 
 # 1. Client markers: Blood page + sidebar + Settings + badge + toggle.
-assert HTML.count("?v=203") == 10, HTML.count("?v=203")
+assert HTML.count("?v=204") == 10, HTML.count("?v=204")
 assert "?v=15" + "0" not in HTML
-assert 'menu_url.rstrip("/") + "/?v=203"' in BOT
+assert 'menu_url.rstrip("/") + "/?v=204"' in BOT
 assert 'data-go="blood"' in HTML
 assert 'id="view-blood"' in HTML
 for cid in ("blood-tab-donors", "blood-tab-requests",
@@ -111,7 +111,7 @@ assert "Phase 151: Blood donors" in CSS
 for rule in (".blood-tabs", ".blood-group-badge", ".blood-badge",
              ".blood-form", ".blood-card"):
     assert rule in CSS, rule
-print("client markers OK (?v=203 x9, Blood page, Settings, badge, toggle)")
+print("client markers OK (?v=204 x9, Blood page, Settings, badge, toggle)")
 
 # 2. Server markers: model, migration, backup, notify map.
 assert "class BloodRequest(Base):" in MODELS
@@ -337,7 +337,7 @@ with TestClient(app) as c:
     assert "blood_requests" in r.json()["tables"], r.json().keys()
     print("backup: 43 tables incl. blood_requests OK")
     paths = {rt.path for rt in app.routes}
-    assert len(paths) == 189, len(paths)
+    assert len(paths) == 191, len(paths)
     expected = {"/me/blood-group", "/blood/donors", "/blood/requests",
                 "/blood/requests/{req_id}/respond",
                 "/blood/requests/{req_id}/fulfill",
