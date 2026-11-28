@@ -297,17 +297,17 @@ for k in ("pin_hash", "pin_set", "pin_locked", "pin_failed"):
 print("2h. token checks + no cross-user / profile leak OK")
 
 # --- 3. Version pins + routes + backup + health. ----------------------
-assert HTML.count("?v=210") == 10, HTML.count("?v=210")
+assert HTML.count("?v=211") == 10, HTML.count("?v=211")
 assert "?v=20" + "9" not in HTML
-assert "app.js?v=210" in HTML and "games.js?v=210" in HTML
-assert "style.css?v=210" in HTML
-assert 'menu_url.rstrip("/") + "/?v=210"' in BOT
+assert "app.js?v=211" in HTML and "games.js?v=211" in HTML
+assert "style.css?v=211" in HTML
+assert 'menu_url.rstrip("/") + "/?v=211"' in BOT
 assert ("/?v=20" + "9") not in BOT
 paths = {rt.path for rt in app.routes}
 assert len(paths) == 196, len(paths)
 assert len(_BACKUP_TABLES) == 55, len(_BACKUP_TABLES)
-assert _health_version() == 210, _health_version()
-print("3. version ?v=210, routes 196, backup 55, health 210 OK")
+assert _health_version() == 211, _health_version()
+print("3. version ?v=211, routes 196, backup 55, health 210 OK")
 
 # --- 4. Node harness: the real app.js PIN card. ----------------------
 r = subprocess.run(["node",
@@ -320,7 +320,7 @@ print("4. node PIN harness OK")
 
 # --- 5. Served assets: version + markers. -----------------------------
 html = c.get("/webapp/").text
-assert html.count("?v=210") == 10, html.count("?v=210")
+assert html.count("?v=211") == 10, html.count("?v=211")
 assert "?v=20" + "9" not in html
 served_js = c.get("/webapp/app.js").text
 for marker in ("showPinLock", "updatePinDots", "pinToken",
@@ -330,6 +330,6 @@ css = c.get("/webapp/style.css").text
 for marker in ("Phase 210: app PIN lock", ".pin-lockbody",
                ".pin-dot.success", ".pin-rose.pressed", ".pin-brand"):
     assert marker in css, marker
-print("5. served assets ?v=210 + markers OK")
+print("5. served assets ?v=211 + markers OK")
 
 print("PHASE 210 OK (app PIN lock)")

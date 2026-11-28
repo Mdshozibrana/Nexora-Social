@@ -65,10 +65,13 @@ assert "toggleDesignLike(d); };" in JS
 # card behaviours the fix must NOT break: tap opens the sheet,
 # hold opens the icon popup
 assert "attachLongPress(el, () => showDesignPop(d, el));" in JS
-assert "openDesignSheet(d); };" in JS
+# Phase 211: the tap opens the PRESSED design (the masonry
+# can reflow between pointerdown and click); the literal
+# changed, the behaviour (tap opens the sheet) did not.
+assert "openDesignSheet(designPressed || d); designPressed = null; };" in JS
 # 44px touch target
 assert ".design-like { min-height: 44px;" in CSS
-assert "app.js?v=210" in HTML and "style.css?v=210" in HTML
+assert "app.js?v=211" in HTML and "style.css?v=211" in HTML
 print("static contract OK")
 
 def make_init_data(user):

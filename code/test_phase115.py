@@ -92,19 +92,20 @@ with TestClient(app) as c:
     for bit in ("async function loadRelatedDesigns(d)",
                 "let dsRelatedSeq = 0",
                 '/designs?similar_to=" + d.id',
-                "openDesignSheet(rel)",
+                # Phase 211: pressed-design capture, as above.
+                "openDesignSheet(designPressed || rel)",
                 "$(\"design-sheet\").scrollTop = 0",
                 "const isNew = !currentDesign"):
         assert bit in js, bit
     assert "loadRelatedDesigns(d);" in js
     css = c.get("/webapp/style.css").text
     assert "#ds-related" in css and "#ds-related-grid" in css
-    for asset in ("style.css?v=210", "app.js?v=210", "games.js?v=210"):
+    for asset in ("style.css?v=211", "app.js?v=211", "games.js?v=211"):
         assert asset in html, asset
     # Earlier phases intact.
     assert "openPhotoViewer" in js, "Phase 112 wiring gone"
     assert "showTaskAd" in js, "Phase 113 wiring gone"
     assert "loadMyQr" in js, "Phase 114 wiring gone"
-    print("client: related section, loader, scroll-top, ?v=210 OK")
+    print("client: related section, loader, scroll-top, ?v=211 OK")
 
 print("PHASE 115 OK")

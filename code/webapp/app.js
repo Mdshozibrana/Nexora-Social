@@ -8720,6 +8720,19 @@ async function toggleDesignLike(d) {
 let lpTimer = null, lpFired = false, lpSX = 0, lpSY = 0;
 let popDesign = null, popAnchor = null;
 let designSimilar = null;
+// Phase 211 (owner: tapping a design opened a DIFFERENT
+// design the first time): two separate causes, both fixed
+// here. (1) designPressed — the gallery is a 2-column CSS
+// masonry whose cards grow as their images load (only
+// min-height 180px is reserved), so the card under a
+// stationary finger can change between pointerdown and
+// click, and the tap then opens the WRONG design. Remember
+// the design the finger pressed; the click opens that one,
+// whatever the layout did meanwhile. (2) dsFullSeq —
+// guards the sheet's full-size preload: a stale preload
+// must never overwrite a newer design.
+let designPressed = null;
+let dsFullSeq = 0;
 
 function attachLongPress(el, fire) {
   el.addEventListener("pointerdown", e => {
@@ -8986,10 +8999,15 @@ function designCard(d) {
   // (Pinterest-style). A fired long-press swallows the tap that
   // would otherwise open the sheet.
   attachLongPress(el, () => showDesignPop(d, el));
+  // Phase 211: remember the pressed design — see
+  // designPressed above. The like/retry buttons stop
+  // pointerdown propagation, so pressing one never arms
+  // a card tap.
+  el.addEventListener("pointerdown", () => { designPressed = d; });
   el.onclick = e => { if (lpFired) return;
     if (e.target && e.target.closest &&
         e.target.closest(".design-like")) return;
-    openDesignSheet(d); };
+    openDesignSheet(designPressed || d); designPressed = null; };
   return el;
 }
 
@@ -9004,6 +9022,9 @@ async function loadDesigns(reset) {
     // the seed, so one load never repeats or skips a design.
     designShuffleSeed = Math.floor(Math.random() * 1e9);
     designCursor = null; grid.innerHTML = "";
+    // Phase 211: the grid is rebuilt — a press target from
+    // the old grid is invalid now.
+    designPressed = null;
   }
   if (designLoading) return;
   designLoading = true;
@@ -9186,7 +9207,26 @@ function openDesignSheet(d) {
   if (dsMedia) dsMedia.classList.remove("design-img-failed");
   const dsImg = $("ds-img");
   delete dsImg.dataset.mtok; delete dsImg.dataset.mr;
-  dsImg.src = mediaUrl(d.image_file_id);
+  // Phase 211: thumb first, then the full size. The 480px
+  // thumb is already cached from the grid, so the sheet
+  // shows the TAPPED design instantly. Before this, the
+  // sheet kept the previous design's full image until the
+  // new full-size file arrived — the user literally saw
+  // another design first. The full size swaps in when its
+  // preload arrives; the token + id guards keep a stale
+  // preload from overwriting a newer design (and the
+  // thumb stays up if the full size ever fails — the
+  // right design at lower resolution beats a broken one).
+  dsImg.src = mediaUrl(d.image_file_id, {thumb: true});
+  const fullToken = ++dsFullSeq;
+  const full = new Image();
+  full.onload = () => {
+    if (fullToken !== dsFullSeq || !currentDesign ||
+        currentDesign.id !== d.id) return;
+    delete dsImg.dataset.mtok; delete dsImg.dataset.mr;
+    dsImg.src = mediaUrl(d.image_file_id);
+  };
+  full.src = mediaUrl(d.image_file_id);
   // Phase 31 (owner request): the caption opens PARTLY — a few
   // lines — and "See more" unfolds the rest, Pinterest-style.
   const promptEl = $("ds-prompt");
@@ -9234,6 +9274,16 @@ function closeDesignSheet() {
   $("app-scroll").classList.remove("sheet-open");
   updateBackButton();
   currentDesign = null;
+  // Phase 211: clear the sheet image — the previous design
+  // must not linger into the next open (see openDesignSheet
+  // above). Also invalidates any full-size preload still
+  // in flight.
+  const dsImg = $("ds-img");
+  if (dsImg) {
+    dsImg.removeAttribute("src");
+    delete dsImg.dataset.mtok; delete dsImg.dataset.mr;
+  }
+  dsFullSeq++;
 }
 
 // Phase 115 (owner: Pinterest-style related designs under an opened
@@ -9247,6 +9297,9 @@ async function loadRelatedDesigns(d) {
   const grid = $("ds-related-grid");
   const token = ++dsRelatedSeq;
   grid.innerHTML = "";
+  // Phase 211: the strip is rebuilt — a press target from
+  // the old strip is invalid now.
+  designPressed = null;
   box.hidden = true;
   try {
     const r = await api("/designs?similar_to=" + d.id + "&limit=12");
@@ -9276,7 +9329,11 @@ async function loadRelatedDesigns(d) {
       retry.addEventListener("pointerup", e => e.stopPropagation());
       media.append(img, shield, retry);
       card.append(media);
-      card.onclick = () => openDesignSheet(rel);
+      // Phase 211: same pressed-design capture as the
+      // gallery card — the strip is the same 2-column
+      // masonry, so the same mis-target can happen here.
+      card.addEventListener("pointerdown", () => { designPressed = rel; });
+      card.onclick = () => { openDesignSheet(designPressed || rel); designPressed = null; };
       grid.appendChild(card);
     });
     box.hidden = grid.children.length === 0;

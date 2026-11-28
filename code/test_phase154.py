@@ -149,7 +149,7 @@ assert "museum" not in JS.lower() and "museum" not in HTML.lower()
 print("neighbours OK (Blood flows, distance, Nearby, feed photos, no museum)")
 
 # 7. Version.
-assert HTML.count("?v=210") == 10, HTML.count("?v=210")
+assert HTML.count("?v=211") == 10, HTML.count("?v=211")
 assert "?v=15" + "3" not in HTML
-assert 'menu_url.rstrip("/") + "/?v=210"' in BOT
+assert 'menu_url.rstrip("/") + "/?v=211"' in BOT
 print("PHASE 154 OK")

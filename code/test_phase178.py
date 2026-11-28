@@ -446,10 +446,10 @@ assert bob_post in profile_ids(ALICE, 1783)
 print("8. normal reads + feed unchanged OK")
 
 # 9. Client markers, version, routes, backup tables, health.
-assert HTML.count("?v=210") == 10, HTML.count("?v=210")
+assert HTML.count("?v=211") == 10, HTML.count("?v=211")
 assert "?v=17" + "7" not in HTML
-assert "/?v=210" in BOT and "/?v=17" + "7" not in BOT
-assert "app.js?v=210" in HTML and "style.css?v=210" in HTML
+assert "/?v=211" in BOT and "/?v=17" + "7" not in BOT
+assert "app.js?v=211" in HTML and "style.css?v=211" in HTML
 paths = set()
 for route in app.routes:
     paths.add(route.path)
@@ -462,7 +462,7 @@ assert len(_BACKUP_TABLES) == 55, len(_BACKUP_TABLES)
 r = c.get("/health")
 assert r.status_code == 200, r.text
 h = c.get("/admin/health", headers=ADMIN).json()
-assert h["version"] == 210, h
+assert h["version"] == 211, h
 print("9. version + routes + backup + health OK")
 
 print("PHASE 178 OK")
