@@ -143,12 +143,12 @@ assert "museum_items" not in RLS
 print("3. museum_items retained (backup compat) OK")
 
 # --- 4. Version. ----------------------------------------------------------
-assert HTML.count("?v=204") == 10, HTML.count("?v=204")
+assert HTML.count("?v=205") == 10, HTML.count("?v=205")
 assert "?v=20" + "3" not in HTML
-assert "app.js?v=204" in HTML and "games.js?v=204" in HTML
-assert 'menu_url.rstrip("/") + "/?v=204"' in BOT
+assert "app.js?v=205" in HTML and "games.js?v=205" in HTML
+assert 'menu_url.rstrip("/") + "/?v=205"' in BOT
 assert ("/?v=20" + "2") not in BOT
-print("4. version ?v=204 OK")
+print("4. version ?v=205 OK")
 
 # --- 5. app.js still parses. ----------------------------------------------
 r = subprocess.run(["node", "--check",

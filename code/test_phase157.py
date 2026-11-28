@@ -155,8 +155,8 @@ with TestClient(app) as c:
     print("routes 158 + backup 43 tables OK (no new endpoints, no schema change)")
 
 # 7. Version.
-assert HTML.count("?v=204") == 10, HTML.count("?v=204")
+assert HTML.count("?v=205") == 10, HTML.count("?v=205")
 assert "?v=15" + "6" not in HTML
-assert 'menu_url.rstrip("/") + "/?v=204"' in BOT
+assert 'menu_url.rstrip("/") + "/?v=205"' in BOT
 assert "Phase 157" in CSS and "Phase 157" in HTML
 print("PHASE 157 OK")

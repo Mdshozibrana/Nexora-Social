@@ -412,11 +412,11 @@ assert '(currentTab === "portfolio" ? "Portfolio" : "Profile") + " ▾"' in JS
 assert "pf-cover" in CSS and ".pf-shade" in CSS and ".pf-work-grid" in CSS
 assert ".pf-dd-menu" in CSS and ".pf-edit-row" in CSS
 assert ".pf-work-card" in CSS and ".pf-picker" in CSS
-assert HTML.count("?v=204") == 10, HTML.count("?v=204")
+assert HTML.count("?v=205") == 10, HTML.count("?v=205")
 assert "?v=20" + "0" not in HTML
-assert "app.js?v=204" in HTML and "games.js?v=204" in HTML
+assert "app.js?v=205" in HTML and "games.js?v=205" in HTML
 BOT = open(os.path.join(ROOT, "code/app/bot.py")).read()
-assert "/?v=204" in BOT and "/?v=19" + "8" not in BOT
+assert "/?v=205" in BOT and "/?v=19" + "8" not in BOT
 paths = set()
 for route in app.routes:
     paths.add(route.path)

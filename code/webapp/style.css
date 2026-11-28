@@ -2990,6 +2990,73 @@ html[data-theme] .suggest-follow.on { background: var(--t-chip, #F3DCE7);
 .settings-skel-row { display: flex; align-items: center; gap: 12px; padding: 12px 14px; }
 .settings-skel-row + .settings-skel-row { border-top: 1px solid var(--t-line, rgba(128,128,128,.25)); }
 @keyframes settings-skel-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+/* Phase 205: Settings detail pages restyled like current
+   social-media apps (owner order Nov 27). The hub was modernised
+   in Phase 187 and its loading fixed in Phase 200; the DETAIL
+   pages still wore the old simple look — a bare text back link,
+   a plain card title, raw inputs, small grey buttons, flat rows.
+   Everything here is scoped under .settings-detail (or the new
+   detail header) so Me / profile pages that reuse themeCard,
+   dataCard, rainCard and myExtras keep their own look. All
+   colours follow the member's theme (CSS vars) — no hard-coded
+   palette — so the restyle works in light and dark themes.
+   Behaviour is unchanged: same builders, same endpoints, same
+   ids and classes. */
+.settings-detail-head { display: flex; align-items: center; gap: 10px; padding: 2px 0 12px; }
+.settings-detail-title { flex: 1; min-width: 0; font-size: 20px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.settings-back { flex: none; background: var(--t-tile, rgba(128,128,128,.14)); color: var(--t-acc2, #3E8FD0); border: 1px solid var(--t-line, rgba(128,128,128,.25)); border-radius: 999px; padding: 8px 14px; font-weight: 700; font-size: 14px; text-align: left; }
+.settings-detail { display: flex; flex-direction: column; gap: 12px; }
+/* The header carries the page title now, so the emoji title at
+   the top of the section card hides while a detail is open
+   (the hub builders still create it — nothing is removed).
+   Only the FIRST head hides: the extras section's group heads
+   ("⭐ Points & creator", ...) live deeper in the tree and stay. */
+.settings-detail .settings-sec > .settings-head:first-child { display: none; }
+.settings-detail .settings-sec { padding: 16px; border-radius: 20px; gap: 12px; }
+.settings-detail .settings-sub { font-size: 11px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-faint); margin: 10px 2px 0; }
+.settings-detail .hint { font-size: 13px; line-height: 1.5; color: var(--ink-dim); opacity: 1; margin: 4px 2px 0; }
+/* Modern filled fields: soft tile background, no harsh border,
+   accent focus ring. Checkboxes are excluded — they keep the
+   native look, tinted with the theme accent. */
+.settings-detail input:not([type="checkbox"]), .settings-detail textarea, .settings-detail select { background: var(--t-input, rgba(128,128,128,.12)); border: 1px solid var(--t-line, rgba(128,128,128,.25)); border-radius: 14px; padding: 12px 14px; font-size: 15px; color: var(--ink); }
+.settings-detail input:not([type="checkbox"]):focus, .settings-detail textarea:focus, .settings-detail select:focus { outline: none; border-color: var(--t-acc2, #3E8FD0); box-shadow: 0 0 0 3px var(--t-chip, rgba(62,143,208,.15)); }
+.settings-detail select { width: 100%; }
+/* Primary actions: the theme accent gradient, full-width.
+   Secondary actions: a soft tile pill. */
+.settings-detail button.wide { background: linear-gradient(145deg, var(--t-acc1, #8ED4F7), var(--t-acc2, #3E8FD0)); color: var(--t-onacc, #fff); border-radius: 16px; padding: 13px 16px; font-weight: 800; font-size: 15px; margin-top: 4px; box-shadow: 0 6px 16px var(--t-chip, rgba(62,143,208,.3)); }
+.settings-detail button.btn { background: var(--t-tile, rgba(128,128,128,.14)); color: var(--ink); border: 1px solid var(--t-line, rgba(128,128,128,.25)); border-radius: 999px; padding: 10px 16px; font-weight: 700; min-height: 44px; }
+/* Toggle rows: a tile with a proper touch target; the label
+   reads semibold and the checkbox takes the theme accent. */
+.settings-detail .privacy-row { background: var(--t-tile, rgba(128,128,128,.10)); border: 1px solid var(--t-line, rgba(128,128,128,.18)); border-radius: 16px; padding: 12px 14px; margin: 0; align-items: center; min-height: 52px; }
+.settings-detail .privacy-row > span, .settings-detail .privacy-row > div { flex: 1; min-width: 0; font-weight: 600; line-height: 1.4; }
+.settings-detail .privacy-row input[type="checkbox"] { flex: none; width: 20px; height: 20px; margin: 0; accent-color: var(--t-acc2, #3E8FD0); }
+/* Notification rows: two-line label + description. */
+.settings-detail .settings-notif-tx { display: flex; flex-direction: column; gap: 2px; }
+.settings-detail .settings-notif-label { font-weight: 700; font-size: 15px; }
+.settings-detail .settings-notif-desc { font-weight: 400; font-size: 13px; color: var(--ink-dim); }
+/* Blocked / muted lists: tile rows with a pill action. */
+.settings-detail .settings-blocked { display: flex; flex-direction: column; gap: 8px; color: var(--ink-dim); font-size: 14px; }
+.settings-detail .settings-blocked-row { background: var(--t-tile, rgba(128,128,128,.10)); border: 1px solid var(--t-line, rgba(128,128,128,.18)); border-radius: 14px; padding: 10px 12px; color: var(--ink); }
+.settings-detail .settings-blocked-row span { font-weight: 600; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.settings-detail .settings-blocked-row button { flex: none; padding: 7px 14px; border-radius: 999px; background: var(--t-tile, rgba(128,128,128,.14)); color: var(--t-acc2, #3E8FD0); border: 1px solid var(--t-line, rgba(128,128,128,.25)); font-weight: 700; font-size: 13px; }
+/* Skill rows: tile rows, same language as blocked / muted. */
+.settings-detail .settings-skill-row { background: var(--t-tile, rgba(128,128,128,.10)); border: 1px solid var(--t-line, rgba(128,128,128,.18)); border-radius: 14px; padding: 10px 12px; margin: 0; }
+.settings-detail #settings-skill-list { color: var(--ink-dim); font-size: 14px; }
+/* Help FAQ: questions as separated rows, answers as dim text. */
+.settings-detail .settings-faq-q { display: block; font-size: 15px; font-weight: 700; padding: 12px 2px 2px; }
+.settings-detail .settings-faq-q ~ .settings-faq-q { border-top: 1px solid var(--t-line, rgba(128,128,128,.18)); }
+.settings-detail .settings-faq-a { margin: 0 2px 4px; }
+/* About: bigger name, version as a pill. */
+.settings-detail .settings-about-name { font-size: 20px; margin-top: 2px; }
+.settings-detail .settings-ver-pill { display: inline-block; margin-top: 6px; }
+/* Theme + Data details reuse shared cards — inside a detail they
+   take the section padding/radius and their own page title hides
+   (the header shows it); the Reset button and the rain card keep
+   their titles and actions. */
+.settings-detail .theme-card, .settings-detail .data-card { margin-top: 0; padding: 16px; border-radius: 20px; }
+.settings-detail .theme-head b { display: none; }
+.settings-detail .theme-head { justify-content: flex-end; }
+.settings-detail .data-card:not(.rain-card) > b { display: none; }
 
 /* Phase 151: Blood donors — donor directory + open requests.
    Red accents on the Organic Clay look; the group badge is

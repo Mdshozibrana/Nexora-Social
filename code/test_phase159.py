@@ -13,7 +13,7 @@ and works exactly as before Phase 159 (same aim state, same
 clamp, same release); the mascot is NOT hidden while Archery is
 open; the help text is back to its pre-159 wording; Solo + 2
 Players intact; neighbours (incl. Phase 160 .vname); backup 44
-tables; routes 163; ?v=204 x10, no old version literals.
+tables; routes 163; ?v=205 x10, no old version literals.
 """
 import hashlib, hmac, json, os, re, subprocess, time, urllib.parse
 
@@ -163,10 +163,10 @@ assert len(paths) == 191, len(paths)
 print("routes: 163 OK (no new endpoints)")
 
 # 10. Version.
-assert HTML.count("?v=204") == 10, HTML.count("?v=204")
+assert HTML.count("?v=205") == 10, HTML.count("?v=205")
 assert "?v=16" + "0" not in HTML
-assert "app.js?v=204" in HTML and "games.js?v=204" in HTML
-assert 'menu_url.rstrip("/") + "/?v=204"' in BOT
+assert "app.js?v=205" in HTML and "games.js?v=205" in HTML
+assert 'menu_url.rstrip("/") + "/?v=205"' in BOT
 assert "Phase 161" in HTML
-print("version OK (?v=204 x10, no old-version literals)")
+print("version OK (?v=205 x10, no old-version literals)")
 print("PHASE 159 REMOVAL OK")

@@ -6452,21 +6452,40 @@ function applySettingsSearch() {
   if (empty) empty.hidden = visible !== 0;
 }
 
+// Phase 205: the detail top bar — a back pill + a large title,
+// like a current social-media app's settings detail, instead of
+// the bare "‹ Settings" text link. The pill keeps the exact
+// "‹ Settings" label (pinned by test_phase187 + the Phase 200
+// harness); the title comes from a static map, so no DOM lookup
+// is needed and the section heads stay in the cards.
+const SETTINGS_DETAIL_TITLES = {
+  profile: "👤 Profile", portfolio: "🖼️ Portfolio",
+  privacy: "🔒 Privacy", wallet: "💰 Payout wallet",
+  qr: "🔳 My QR", extras: "📦 From your profile",
+  theme: "🎨 Theme", notif: "🔔 Notifications",
+  data: "🗂️ Data Control", help: "❓ Help & Support",
+  about: "ℹ️ About" };
 function openSettingsDetail(key) {
   const box = $("settings-box");
   const node = settingsDetails[key];
   if (!box || !node) return;
   settingsDetailKey = key;
   box.innerHTML = "";
+  const head = document.createElement("div");
+  head.className = "settings-detail-head";
   const back = document.createElement("button");
   back.className = "settings-back";
   back.type = "button";
   back.textContent = "‹ Settings";
   back.onclick = () => renderSettingsHub();
+  const title = document.createElement("div");
+  title.className = "settings-detail-title";
+  title.textContent = SETTINGS_DETAIL_TITLES[key] || "Settings";
+  head.append(back, title);
   const wrap = document.createElement("div");
   wrap.className = "settings-detail";
   wrap.appendChild(node);
-  box.append(back, wrap);
+  box.append(head, wrap);
   const sc = $("app-scroll");
   if (sc) sc.scrollTop = 0;
   updateBackButton();
@@ -6858,8 +6877,17 @@ async function loadSettings() {
         const chk = document.createElement("input");
         chk.type = "checkbox";
         chk.checked = prefs[key] !== false;
-        const tx = document.createElement("span");
-        tx.textContent = label + " — " + desc;
+        // Phase 205: label + description as two lines (like a
+        // modern settings row) instead of one "Label — desc" line.
+        const tx = document.createElement("div");
+        tx.className = "settings-notif-tx";
+        const lb = document.createElement("span");
+        lb.className = "settings-notif-label";
+        lb.textContent = label;
+        const ds = document.createElement("span");
+        ds.className = "settings-notif-desc";
+        ds.textContent = desc;
+        tx.append(lb, ds);
         row.append(chk, tx);
         chk.onchange = async () => {
           prefs[key] = chk.checked;
@@ -6916,6 +6944,7 @@ async function loadSettings() {
       addr.placeholder = "Your wallet address";
       addr.value = w.wallet_address || "";
       const walSave = document.createElement("button");
+      walSave.className = "wide";
       walSave.id = "settings-wallet-save";
       walSave.textContent = "Save wallet";
       walSave.onclick = async () => {
@@ -6980,7 +7009,7 @@ async function loadSettings() {
     aboutName.className = "settings-about-name";
     aboutName.textContent = "Nexora Social";
     const aboutVer = document.createElement("div");
-    aboutVer.className = "hint";
+    aboutVer.className = "hint settings-ver-pill";
     const ver = settingsVersion();
     aboutVer.textContent = ver
       ? "Version v" + ver + " (build ?v=" + ver + ")"
@@ -7029,9 +7058,10 @@ async function loadSettings() {
     ];
     helpFaq.forEach(([q, a]) => {
       const qEl = document.createElement("b");
+      qEl.className = "settings-faq-q";
       qEl.textContent = q;
       const aEl = document.createElement("p");
-      aEl.className = "hint";
+      aEl.className = "hint settings-faq-a";
       aEl.textContent = a;
       helpSec.append(qEl, aEl);
     });

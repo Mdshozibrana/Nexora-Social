@@ -16,7 +16,7 @@ Members browse, admin detail, Nearby list, story author +
 viewers); the old text-" ✓" ticks are gone (blue badge
 everywhere); 360px geometry for the 6 main sites with the
 owner's long name; Trending reuses postCard; neighbours; backup
-44 tables; routes 163; ?v=204 x10, no old-version literals.
+44 tables; routes 163; ?v=205 x10, no old-version literals.
 """
 import hashlib, hmac, json, os, re, subprocess, time, urllib.parse
 
@@ -298,12 +298,12 @@ assert len(paths) == 191, len(paths)
 print("routes: 163 OK (no new endpoints)")
 
 # 12. Version.
-assert HTML.count("?v=204") == 10, HTML.count("?v=204")
+assert HTML.count("?v=205") == 10, HTML.count("?v=205")
 assert "?v=15" + "9" not in HTML
-assert "app.js?v=204" in HTML and "games.js?v=204" in HTML
-assert 'menu_url.rstrip("/") + "/?v=204"' in BOT
+assert "app.js?v=205" in HTML and "games.js?v=205" in HTML
+assert 'menu_url.rstrip("/") + "/?v=205"' in BOT
 assert "Phase 160" in CSS and "Phase 160" in JS and "Phase 160" in HTML
-print("version OK (?v=204 x10, no old-version literals)")
+print("version OK (?v=205 x10, no old-version literals)")
 
 # 13. Phase 162: the tick HUGS the name (owner: "blu tick naam
 # theke dure keno?"). Phase 160's .vname-text had flex-grow 1,
@@ -358,8 +358,8 @@ assert size == 12, size
 assert tick_left == 139, tick_left
 # Resize re-fit: a wider line re-grows the name to its base size.
 assert fit_size(em_width(LONG), 16, 300) == 16, "re-grow on resize"
-# Version: shell on ?v=204, no ?v=204 literal left anywhere.
-assert HTML.count("?v=204") == 10, HTML.count("?v=204")
+# Version: shell on ?v=205, no ?v=205 literal left anywhere.
+assert HTML.count("?v=205") == 10, HTML.count("?v=205")
 assert "?v=16" + "1" not in HTML
 print("Phase 162 hug OK (tick 5px after the name at all 6 sites)")
 
