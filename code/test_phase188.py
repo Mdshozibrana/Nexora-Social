@@ -123,7 +123,8 @@ print("keepalive 60s OK (schedule + silent rule unchanged)")
 groups = re.findall(r'settingsGroupEl\("([A-Z]+)"', JS)
 assert groups == ["ACCOUNT", "PREFERENCES", "SUPPORT"], groups
 rows = re.findall(r'settingsHubRow\("[^"]*", "([^"]+)"', JS)
-assert rows == ["Profile", "Portfolio", "Privacy", "Payout wallet", "My QR",
+assert rows == ["Profile", "Portfolio", "Privacy", "App PIN",
+                "Payout wallet", "My QR",
                 "From your profile", "Theme", "Notifications",
                 "Data Control", "Help & Support", "About"], rows
 assert rows.index("Help & Support") < rows.index("About"), \
@@ -178,17 +179,17 @@ assert "  settings: [" in JS, "mascot settings-view tips gone"
 print("sidebar move OK (Me button gone, sidebar entry in ACCOUNT)")
 
 # --- 5. Version + routes + backup pins -------------------------------
-assert HTML.count("?v=209") == 10, HTML.count("?v=209")
+assert HTML.count("?v=210") == 10, HTML.count("?v=210")
 assert "?v=18" + "9" not in HTML
-assert "app.js?v=209" in HTML and "games.js?v=209" in HTML
-assert 'menu_url.rstrip("/") + "/?v=209"' in BOT
+assert "app.js?v=210" in HTML and "games.js?v=210" in HTML
+assert 'menu_url.rstrip("/") + "/?v=210"' in BOT
 paths = {rt.path for rt in app.routes}
-assert len(paths) == 191, len(paths)
+assert len(paths) == 196, len(paths)
 assert len(_BACKUP_TABLES) == 55, len(_BACKUP_TABLES)
 with TestClient(app) as cx:
     r = cx.get("/admin/health", headers=ADMIN)
     assert r.status_code == 200, r.text
     h = r.json()
-    assert h["version"] == 209, h["version"]
-print("version ?v=209 + routes 183 + backup 52 OK")
+    assert h["version"] == 210, h["version"]
+print("version ?v=210 + routes 183 + backup 52 OK")
 print("PHASE 188 OK")

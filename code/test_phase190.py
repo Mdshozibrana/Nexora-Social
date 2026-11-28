@@ -119,7 +119,7 @@ print("boot harness OK (6/6: watchdog + hung/typeerror/503/401/no-telegram)")
 
 # --- 3. Shell watchdog: inline, before app.js, 60s, RETRY ---------
 assert "__nxBootWatchdog" in HTML, "no inline watchdog in shell"
-assert HTML.index("__nxBootWatchdog") < HTML.index("app.js?v=209"), \
+assert HTML.index("__nxBootWatchdog") < HTML.index("app.js?v=210"), \
     "watchdog must precede the app.js script tag"
 wd = HTML[HTML.index("// Phase 190: boot watchdog"):]
 wd = wd[:wd.index("</script>")]
@@ -152,8 +152,13 @@ assert "The server did not answer" in JS, "no server note in app.js"
 assert "Please open this app from inside Telegram." in JS, \
     "outside-Telegram branch lost"
 assert "Could not reach Telegram" in JS, "Telegram branch lost"
-# The Phase 76 retry-once chain is unchanged.
-assert "loadMe().then(bootOk).catch(bootFailed)" in JS
+# The Phase 76 retry-once chain keeps its shape (two
+# loadMe().then(bootOk)), but Phase 210 swallows pinLocked errors
+# at both catch levels — the PIN card resumes the boot itself, so
+# there is nothing to retry and no failure screen to show.
+assert "loadMe().then(bootOk).catch((err) => {" in JS
+assert "if (err && err.pinLocked) return;" in JS
+assert "if (err2 && err2.pinLocked) return;" in JS
 assert JS.count("loadMe().then(bootOk)") == 2
 print("client markers OK (disarm x2 + 25s /auth + server branch)")
 
@@ -176,19 +181,19 @@ assert "-m 25" not in kb, "keepalive still mentions -m 25"
 print("keepalive OK (saved job pings with -m 60)")
 
 # --- 7. Version + routes + backup pins ------------------------------
-assert HTML.count("?v=209") == 10, HTML.count("?v=209")
+assert HTML.count("?v=210") == 10, HTML.count("?v=210")
 assert "?v=18" + "9" not in HTML
-assert "app.js?v=209" in HTML and "games.js?v=209" in HTML
+assert "app.js?v=210" in HTML and "games.js?v=210" in HTML
 BOT = open(os.path.join(ROOT, "code/app/bot.py")).read()
-assert 'menu_url.rstrip("/") + "/?v=209"' in BOT
+assert 'menu_url.rstrip("/") + "/?v=210"' in BOT
 paths = {rt.path for rt in app.routes}
-assert len(paths) == 191, len(paths)
+assert len(paths) == 196, len(paths)
 assert len(_BACKUP_TABLES) == 55, len(_BACKUP_TABLES)
 with TestClient(app) as cx:
     r = cx.get("/admin/health", headers=ADMIN)
     assert r.status_code == 200, r.text
     h = r.json()
-    assert h["version"] == 209, h["version"]
-print("version ?v=209 + routes 184 + backup 52 OK")
+    assert h["version"] == 210, h["version"]
+print("version ?v=210 + routes 184 + backup 52 OK")
 
 print("PHASE 190 OK")

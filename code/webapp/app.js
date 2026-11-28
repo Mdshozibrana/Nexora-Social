@@ -23,6 +23,11 @@ tg.expand();
 if (tg.disableVerticalSwipes) tg.disableVerticalSwipes();
 
 const initData = tg.initData || "";
+// Phase 210: app PIN lock — the unlock token from POST
+// /me/pin/unlock, session-scoped: a fresh app open (a new
+// WebView) starts without it, so the PIN card shows every time.
+let pinToken = "";
+try { pinToken = sessionStorage.getItem("nx_pin_token") || ""; } catch (e) { pinToken = ""; }
 let me = null;
 // Phase 28: /media requires the short-lived signed token issued by
 // /auth — <img>/<video> tags cannot send the login header, so the
@@ -6093,6 +6098,8 @@ let settingsDetails = {};
 let settingsHubUser = null;
 // Phase 199: the hub row + detail read the portfolio state.
 let settingsPortfolio = null;
+// Phase 210: the hub row + detail read the PIN state.
+let settingsPinSet = null;
 let settingsDetailKey = null;
 // Phase 200: hub summaries, search query and load guard. The
 // summaries are what the hub rows display as current values;
@@ -6128,6 +6135,7 @@ function settingsCacheWrite() {
       photo_file_id: u && u.photo_file_id ? u.photo_file_id : null,
       is_private: !!(u && u.is_private),
       portfolioEnabled: !!(settingsPortfolio && settingsPortfolio.enabled),
+      pinSet: settingsPinSet,
       notifSummary: settingsNotifSummary,
       walletNetwork: settingsWalletSummary,
     }));
@@ -6403,6 +6411,10 @@ function renderSettingsHub() {
                    () => openSettingsDetail("privacy"), null,
                    { toggle: { checked: !!(u && u.is_private),
                                onFlip: settingsFlipPrivate } }),
+    settingsHubRow("🔐", "App PIN", null,
+                   settingsPinSet === null ? null
+                     : (settingsPinSet ? "On" : "Off"),
+                   () => openSettingsDetail("app_pin")),
     settingsHubRow("💰", "Payout wallet", null, settingsWalletSummary,
                    () => openSettingsDetail("wallet")),
     settingsHubRow("🔳", "My QR", null, null,
@@ -6475,7 +6487,7 @@ const SETTINGS_DETAIL_TITLES = {
   qr: "🔳 My QR", extras: "📦 From your profile",
   theme: "🎨 Theme", notif: "🔔 Notifications",
   data: "🗂️ Data Control", help: "❓ Help & Support",
-  about: "ℹ️ About" };
+  about: "ℹ️ About", app_pin: "🔐 App PIN" };
 function openSettingsDetail(key) {
   const box = $("settings-box");
   const node = settingsDetails[key];
@@ -6522,6 +6534,7 @@ async function loadSettings() {
                         photo_file_id: cached.photo_file_id || null,
                         is_private: !!cached.is_private };
     settingsPortfolio = { enabled: !!cached.portfolioEnabled };
+    settingsPinSet = cached.pinSet === undefined ? null : !!cached.pinSet;
     settingsNotifSummary = cached.notifSummary || null;
     settingsWalletSummary = cached.walletNetwork || null;
     renderSettingsHub();
@@ -6552,6 +6565,13 @@ async function loadSettings() {
       settingsPortfolio = await api("/me/portfolio");
     } catch (e) {
       settingsPortfolio = null;
+    }
+    // Phase 210: the hub row + detail need the PIN state.
+    try {
+      const pinSt = await api("/me/pin/status");
+      settingsPinSet = !!(pinSt && pinSt.pin_set);
+    } catch (e) {
+      settingsPinSet = null;
     }
     if (seq !== settingsLoadSeq) return;
     // Phase 187: sections are built exactly as before, but each is
@@ -6930,6 +6950,31 @@ async function loadSettings() {
     // uses fixed ids (payout-network, payout-address), so calling
     // it twice would duplicate ids in the DOM. Payout requests
     // themselves stay in the Monetization card below (💰 Account).
+    // Phase 210: App PIN — the door-lock card (same overlay
+    // as the boot lock) handles Set / Change / Remove; this
+    // detail only shows the state and opens the right flow.
+    const pinSec = reg("app_pin", sec("🔐 App PIN"));
+    const pinState = document.createElement("p");
+    pinState.className = "hint";
+    pinState.id = "settings-pin-state";
+    pinState.textContent = settingsPinSet
+      ? "App PIN is On — the app asks for your 4-digit PIN every time it opens."
+      : "App PIN is Off — set a 4-digit PIN and the app will ask for it every time it opens.";
+    const pinSetBtn = document.createElement("button");
+    pinSetBtn.className = "btn";
+    pinSetBtn.id = "settings-pin-set";
+    pinSetBtn.textContent = settingsPinSet ? "Change PIN" : "Set PIN";
+    pinSetBtn.onclick = () => showPinLock(settingsPinSet ? "change" : "set");
+    const pinRemoveBtn = document.createElement("button");
+    pinRemoveBtn.className = "btn";
+    pinRemoveBtn.id = "settings-pin-remove";
+    pinRemoveBtn.textContent = "Remove PIN";
+    pinRemoveBtn.hidden = !settingsPinSet;
+    pinRemoveBtn.onclick = () => showPinLock("remove");
+    const pinHint = document.createElement("p");
+    pinHint.className = "hint";
+    pinHint.textContent = "Your PIN is stored as a hash on the server, never as plain digits. If you forget it, tap Forgot PIN on the lock screen — your Telegram identity verifies you, so you are never locked out.";
+    pinSec.append(pinState, pinSetBtn, pinRemoveBtn, pinHint);
     const wal = reg("wallet", sec("💰 Payout wallet"));
     const walHint = document.createElement("p");
     walHint.className = "hint";
@@ -7364,11 +7409,331 @@ async function refreshMediaToken() {
       // not leave mediaTokenRefresh pending forever (its catch
       // already swallows errors; a timeout just retries next time).
       const r = await api("/auth", { method: "POST",
-        body: JSON.stringify({ initData }), timeoutMs: 25000 });
+        body: JSON.stringify({ initData, pinToken }), timeoutMs: 25000 });
       if (r && r.media_token) mediaToken = r.media_token;
     } catch (e) { /* next refresh retries; images retry meanwhile */ }
   })();
   try { await mediaTokenRefresh; } finally { mediaTokenRefresh = null; }
+}
+
+// ------------------------------------------------------- Phase 210: app PIN
+// Owner model (Nov 27): first visit auto-logs in via Telegram as
+// today; once a 4-digit PIN is set from Settings, EVERY later app
+// open shows the PIN card and the PIN unlocks it. The card copies
+// the owner's door-lock video (white smart lock, 4 dots: grey
+// idle -> blue filled -> red error -> green success, handle
+// presses down on success) with "Nexora Social" at the bottom of
+// the door — and the same card, with a close button, is reused for
+// Set / Change / Remove PIN from Settings.
+let pinLockEl = null;
+let pinLockBodyEl = null;
+let pinDots = [];
+let pinHandleRose = null;
+let pinTitleEl = null;
+let pinMsgEl = null;
+let pinForgotEl = null;
+let pinCloseEl = null;
+let currentPin = "";
+let pinMode = "unlock";   // unlock | set | change | remove
+let pinStep = "entry";    // entry | new | confirm
+let pinFirst = "";
+let pinCurrent = "";
+let pinBusy = false;
+
+function pinEl(tag, cls, text) {
+  const el = document.createElement(tag);
+  if (cls) el.className = cls;
+  if (text !== undefined && text !== null) el.textContent = text;
+  return el;
+}
+
+function buildPinLock() {
+  if (pinLockEl) return pinLockEl;
+  const ov = pinEl("div", "pin-lock");
+  ov.id = "pin-lock";
+  ov.hidden = true;
+  const close = pinEl("button", "pin-close", "✕");
+  close.type = "button";
+  close.id = "pin-close";
+  close.setAttribute("aria-label", "Close");
+  close.onclick = () => hidePinLock();
+  const door = pinEl("div", "pin-door");
+  const body = pinEl("div", "pin-lockbody");
+  body.id = "pin-lockbody";
+  const disp = pinEl("div", "pin-display");
+  const status = pinEl("div", "pin-status");
+  status.id = "pin-status";
+  const dots = pinEl("div", "pin-dots");
+  dots.id = "pin-dots";
+  pinDots = [];
+  for (let i = 0; i < 4; i++) {
+    const d = pinEl("span", "pin-dot");
+    pinDots.push(d);
+    dots.appendChild(d);
+  }
+  disp.append(status, dots);
+  const rose = pinEl("div", "pin-rose");
+  rose.id = "pin-rose";
+  rose.appendChild(pinEl("div", "pin-handle"));
+  const slot = pinEl("div", "pin-slot");
+  body.append(disp, rose, slot);
+  const title = pinEl("div", "pin-title", "Enter your PIN");
+  title.id = "pin-title";
+  const msg = pinEl("div", "pin-msg");
+  msg.id = "pin-msg";
+  const keys = pinEl("div", "pin-keys");
+  keys.id = "pin-keys";
+  ["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "⌫"].forEach(k => {
+    const b = pinEl("button", "pin-key" + (k === "" ? " pin-key-blank" : ""), k);
+    b.type = "button";
+    if (k === "⌫") b.setAttribute("aria-label", "Backspace");
+    if (k === "") { b.disabled = true; b.tabIndex = -1; }
+    b.onclick = () => { if (k === "⌫") pinBackspace(); else if (k) pinKey(k); };
+    keys.appendChild(b);
+  });
+  const forgot = pinEl("button", "pin-forgot", "Forgot PIN?");
+  forgot.type = "button";
+  forgot.id = "pin-forgot";
+  forgot.onclick = () => pinForgot();
+  const brand = pinEl("div", "pin-brand", "Nexora Social");
+  door.append(body, title, msg, keys, forgot, brand);
+  ov.append(close, door);
+  document.body.appendChild(ov);
+  pinLockEl = ov;
+  pinLockBodyEl = body;
+  pinHandleRose = rose;
+  pinTitleEl = title;
+  pinMsgEl = msg;
+  pinForgotEl = forgot;
+  pinCloseEl = close;
+  return ov;
+}
+
+// The video's own updatePinDots, kept verbatim in shape: grey
+// idle, blue filled, red error, green success.
+function updatePinDots(state = "normal") {
+  pinDots.forEach((dot, idx) => {
+    dot.className = "pin-dot";
+    if (state === "success") {
+      dot.classList.add("success");
+    } else if (state === "error") {
+      dot.classList.add("error");
+    } else if (idx < currentPin.length) {
+      dot.classList.add("filled");
+    }
+  });
+}
+
+function pinLockSetMsg(text, isErr) {
+  if (!pinMsgEl) return;
+  pinMsgEl.textContent = text || "";
+  pinMsgEl.classList.toggle("pin-msg-err", !!isErr);
+}
+
+function pinLockTitle() {
+  const t = { unlock: "Enter your PIN",
+    set: pinStep === "confirm" ? "Confirm your PIN" : "Choose a 4-digit PIN",
+    change: pinStep === "entry" ? "Enter your current PIN"
+      : pinStep === "new" ? "Choose a new PIN" : "Confirm your new PIN",
+    remove: "Enter your current PIN" }[pinMode] || "Enter your PIN";
+  if (pinTitleEl) pinTitleEl.textContent = t;
+}
+
+// Phase 210 follow-up: the detail is built once in loadSettings,
+// so after a set/change/remove in the same Settings session the
+// state text, Set/Change label and Remove visibility would stay at
+// their build-time values. Re-sync them from settingsPinSet.
+function refreshPinDetail() {
+  const st = document.getElementById("settings-pin-state");
+  if (st) st.textContent = settingsPinSet
+    ? "App PIN is On — the app asks for your 4-digit PIN every time it opens."
+    : "App PIN is Off — set a 4-digit PIN and the app will ask for it every time it opens.";
+  const sb = document.getElementById("settings-pin-set");
+  if (sb) sb.textContent = settingsPinSet ? "Change PIN" : "Set PIN";
+  const rb = document.getElementById("settings-pin-remove");
+  if (rb) rb.hidden = !settingsPinSet;
+}
+
+function showPinLock(mode) {
+  buildPinLock();
+  pinMode = mode || "unlock";
+  pinStep = "entry";
+  pinFirst = "";
+  pinCurrent = "";
+  currentPin = "";
+  pinBusy = false;
+  pinLockEl.hidden = false;
+  if (pinHandleRose) pinHandleRose.classList.remove("pressed");
+  // The lock screen blocks the app (no close); the Settings
+  // flows close back to Settings.
+  pinCloseEl.hidden = pinMode === "unlock";
+  pinForgotEl.hidden = pinMode !== "unlock";
+  pinLockTitle();
+  pinLockSetMsg("");
+  updatePinDots();
+}
+
+function hidePinLock() {
+  if (pinLockEl) pinLockEl.hidden = true;
+  currentPin = "";
+}
+
+function pinBackspace() {
+  if (pinBusy || !currentPin) return;
+  currentPin = currentPin.slice(0, -1);
+  updatePinDots();
+}
+
+function pinKey(d) {
+  if (pinBusy || currentPin.length >= 4) return;
+  currentPin += d;
+  updatePinDots();
+  if (currentPin.length === 4) pinSubmit();
+}
+
+function pinShake() {
+  if (!pinLockBodyEl) return;
+  pinLockBodyEl.classList.remove("pin-shake");
+  void pinLockBodyEl.offsetWidth;
+  pinLockBodyEl.classList.add("pin-shake");
+}
+
+async function pinSubmit() {
+  if (pinBusy) return;
+  const entered = currentPin;
+  // Set / change collect the digits first, then call the API
+  // once the whole PIN is known.
+  if (pinMode === "set" && pinStep === "entry") {
+    pinFirst = entered; pinStep = "confirm"; currentPin = "";
+    pinLockTitle(); updatePinDots(); return;
+  }
+  if (pinMode === "set" && pinStep === "confirm") {
+    if (entered !== pinFirst) {
+      pinBusy = true;
+      updatePinDots("error"); pinShake();
+      pinLockSetMsg("PINs do not match — try again.", true);
+      setTimeout(() => { pinStep = "entry"; pinFirst = ""; currentPin = "";
+        pinBusy = false; pinLockTitle(); pinLockSetMsg(""); updatePinDots(); }, 900);
+      return;
+    }
+    pinBusy = true;
+    try {
+      await api("/me/pin/set", { method: "POST",
+        body: JSON.stringify({ pin: entered }) });
+      settingsPinSet = true; settingsCacheWrite();
+      updatePinDots("success");
+      if (pinHandleRose) pinHandleRose.classList.add("pressed");
+      pinLockSetMsg("PIN set — the app will ask for it every time it opens.");
+      setTimeout(() => { pinBusy = false; hidePinLock(); renderSettingsHub(); refreshPinDetail(); }, 900);
+    } catch (e) {
+      pinBusy = false;
+      updatePinDots("error"); pinShake();
+      pinLockSetMsg(e.message || "Could not set the PIN.", true);
+      setTimeout(() => { pinStep = "entry"; pinFirst = ""; currentPin = "";
+        pinLockTitle(); pinLockSetMsg(""); updatePinDots(); }, 1200);
+    }
+    return;
+  }
+  if (pinMode === "change" && pinStep === "entry") {
+    pinCurrent = entered; pinStep = "new"; currentPin = "";
+    pinLockTitle(); updatePinDots(); return;
+  }
+  if (pinMode === "change" && pinStep === "new") {
+    pinFirst = entered; pinStep = "confirm"; currentPin = "";
+    pinLockTitle(); updatePinDots(); return;
+  }
+  if (pinMode === "change" && pinStep === "confirm") {
+    if (entered !== pinFirst) {
+      pinBusy = true;
+      updatePinDots("error"); pinShake();
+      pinLockSetMsg("PINs do not match — try again.", true);
+      setTimeout(() => { pinStep = "new"; pinFirst = ""; currentPin = "";
+        pinBusy = false; pinLockTitle(); pinLockSetMsg(""); updatePinDots(); }, 900);
+      return;
+    }
+    pinBusy = true;
+    try {
+      await api("/me/pin/set", { method: "POST",
+        body: JSON.stringify({ pin: entered, current_pin: pinCurrent }) });
+      settingsPinSet = true; settingsCacheWrite();
+      updatePinDots("success");
+      if (pinHandleRose) pinHandleRose.classList.add("pressed");
+      pinLockSetMsg("PIN changed.");
+      setTimeout(() => { pinBusy = false; hidePinLock(); renderSettingsHub(); refreshPinDetail(); }, 900);
+    } catch (e) {
+      pinBusy = false;
+      updatePinDots("error"); pinShake();
+      pinLockSetMsg(e.message || "Could not change the PIN.", true);
+      setTimeout(() => { pinStep = "entry"; pinCurrent = ""; pinFirst = "";
+        currentPin = ""; pinLockTitle(); pinLockSetMsg(""); updatePinDots(); }, 1200);
+    }
+    return;
+  }
+  if (pinMode === "remove") {
+    pinBusy = true;
+    try {
+      await api("/me/pin/remove", { method: "POST",
+        body: JSON.stringify({ current_pin: entered }) });
+      settingsPinSet = false; settingsCacheWrite();
+      updatePinDots("success");
+      if (pinHandleRose) pinHandleRose.classList.add("pressed");
+      pinLockSetMsg("PIN removed.");
+      setTimeout(() => { pinBusy = false; hidePinLock(); renderSettingsHub(); refreshPinDetail(); }, 900);
+    } catch (e) {
+      pinBusy = false;
+      updatePinDots("error"); pinShake();
+      pinLockSetMsg(e.message || "Could not remove the PIN.", true);
+      setTimeout(() => { currentPin = ""; pinLockTitle(); pinLockSetMsg(""); updatePinDots(); }, 1200);
+    }
+    return;
+  }
+  // unlock: verify with the server, then boot the app.
+  pinBusy = true;
+  try {
+    const r = await api("/me/pin/unlock", { method: "POST",
+      body: JSON.stringify({ pin: entered }) });
+    if (r && r.pin_token) {
+      pinToken = r.pin_token;
+      try { sessionStorage.setItem("nx_pin_token", pinToken); } catch (e) {}
+    }
+    updatePinDots("success");
+    if (pinHandleRose) pinHandleRose.classList.add("pressed");
+    pinLockSetMsg("Unlocked.");
+    setTimeout(async () => {
+      pinBusy = false;
+      hidePinLock();
+      try { await loadMe(); bootOk(); }
+      catch (e) { if (!e.pinLocked) bootFailed(e); }
+    }, 800);
+  } catch (e) {
+    pinBusy = false;
+    updatePinDots("error"); pinShake();
+    pinLockSetMsg(e.message || "Wrong PIN.", true);
+    setTimeout(() => { currentPin = ""; pinLockSetMsg(""); updatePinDots(); }, 900);
+  }
+}
+
+async function pinForgot() {
+  if (pinBusy) return;
+  pinBusy = true;
+  pinLockSetMsg("Verifying your Telegram identity…");
+  try {
+    await api("/me/pin/forgot", { method: "POST" });
+    try { sessionStorage.removeItem("nx_pin_token"); } catch (e) {}
+    pinToken = "";
+    settingsPinSet = false; settingsCacheWrite();
+    updatePinDots("success");
+    pinLockSetMsg("PIN cleared — opening the app.");
+    setTimeout(async () => {
+      pinBusy = false;
+      hidePinLock(); refreshPinDetail();
+      try { await loadMe(); bootOk(); }
+      catch (e) { if (!e.pinLocked) bootFailed(e); }
+    }, 800);
+  } catch (e) {
+    pinBusy = false;
+    pinLockSetMsg(e.message || "Could not clear the PIN.", true);
+  }
 }
 
 async function loadMe() {
@@ -7377,8 +7742,18 @@ async function loadMe() {
   // sits on "Loading…" with no way out. Warm /auth answers in
   // <1s; 25s + 2s Phase 76 retry + 25s = 52s, inside the 60s
   // shell watchdog, so bootFailed's server message normally wins.
-  me = await api("/auth", { method: "POST", body: JSON.stringify({ initData }),
-    timeoutMs: 25000 });
+  me = await api("/auth", { method: "POST",
+    body: JSON.stringify({ initData, pinToken }), timeoutMs: 25000 });
+  // Phase 210: the PIN card gates the whole app — with a PIN set
+  // and no valid token, /auth answers pin_required with no user
+  // data. Show the lock and stop the boot here (a pinLocked
+  // error, swallowed by the boot chain — never bootFailed).
+  if (me.pin_required) {
+    showPinLock("unlock");
+    const e = new Error("PIN locked");
+    e.pinLocked = true;
+    throw e;
+  }
   if (me.media_token) mediaToken = me.media_token;
   loadAccountTheme();
   startHeartbeat();
@@ -7860,11 +8235,18 @@ function bootFailed(err) {
   $("entry-note").textContent =
     "Please open Nexora Social from inside Telegram to continue.";
 }
-loadMe().then(bootOk).catch(() => {
+loadMe().then(bootOk).catch((err) => {
+  // Phase 210: a pinLocked error means the PIN card is showing —
+  // the unlock flow resumes the boot itself, so there is nothing
+  // to retry and no failure screen to show.
+  if (err && err.pinLocked) return;
   // Phase 76: the first attempt can fail while the free server
   // wakes up — retry once before showing the fallback above.
   setTimeout(() => {
-    loadMe().then(bootOk).catch(bootFailed);
+    loadMe().then(bootOk).catch((err2) => {
+      if (err2 && err2.pinLocked) return;
+      bootFailed(err2);
+    });
   }, 2000);
 });
 
@@ -12320,6 +12702,7 @@ const MASCOT_TIPS_BY_VIEW = {
     "Theme: pick one of 33 shades — the whole app follows it.",
     "Notification prefs has 10 switches — likes, comments, follows, tips, messages, system, follow requests, blood, skills and mentions.",
     "Payout wallet: save a TON, Gram or USDT address, then request a payout in points.",
+    "App PIN in Settings locks the app — every open asks for your 4-digit PIN.",
   ],
   blood: [
     "Become a donor in Settings → Profile — pick your group and switch the donor toggle on.",

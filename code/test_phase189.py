@@ -255,20 +255,20 @@ assert len(body["dead"]) == 1, body
 print("designs health OK (live ok, dead reported with getFile 404)")
 
 # --- 7. Client markers, version, routes, backup --------------------
-assert "app.js?v=209" in HTML
+assert "app.js?v=210" in HTML
 assert ("?v=18" + "9") not in HTML
-assert "style.css?v=209" in HTML
-assert "games.js?v=209" in HTML
+assert "style.css?v=210" in HTML
+assert "games.js?v=210" in HTML
 paths = {rt.path for rt in app.routes}
-assert len(paths) == 191, len(paths)
+assert len(paths) == 196, len(paths)
 assert "/admin/designs/health" in paths
 assert "/designs" in paths
 h = c.get("/admin/health", headers=ADMIN).json()
-assert h["version"] == 209, h
+assert h["version"] == 210, h
 r = c.get("/admin/backup", headers=ADMIN)
 assert r.status_code == 200, r.text
 assert len(r.json()["tables"]) == 55, len(r.json()["tables"])
 assert len(_BACKUP_TABLES) == 55, len(_BACKUP_TABLES)
-print("client + version + routes + backup OK (184 routes, 52 tables, ?v=209)")
+print("client + version + routes + backup OK (184 routes, 52 tables, ?v=210)")
 
 print("PHASE 189 OK")

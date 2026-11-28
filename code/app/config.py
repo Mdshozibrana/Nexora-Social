@@ -122,6 +122,10 @@ RATE_LIMITS = {
     "scheduled": (120, 3600),
     # Phase 136: private-account toggle.
     "privacy": (120, 3600),
+    # Phase 210: app PIN lock — set / change / remove / unlock /
+    # forgot. The 5-try lockout is the real brute-force guard;
+    # the hourly bucket stops scripts hammering the endpoints.
+    "app_pin": (30, 3600),
     # Phase 144: notification-preference saves.
     "notif_prefs": (120, 3600),
     # Phase 138: DM message reactions.

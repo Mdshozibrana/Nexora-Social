@@ -111,7 +111,12 @@ def _migrate():
               "lon": "FLOAT", "loc_at": "TIMESTAMP",
               # Phase 144: notification prefs JSON (one TEXT
               # column, no new table — backup was 42 at Phase 144).
-              "notif_prefs": "TEXT"}
+              "notif_prefs": "TEXT",
+              # Phase 210: app PIN lock columns (hash, failed
+              # count, lockout deadline) — no new table.
+              "pin_hash": "VARCHAR(256)",
+              "pin_failed_count": "INTEGER",
+              "pin_locked_until": "TIMESTAMP"}
     with engine.begin() as conn:
         for name, ddl in wanted.items():
             if name not in existing:
@@ -666,6 +671,81 @@ def _media_token_ok(token: str):
     return user_id, iat
 
 
+def _pin_hash(pin: str) -> str:
+    """Phase 210: salted PBKDF2-SHA256 hash of a 4-digit PIN —
+    stdlib only, 200k iterations, per-user random salt. The
+    plaintext PIN is never stored, logged or returned."""
+    import hashlib as _hl
+    import secrets as _sc
+    salt = _sc.token_hex(16)
+    dk = _hl.pbkdf2_hmac("sha256", pin.encode(), salt.encode(), 200000)
+    return f"pbkdf2$200000${salt}${dk.hex()}"
+
+
+def _pin_check(pin: str, stored: str) -> bool:
+    """Phase 210: verify a PIN against a _pin_hash value."""
+    import hashlib as _hl
+    import hmac as _hm
+    try:
+        _alg, iters, salt, hexed = stored.split("$")
+        dk = _hl.pbkdf2_hmac("sha256", pin.encode(), salt.encode(),
+                             int(iters))
+        return _hm.compare_digest(dk.hex(), hexed)
+    except Exception:
+        return False
+
+
+def _pin_token(user_id: int) -> str:
+    """Phase 210: session token proving the PIN was entered —
+    same shape as _qr_token (HMAC over user id + expiry, 7 days).
+    It rides in sessionStorage, so a fresh app open (a new
+    WebView) starts without it and the PIN card shows again."""
+    import base64
+    import hashlib as _hl
+    import hmac as _hm
+    exp = int(time.time()) + 7 * 86400
+    sig = _hm.new(settings.BOT_TOKEN.encode(),
+                  f"nexora-pin:{user_id}:{exp}".encode(),
+                  _hl.sha256).hexdigest()
+    raw = f"{user_id}.{exp}.{sig}".encode()
+    return base64.urlsafe_b64encode(raw).decode()
+
+
+def _pin_token_ok(token: str):
+    """Phase 210: verify a PIN token; returns the user id, or None."""
+    import base64
+    import hashlib as _hl
+    import hmac as _hm
+    if not token or not settings.BOT_TOKEN:
+        return None
+    try:
+        decoded = base64.urlsafe_b64decode(
+            token.encode()).decode()
+        user_s, exp_s, sig = decoded.split(".", 2)
+        user_id, exp = int(user_s), int(exp_s)
+    except Exception:
+        return None
+    if exp < int(time.time()):
+        return None
+    expected = _hm.new(settings.BOT_TOKEN.encode(),
+                       f"nexora-pin:{user_id}:{exp}".encode(),
+                       _hl.sha256).hexdigest()
+    if not _hm.compare_digest(expected, sig):
+        return None
+    return user_id
+
+
+def _require_user_fresh(x_init_data: str):
+    """Phase 210: forgot-PIN needs a fresh Telegram identity —
+    same 5-minute step-up as the admin endpoints, but with a
+    member-facing message (the admin wording would confuse)."""
+    auth_date = init_data_auth_date(x_init_data)
+    if auth_date is None or int(time.time()) - auth_date > ADMIN_STEP_UP_SECONDS:
+        raise HTTPException(
+            401, "Your Telegram session is older than 5 minutes — "
+                 "please close and reopen the app, then try again")
+
+
 def _story_in_visible_highlight(db, viewer_id, story_id):
     """Phase 172: True when the story sits in a highlight whose
     owner the viewer may see (private-account + block rules apply;
@@ -859,6 +939,10 @@ async def _shutdown():
 
 class AuthIn(BaseModel):
     initData: str = Field(max_length=16384)
+    # Phase 210: the session PIN token from POST /me/pin/unlock
+    # (empty on a fresh open — the PIN card then shows).
+    pinToken: str = ""
+
 
 
 _THEME_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
@@ -992,6 +1076,16 @@ async def auth(body: AuthIn, request: Request,
     _check_revoked(user, body.initData)
     user.last_seen_at = datetime.utcnow()
     db.commit()
+    # Phase 210: app PIN lock — a set PIN gates the whole app at
+    # the auth boundary: without a valid PIN token the response
+    # carries no user data at all (no media token, no theme, no
+    # counts), so the client can only show the PIN card. The
+    # token is issued by POST /me/pin/unlock and lives in
+    # sessionStorage, so a fresh app open always asks again. The
+    # check runs on the real Telegram account, before act-as.
+    if getattr(user, "pin_hash", None):
+        if not body.pinToken or _pin_token_ok(body.pinToken) != user.telegram_id:
+            return {"pin_required": True}
     # Phase 20: an admin acting as a managed user sees the app as that
     # member (the response below is then the managed member's).
     if x_act_as:
@@ -1032,6 +1126,8 @@ async def auth(body: AuthIn, request: Request,
         "is_moderator": user.telegram_id in settings.MODERATOR_IDS,
         "theme": _theme_picks(user),
         "media_token": _media_token(user.telegram_id),
+        # Phase 210: Settings shows the PIN state on its hub row.
+        "pin_set": bool(getattr(user, "pin_hash", None)),
         "adsgram_block_id": settings.ADSGRAM_BLOCK_ID,
         "mapillary_client_token": settings.MAPILLARY_CLIENT_TOKEN,
         # Phase 151: the caller's own blood-donor status.
@@ -4404,6 +4500,115 @@ def save_notification_prefs(body: dict,
     user.notif_prefs = json.dumps(prefs)
     db.commit()
     return {"prefs": prefs}
+
+class PinIn(BaseModel):
+    pin: str = ""
+    current_pin: str = ""
+
+
+def _pin_valid_format(pin: str) -> bool:
+    """Phase 210: a PIN is exactly 4 digits — nothing else."""
+    return bool(pin) and len(pin) == 4 and pin.isdigit()
+
+
+def _pin_check_lock(user):
+    """Phase 210: raise 429 while the 5-try lockout runs."""
+    if getattr(user, "pin_locked_until", None):
+        left = (user.pin_locked_until - datetime.utcnow()).total_seconds()
+        if left > 0:
+            raise HTTPException(
+                429, f"Too many wrong tries — try again in "
+                     f"{int(left) + 1} seconds")
+        user.pin_locked_until = None
+
+
+@app.get("/me/pin/status")
+def pin_status(user: models.User = Depends(current_user)):
+    """Phase 210: whether this member has an app PIN set. Own
+    row only — the PIN state is never exposed on public profiles."""
+    return {"pin_set": bool(getattr(user, "pin_hash", None))}
+
+
+@app.post("/me/pin/set")
+def pin_set(body: PinIn, user: models.User = Depends(current_user),
+            db: Session = Depends(get_db)):
+    """Phase 210: set a first PIN, or change it (the current PIN
+    is required to change — a stolen session alone cannot swap
+    the lock). Resets any failed count / lockout."""
+    _enforce_rate("app_pin", f"u{user.telegram_id}")
+    if not _pin_valid_format(body.pin):
+        raise HTTPException(400, "PIN must be exactly 4 digits")
+    if getattr(user, "pin_hash", None):
+        if not _pin_check(body.current_pin or "", user.pin_hash):
+            raise HTTPException(400, "Current PIN is wrong")
+    user.pin_hash = _pin_hash(body.pin)
+    user.pin_failed_count = 0
+    user.pin_locked_until = None
+    db.commit()
+    return {"pin_set": True}
+
+
+@app.post("/me/pin/remove")
+def pin_remove(body: PinIn, user: models.User = Depends(current_user),
+               db: Session = Depends(get_db)):
+    """Phase 210: remove the app PIN — the current PIN is
+    required, so a stolen session alone cannot drop the lock."""
+    _enforce_rate("app_pin", f"u{user.telegram_id}")
+    if not getattr(user, "pin_hash", None):
+        return {"pin_set": False}
+    if not _pin_check(body.current_pin or "", user.pin_hash):
+        raise HTTPException(400, "Current PIN is wrong")
+    user.pin_hash = None
+    user.pin_failed_count = 0
+    user.pin_locked_until = None
+    db.commit()
+    return {"pin_set": False}
+
+
+@app.post("/me/pin/unlock")
+def pin_unlock(body: PinIn, user: models.User = Depends(current_user),
+               db: Session = Depends(get_db)):
+    """Phase 210: verify the PIN and issue the session token.
+    5 wrong tries lock the PIN for 5 minutes (never permanent);
+    a correct PIN resets the count and returns the token."""
+    _enforce_rate("app_pin", f"u{user.telegram_id}")
+    if not getattr(user, "pin_hash", None):
+        raise HTTPException(400, "No PIN is set")
+    _pin_check_lock(user)
+    if not _pin_valid_format(body.pin) or not _pin_check(body.pin, user.pin_hash):
+        user.pin_failed_count = int(getattr(user, "pin_failed_count", 0) or 0) + 1
+        if user.pin_failed_count >= 5:
+            user.pin_failed_count = 0
+            user.pin_locked_until = datetime.utcnow() + timedelta(seconds=300)
+            db.commit()
+            raise HTTPException(
+                429, "Too many wrong tries — PIN locked for 5 minutes")
+        db.commit()
+        raise HTTPException(
+            400, f"Wrong PIN — {5 - user.pin_failed_count} tries left")
+    user.pin_failed_count = 0
+    user.pin_locked_until = None
+    db.commit()
+    return {"pin_token": _pin_token(user.telegram_id)}
+
+
+@app.post("/me/pin/forgot")
+def pin_forgot(request: Request,
+               x_init_data: str = Header(default=""),
+               user: models.User = Depends(current_user),
+               db: Session = Depends(get_db)):
+    """Phase 210: forgot-PIN recovery — the fresh Telegram
+    initData IS the re-verification (only the account owner
+    holds it), so clearing the PIN here can never lock anyone
+    out permanently. Needs a session under 5 minutes old."""
+    _enforce_rate("app_pin", f"u{user.telegram_id}")
+    _require_user_fresh(x_init_data)
+    user.pin_hash = None
+    user.pin_failed_count = 0
+    user.pin_locked_until = None
+    db.commit()
+    return {"pin_set": False}
+
 
 def follow_request_dict(db, r):
     ru = db.get(models.User, r.requester_id)
@@ -10826,6 +11031,10 @@ _NEXA_SYSTEM = (
     "stories; members can message anyone from their profile. "
     "Stories are photos that live for 24 hours, seen by "
     "followers and the official account. "
+    "APP PIN: a 4-digit PIN set from Settings → App PIN locks "
+    "the app — every later open asks for the PIN first; a "
+    "forgotten PIN is cleared after a fresh Telegram sign-in "
+    "check. "
     "GAMES: open the Games page and pull the lamp cord to "
     "light the room, then play 14 games — Snake, Tetris, "
     "Breakout, Memory Match, Pong, Space Invaders, "
@@ -10967,6 +11176,15 @@ def _nexa_fallback(text):
                 "12 qualified referrals, 25 posts, 14 days old, "
                 "5000 points and a 30-day check-in streak. Track "
                 "your progress in Settings!")
+    if has("pin", "পিন", "lock", "লক"):
+        return ("Settings → App PIN-এ গিয়ে 4 ডিজিটের PIN বসাও — "
+                "তারপর থেকে অ্যাপ খুললেই PIN চাইবে। PIN ভুলে গেলে "
+                "লক স্ক্রিনের Forgot PIN চাপো — তোমার Telegram "
+                "পরিচয় যাচাই করে PIN মুছে যাবে।" if bn else
+                "Set a 4-digit PIN in Settings → App PIN — every "
+                "later app open then asks for it first. Forgot it? "
+                "Tap Forgot PIN on the lock screen and your Telegram "
+                "identity clears it.")
     if has("game", "গেম", "খেল"):
         return ("Games পেজে ১৪টা গেম আছে — Snake, 2048, "
                 "Pac-Man, Archery, Forest Drive, Runner Rush, Island Plane Landing আরো অনেক! ল্যাম্পটা টেনে আলো জ্বালাও "

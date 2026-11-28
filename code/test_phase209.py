@@ -127,17 +127,17 @@ assert "13 games" not in MAIN, "stale 13-games in Nexa knowledge"
 print("3. mascot + Nexa know 14 games OK")
 
 # --- 4. Version pins + routes + backup + health. ----------------------
-assert HTML.count("?v=209") == 10, HTML.count("?v=209")
+assert HTML.count("?v=210") == 10, HTML.count("?v=210")
 assert "?v=20" + "8" not in HTML
-assert "app.js?v=209" in HTML and "games.js?v=209" in HTML
-assert "style.css?v=209" in HTML
-assert 'menu_url.rstrip("/") + "/?v=209"' in BOT
+assert "app.js?v=210" in HTML and "games.js?v=210" in HTML
+assert "style.css?v=210" in HTML
+assert 'menu_url.rstrip("/") + "/?v=210"' in BOT
 assert ("/?v=20" + "8") not in BOT
 paths = {rt.path for rt in app.routes}
-assert len(paths) == 191, len(paths)
+assert len(paths) == 196, len(paths)
 assert len(_BACKUP_TABLES) == 55, len(_BACKUP_TABLES)
-assert _health_version() == 209, _health_version()
-print("4. version ?v=209, routes 191, backup 55, health 209 OK")
+assert _health_version() == 210, _health_version()
+print("4. version ?v=210, routes 191, backup 55, health 209 OK")
 
 HARNESS_PRELUDE = r'''
 "use strict";
@@ -437,10 +437,10 @@ _run_node_harness()
 
 # --- 6. Served assets: version + markers + neighbours. ----------------
 html = c.get("/webapp/").text
-assert html.count("?v=209") == 10, html.count("?v=209")
+assert html.count("?v=210") == 10, html.count("?v=210")
 assert "?v=20" + "8" not in html
-assert "app.js?v=209" in html and "games.js?v=209" in html
-assert "style.css?v=209" in html and "three.min.js?v=209" in html
+assert "app.js?v=210" in html and "games.js?v=210" in html
+assert "style.css?v=210" in html and "three.min.js?v=210" in html
 served_games = c.get("/webapp/games.js").text
 for marker in ("plane-landing", "Island Plane Landing", "pl-yoke",
                "pl-throttle", "pl-map", "pl-speed", "pl-phase",
@@ -454,6 +454,6 @@ for marker in ("Phase 209 — Island Plane Landing", ".pl-wrap",
                ".pl-yoke", ".pl-thr-handle", ".pl-over",
                "#view-game.immersive .pl-wrap"):
     assert marker in css, marker
-print("6. served assets ?v=209 + markers OK")
+print("6. served assets ?v=210 + markers OK")
 
 print("PHASE 209 OK (Island Plane Landing)")

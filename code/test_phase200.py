@@ -119,7 +119,8 @@ print("node --check OK (app.js + games.js parse)")
 groups = re.findall(r'settingsGroupEl\("([A-Z]+)"', JS)
 assert groups == ["ACCOUNT", "PREFERENCES", "SUPPORT"], groups
 rows = re.findall(r'settingsHubRow\("[^"]*", "([^"]+)"', JS)
-assert rows == ["Profile", "Portfolio", "Privacy", "Payout wallet",
+assert rows == ["Profile", "Portfolio", "Privacy", "App PIN",
+                "Payout wallet",
                 "My QR", "From your profile", "Theme", "Notifications",
                 "Data Control", "Help & Support", "About"], rows
 BUILDERS = ['sec("👤 Profile")', 'sec("🖼️ Portfolio")',
@@ -133,7 +134,7 @@ for b in BUILDERS:
 assert "Dark Mode" not in JS
 assert "Log Out" not in JS
 assert "Language" not in rows
-print("hub structure OK (groups + 11 rows + builders + exclusions)")
+print("hub structure OK (groups + 12 rows + builders + exclusions)")
 
 # --- 3. Phase 200 static markers ------------------------------------
 JS_MARKS = ["renderSettingsSkeleton", "settingsCacheRead()",
@@ -188,7 +189,7 @@ assert r.returncode == 0, r.stdout + r.stderr
 assert "DONE failures=0" in r.stdout, r.stdout
 assert "first paint is the skeleton" in r.stdout, r.stdout
 assert "cached open paints the hub instantly" in r.stdout, r.stdout
-assert "all 11 detail sections open" in r.stdout, r.stdout
+assert "all 12 detail sections open" in r.stdout, r.stdout
 print("harness OK (skeleton first paint + search + values + toggles"
       " + cache + all details)")
 
@@ -235,27 +236,27 @@ assert r.status_code == 200, r.text
 print("API OK (notif prefs + portfolio/privacy toggles + wallet)")
 
 # --- 6. Version pins + routes + backup + health ---------------------
-assert HTML.count("?v=209") == 10, HTML.count("?v=209")
-assert "app.js?v=209" in HTML and "games.js?v=209" in HTML
+assert HTML.count("?v=210") == 10, HTML.count("?v=210")
+assert "app.js?v=210" in HTML and "games.js?v=210" in HTML
 assert ("?v=20" + "0") not in HTML
 BOT = open(os.path.join(ROOT, "code/app/bot.py")).read()
-assert 'menu_url.rstrip("/") + "/?v=209"' in BOT
+assert 'menu_url.rstrip("/") + "/?v=210"' in BOT
 assert ("/?v=19" + "9") not in BOT
 paths = set()
 for route in app.routes:
     paths.add(route.path)
-assert len(paths) == 191, len(paths)
+assert len(paths) == 196, len(paths)
 app.dependency_overrides[admin_user] = lambda: object()
 try:
     r = c.get("/admin/health")
     assert r.status_code == 200, r.text
     h = r.json()
-    assert h["version"] == 209, h["version"]
+    assert h["version"] == 210, h["version"]
 finally:
     app.dependency_overrides.clear()
 assert len(_BACKUP_TABLES) == 55, len(_BACKUP_TABLES)
 # Phase 199 RLS gap: do NOT touch the role script's grant list.
 ROLE = open(os.path.join(ROOT, "code/migrations/phase164_rls_role.sql")).read()
 assert "portfolios" in ROLE and "portfolio_items" in ROLE
-print("version ?v=209 + routes 189 + backup 54 OK")
+print("version ?v=210 + routes 189 + backup 54 OK")
 print("PHASE 200 ALL OK")

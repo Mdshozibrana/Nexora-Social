@@ -3483,3 +3483,40 @@ body.game-open #mascot-wrap { display: none; }
 #view-game.immersive .pl-map { width: 64px; height: 64px; bottom: 80px; }
 @media (max-width: 380px) { .pl-map { width: 84px; height: 84px; } .pl-yoke { width: 96px; height: 96px; } .pl-thr-track { height: 132px; } .pl-speed b { font-size: 26px; } }
 
+/* Phase 210: app PIN lock — the owner's door-lock video, as a
+   full-screen card: pale mint door, white lock body, grey display
+   with 4 dots (grey idle / blue filled / red error / green
+   success), round rose + lever handle, keypad below, "Nexora
+   Social" at the bottom of the door. The design is fixed light
+   by definition (the video is a white lock), so these colours
+   are literal, not theme vars. */
+.pin-lock { position: fixed; inset: 0; z-index: 200; background: #DCE9E5; display: flex; align-items: center; justify-content: center; overflow-y: auto; }
+.pin-lock[hidden] { display: none; }
+.pin-door { position: relative; display: flex; flex-direction: column; align-items: center; padding: 28px 20px; margin: auto; box-sizing: border-box; }
+.pin-close { position: absolute; top: 14px; right: 14px; width: 40px; height: 40px; border-radius: 50%; border: none; background: rgba(255, 255, 255, .85); color: #5B6770; font-size: 18px; cursor: pointer; box-shadow: 0 2px 8px rgba(0, 0, 0, .12); z-index: 2; }
+.pin-lockbody { width: 196px; height: 372px; background: linear-gradient(180deg, #FFFFFF, #EEF3F1); border-radius: 30px; box-shadow: 0 18px 44px rgba(46, 74, 66, .25), 0 2px 0 rgba(255, 255, 255, .9) inset; position: relative; }
+.pin-display { margin: 20px 18px 0; height: 66px; background: #8B939E; border-radius: 14px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; box-shadow: inset 0 2px 6px rgba(0, 0, 0, .25); }
+.pin-status { width: 64px; height: 5px; border-radius: 3px; background: rgba(255, 255, 255, .35); }
+.pin-dots { display: flex; gap: 12px; }
+.pin-dot { width: 12px; height: 12px; border-radius: 50%; background: #C7CDD3; }
+.pin-dot.filled { background: #38BDF8; box-shadow: 0 0 8px rgba(56, 189, 248, .9); }
+.pin-dot.success { background: #22C55E; box-shadow: 0 0 8px rgba(34, 197, 94, .9); }
+.pin-dot.error { background: #F43F5E; box-shadow: 0 0 8px rgba(244, 63, 94, .9); }
+.pin-rose { position: absolute; left: 50%; top: 168px; transform: translateX(-50%); width: 66px; height: 66px; border-radius: 50%; background: #F7FAF9; box-shadow: 0 3px 10px rgba(46, 74, 66, .18), inset 0 1px 3px rgba(0, 0, 0, .08); }
+.pin-rose.pressed { box-shadow: 0 0 0 3px rgba(34, 197, 94, .55), 0 3px 10px rgba(46, 74, 66, .18); }
+.pin-handle { position: absolute; left: 30px; top: 24px; width: 118px; height: 20px; border-radius: 10px; background: linear-gradient(180deg, #FFFFFF, #E3E9E7); box-shadow: 0 4px 10px rgba(46, 74, 66, .25); transform-origin: 4px 10px; transform: rotate(-4deg); transition: transform .35s ease; }
+.pin-rose.pressed .pin-handle { transform: rotate(32deg); }
+.pin-slot { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); width: 30px; height: 5px; border-radius: 3px; background: #B9C2C8; }
+.pin-shake { animation: pinshake .4s ease; }
+@keyframes pinshake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-7px); } 75% { transform: translateX(7px); } }
+.pin-title { margin-top: 22px; font-size: 20px; font-weight: 800; color: #33413C; }
+.pin-msg { margin-top: 8px; min-height: 18px; font-size: 13px; color: #5B6770; text-align: center; max-width: 300px; }
+.pin-msg-err { color: #DC2645; font-weight: 700; }
+.pin-keys { margin-top: 14px; display: grid; grid-template-columns: repeat(3, 66px); gap: 12px; }
+.pin-key { width: 66px; height: 66px; border-radius: 50%; border: none; background: rgba(255, 255, 255, .9); color: #33413C; font-size: 26px; font-weight: 700; cursor: pointer; box-shadow: 0 3px 10px rgba(46, 74, 66, .16); }
+.pin-key:active { transform: scale(.94); background: #FFFFFF; }
+.pin-key-blank { background: transparent; box-shadow: none; cursor: default; }
+.pin-forgot { margin-top: 16px; border: none; background: none; color: #3E7CB1; font-size: 14px; font-weight: 700; cursor: pointer; }
+.pin-brand { margin-top: 28px; font-size: 15px; font-weight: 700; letter-spacing: 4px; color: #6B7A74; text-transform: uppercase; }
+@media (max-width: 380px) { .pin-lockbody { width: 180px; height: 344px; } .pin-keys { grid-template-columns: repeat(3, 60px); gap: 10px; } .pin-key { width: 60px; height: 60px; font-size: 24px; } }
+

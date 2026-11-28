@@ -33,11 +33,16 @@ print("image retry OK")
 # Phase 190: bootFailed takes the boot error so it can tell a
 # dead server from "opened outside Telegram".
 assert "function bootFailed(err)" in JS
-assert "loadMe().then(bootOk).catch(bootFailed)" in JS
+# Phase 210: pinLocked errors are swallowed at both catch levels
+# (the PIN card resumes the boot itself); the Phase 76 retry-once
+# shape (two loadMe().then(bootOk)) is unchanged.
+assert "loadMe().then(bootOk).catch((err) => {" in JS
+assert "if (err && err.pinLocked) return;" in JS
+assert "if (err2 && err2.pinLocked) return;" in JS
 assert JS.count("loadMe().then(bootOk)") == 2
 # the fallback text itself is unchanged for a genuine failure
 assert "Please open this app from inside Telegram." in JS
 print("boot retry OK")
 
-assert "app.js?v=209" in HTML and "style.css?v=209" in HTML
+assert "app.js?v=210" in HTML and "style.css?v=210" in HTML
 print("PHASE 76 OK")

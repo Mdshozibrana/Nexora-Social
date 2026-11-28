@@ -21,7 +21,7 @@ routes, no schema change.
 Proof: the Phase 205 Node harness (real app.js, stub DOM, derived
 from the Phase 200 harness — 56 checks) + the Phase 200 harness
 itself, still green — skeleton, search, values, toggles, cache,
-all 11 details.
+all 12 details.
 """
 import hashlib
 import hmac
@@ -118,10 +118,11 @@ NEW_JS = ["SETTINGS_DETAIL_TITLES", "settings-detail-head",
           'walSave.className = "wide"']
 for m in NEW_JS:
     assert m in JS, f"missing new JS marker: {m}"
-# The title map covers all 11 detail keys, with the hub's labels.
+# The title map covers all 12 detail keys, with the hub's labels.
 for key, title in (("profile", "👤 Profile"),
                    ("portfolio", "🖼️ Portfolio"),
                    ("privacy", "🔒 Privacy"),
+                   ("app_pin", "🔐 App PIN"),
                    ("wallet", "💰 Payout wallet"),
                    ("qr", "🔳 My QR"),
                    ("extras", "📦 From your profile"),
@@ -221,10 +222,10 @@ for harness, want in (("phase205_settings_proof.js", "56"),
     if want:
         passes = len(re.findall(r"^PASS ", r.stdout, re.M))
         assert passes == int(want), (harness, passes, r.stdout)
-        assert "all 11 detail sections open with modern header" in r.stdout
+        assert "all 12 detail sections open with modern header" in r.stdout
         assert "notif rows are two-line (label + desc)" in r.stdout
     else:
-        assert "all 11 detail sections open" in r.stdout
+        assert "all 12 detail sections open" in r.stdout
     print(f"harness OK ({harness})")
 
 # --- 7. API smoke: the settings endpoints are untouched --------------
@@ -239,24 +240,24 @@ assert r.status_code == 200, r.text
 print("API smoke OK (notif prefs + wallet + blocked/muted)")
 
 # --- 8. Version pins + routes + backup + health ---------------------
-assert HTML.count("?v=209") == 10, HTML.count("?v=209")
-assert "app.js?v=209" in HTML and "games.js?v=209" in HTML
+assert HTML.count("?v=210") == 10, HTML.count("?v=210")
+assert "app.js?v=210" in HTML and "games.js?v=210" in HTML
 assert ("?v=20" + "6") not in HTML
 BOT = open(os.path.join(ROOT, "code/app/bot.py")).read()
-assert 'menu_url.rstrip("/") + "/?v=209"' in BOT
+assert 'menu_url.rstrip("/") + "/?v=210"' in BOT
 assert ("/?v=20" + "6") not in BOT
 paths = set()
 for route in app.routes:
     paths.add(route.path)
-assert len(paths) == 191, len(paths)
+assert len(paths) == 196, len(paths)
 app.dependency_overrides[admin_user] = lambda: object()
 try:
     r = c.get("/admin/health")
     assert r.status_code == 200, r.text
     h = r.json()
-    assert h["version"] == 209, h["version"]
+    assert h["version"] == 210, h["version"]
 finally:
     app.dependency_overrides.clear()
 assert len(_BACKUP_TABLES) == 55, len(_BACKUP_TABLES)
-print("version ?v=209 + routes 191 + backup 55 OK")
+print("version ?v=210 + routes 191 + backup 55 OK")
 print("PHASE 205 ALL OK")

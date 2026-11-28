@@ -89,11 +89,11 @@ print("node --check OK (app.js + games.js parse)")
 groups = re.findall(r'settingsGroupEl\("([A-Z]+)"', JS)
 assert groups == ["ACCOUNT", "PREFERENCES", "SUPPORT"], groups
 rows = re.findall(r'settingsHubRow\("[^"]*", "([^"]+)"', JS)
-assert rows == ["Profile", "Portfolio", "Privacy",
+assert rows == ["Profile", "Portfolio", "Privacy", "App PIN",
                 "Payout wallet", "My QR",
                 "From your profile", "Theme", "Notifications",
                 "Data Control", "Help & Support", "About"], rows
-print("hub groups + rows OK (3 groups, 11 rows, in order)")
+print("hub groups + rows OK (3 groups, 12 rows, in order)")
 
 # --- 3. All 9 sections still built inside loadSettings -----
 for bit in ('sec("👤 Profile")', 'sec("🖼️ Portfolio")',
@@ -106,8 +106,8 @@ for bit in ('sec("👤 Profile")', 'sec("🖼️ Portfolio")',
     assert bit in JS, ("section builder gone:", bit)
 # ... and each is registered under a hub key (built, then moved —
 # DOM moves keep listeners and input state).
-for key in ("profile", "portfolio", "privacy", "notif", "wallet",
-            "extras", "qr", "theme", "data", "help", "about"):
+for key in ("profile", "portfolio", "privacy", "app_pin", "notif",
+            "wallet", "extras", "qr", "theme", "data", "help", "about"):
     assert 'reg("%s"' % key in JS or 'details.%s' % key in JS, key
 print("all 9 sections still built + registered OK")
 
@@ -177,17 +177,17 @@ for path in ("/me/blocked", "/me/muted"):
 print("hub data sources OK (profile, notif prefs, wallet, lists)")
 
 # --- 7. Version + routes + backup pins -------------------------------
-assert HTML.count("?v=209") == 10, HTML.count("?v=209")
+assert HTML.count("?v=210") == 10, HTML.count("?v=210")
 assert "?v=18" + "9" not in HTML
-assert "app.js?v=209" in HTML and "games.js?v=209" in HTML
-assert 'menu_url.rstrip("/") + "/?v=209"' in BOT
+assert "app.js?v=210" in HTML and "games.js?v=210" in HTML
+assert 'menu_url.rstrip("/") + "/?v=210"' in BOT
 paths = {rt.path for rt in app.routes}
-assert len(paths) == 191, len(paths)
+assert len(paths) == 196, len(paths)
 assert len(_BACKUP_TABLES) == 55, len(_BACKUP_TABLES)
 with TestClient(app) as cx:
     r = cx.get("/admin/health", headers=ADMIN)
     assert r.status_code == 200, r.text
     h = r.json()
-    assert h["version"] == 209, h["version"]
-print("version ?v=209 + routes 183 + backup 52 OK")
+    assert h["version"] == 210, h["version"]
+print("version ?v=210 + routes 183 + backup 52 OK")
 print("PHASE 187 OK")

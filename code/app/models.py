@@ -65,6 +65,14 @@ class User(Base):
     # directory and the profile badge read these two columns.
     blood_group = Column(String(3), nullable=True)
     blood_donor = Column(Boolean, default=False)
+    # Phase 210: app PIN lock — a 4-digit PIN set from Settings.
+    # Stored as a salted PBKDF2 hash, never plaintext. Failed
+    # unlocks count up; 5 wrong tries lock the PIN for 5 minutes
+    # (never permanent); forgot-PIN clears it after a fresh
+    # Telegram identity check.
+    pin_hash = Column(String(256), nullable=True)
+    pin_failed_count = Column(Integer, default=0)
+    pin_locked_until = Column(DateTime, nullable=True)
     lat = Column(Float, nullable=True)
     lon = Column(Float, nullable=True)
     loc_at = Column(DateTime, nullable=True)

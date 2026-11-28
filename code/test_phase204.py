@@ -110,15 +110,15 @@ finally:
 
 # --- 1. Routes + version. --------------------------------------
 paths = {rt.path for rt in app.routes}
-assert len(paths) == 191, len(paths)
+assert len(paths) == 196, len(paths)
 for want in ("/me/portfolio/cover/upload", "/me/portfolio/items/upload"):
     assert want in paths, want
 assert len(_BACKUP_TABLES) == 55, len(_BACKUP_TABLES)
-assert HTML.count("?v=209") == 10, HTML.count("?v=209")
+assert HTML.count("?v=210") == 10, HTML.count("?v=210")
 assert "?v=20" + "5" not in HTML
-assert "app.js?v=209" in HTML and "games.js?v=209" in HTML
+assert "app.js?v=210" in HTML and "games.js?v=210" in HTML
 BOT = open(os.path.join(ROOT, "code/app/bot.py")).read()
-assert "/?v=209" in BOT and "/?v=20" + "3" not in BOT
+assert "/?v=210" in BOT and "/?v=20" + "3" not in BOT
 print("1. routes + version OK")
 
 # --- 2. Portfolio cover upload: fresh from the gallery. ---------
