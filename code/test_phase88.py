@@ -31,5 +31,5 @@ for bit in (".arch-invite", ".arch-invite-row", ".arch-row"):
     assert bit in CSS, bit
 # Nexa knows the eleventh game
 assert "13 games" in MAIN and "Archery" in MAIN
-assert "app.js?v=207" in HTML and "games.js?v=207" in HTML
+assert "app.js?v=208" in HTML and "games.js?v=208" in HTML
 print("PHASE 88 OK")

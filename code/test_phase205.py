@@ -239,11 +239,11 @@ assert r.status_code == 200, r.text
 print("API smoke OK (notif prefs + wallet + blocked/muted)")
 
 # --- 8. Version pins + routes + backup + health ---------------------
-assert HTML.count("?v=207") == 10, HTML.count("?v=207")
-assert "app.js?v=207" in HTML and "games.js?v=207" in HTML
+assert HTML.count("?v=208") == 10, HTML.count("?v=208")
+assert "app.js?v=208" in HTML and "games.js?v=208" in HTML
 assert ("?v=20" + "6") not in HTML
 BOT = open(os.path.join(ROOT, "code/app/bot.py")).read()
-assert 'menu_url.rstrip("/") + "/?v=207"' in BOT
+assert 'menu_url.rstrip("/") + "/?v=208"' in BOT
 assert ("/?v=20" + "6") not in BOT
 paths = set()
 for route in app.routes:
@@ -254,9 +254,9 @@ try:
     r = c.get("/admin/health")
     assert r.status_code == 200, r.text
     h = r.json()
-    assert h["version"] == 207, h["version"]
+    assert h["version"] == 208, h["version"]
 finally:
     app.dependency_overrides.clear()
 assert len(_BACKUP_TABLES) == 55, len(_BACKUP_TABLES)
-print("version ?v=207 + routes 191 + backup 55 OK")
+print("version ?v=208 + routes 191 + backup 55 OK")
 print("PHASE 205 ALL OK")

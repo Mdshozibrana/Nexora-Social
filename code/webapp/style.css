@@ -3271,7 +3271,7 @@ html[data-theme] .suggest-follow.on { background: var(--t-chip, #F3DCE7);
    one non-wrapping line (back chip + ellipsis title + ellipsis score),
    the help line hides, and #game-stage fills the rest. Leaving the
    view removes the class and restores the nav/header exactly. */
-#view-game.immersive { position: fixed; inset: 0; z-index: 66; background: var(--t-bg, #F6F1E7); display: flex; flex-direction: column; padding: calc(8px + env(safe-area-inset-top, 0px)) 12px calc(10px + env(safe-area-inset-bottom, 0px)); }
+#view-game.immersive { position: fixed; inset: 0; z-index: 66; background: var(--gx-bg, #0B2E1F); display: flex; flex-direction: column; padding: calc(8px + env(safe-area-inset-top, 0px)) 12px calc(10px + env(safe-area-inset-bottom, 0px)); }
 #view-game.immersive .game-head { flex: none; margin: 0; padding: 0 0 8px; min-width: 0; }
 #view-game.immersive #game-back { flex: none; background: rgba(10, 16, 28, .8); color: #F1F5F9; border: 1px solid rgba(255, 255, 255, .2); border-radius: 999px; padding: 7px 12px; font-size: 13px; font-weight: 700; box-shadow: 0 2px 8px rgba(0, 0, 0, .25); }
 #view-game.immersive #game-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -3397,3 +3397,46 @@ body.game-open #mascot-wrap { display: none; }
 .pf-edit-title { flex: 1; min-width: 0; font-weight: 600; font-size: 14px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pf-edit-row button { flex: none; border-radius: 10px; padding: 6px 10px; }
+
+/* ================================================================
+   Phase 208 — Games section dark green (owner order Nov 27, 23:01):
+   the whole Games section — the list AND the in-game views — is
+   dark green, while the games stay readable and the buttons stay
+   usable. The palette lives in --gx-* vars scoped to #view-games
+   and #view-game, so nothing outside the Games section is touched.
+   The Phase 197 vivid buttons (GAS green / BRAKE red / steer
+   blue-teal, dpad indigo) and the Phase 198 SVG mini-scene icons
+   (each tile carries its own light background) are untouched and
+   stay legible on dark green. The 3D worlds keep their scene
+   palettes (Forest Drive autumn, Runner Rush lagoon/dusk) — the
+   dark green is the section chrome around them. The lamp
+   (Phase 37) is untouched.
+   ================================================================ */
+#view-games, #view-game {
+  --gx-bg: #0B2E1F;
+  --gx-bg2: #0F3D29;
+  --gx-line: rgba(234, 247, 238, .14);
+  --gx-ink: #EAF7EE;
+  --gx-dim: rgba(234, 247, 238, .72);
+  --gx-amber: #FDE68A;
+}
+/* The list is a dark green room; cards a touch lighter. */
+#view-games { background: var(--gx-bg); color: var(--gx-ink);
+  border-radius: 18px; padding: 14px 12px 18px; }
+#view-games .game-grid { margin-top: 10px; }
+#view-games .game-card { background: var(--gx-bg2);
+  color: var(--gx-ink); border: 1px solid var(--gx-line);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, .35); }
+#view-games .game-card .g-desc { color: var(--gx-dim); opacity: 1; }
+/* The in-game view is the same dark green room. */
+#view-game { background: var(--gx-bg); color: var(--gx-ink);
+  border-radius: 18px; padding: 12px; }
+#view-game .game-head #game-title { color: var(--gx-ink); }
+#view-game #game-score { color: var(--gx-amber); }
+#view-game #game-back { background: rgba(234, 247, 238, .12);
+  color: var(--gx-ink); border: 1px solid var(--gx-line); }
+#view-game #game-help { color: var(--gx-dim); opacity: 1; }
+/* 3D HUD glass retinted from navy-dark to green-dark. */
+.fd-panel { background: rgba(6, 26, 17, .78); }
+.fd-speed { background: rgba(6, 26, 17, .72); }
+

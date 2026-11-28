@@ -355,9 +355,9 @@ with TestClient(app) as c:
 
     # 4. Served assets: glassy styles + version + neighbours.
     html = c.get("/webapp/").text
-    assert html.count("?v=207") == 10, html.count("?v=207")
+    assert html.count("?v=208") == 10, html.count("?v=208")
     assert "?v=19" + "3" not in html
-    assert "app.js?v=207" in html and "style.css?v=207" in html
+    assert "app.js?v=208" in html and "style.css?v=208" in html
     assert "qrcode" not in html, "no QR library must be referenced"
     js = c.get("/webapp/app.js").text
     for marker in ("vname-text", "fitVerifiedNames", "totpGateAdmin",
@@ -388,12 +388,12 @@ with TestClient(app) as c:
               "/admin/totp/verify"):
         assert p in paths, p
     h = c.get("/admin/health", headers=ADMIN).json()
-    assert h["version"] == 207, h
+    assert h["version"] == 208, h
     r = c.get("/admin/backup", headers=ADMIN)
     assert r.status_code == 200, r.text
     assert len(r.json()["tables"]) == 55, len(r.json()["tables"])
     bot_src = open(os.path.join(ROOT, "app/bot.py")).read()
-    assert 'menu_url.rstrip("/") + "/?v=207"' in bot_src
-    print("neighbours + version + routes OK (184 routes, 52 tables, ?v=207)")
+    assert 'menu_url.rstrip("/") + "/?v=208"' in bot_src
+    print("neighbours + version + routes OK (184 routes, 52 tables, ?v=208)")
 
 print("PHASE 194 OK")

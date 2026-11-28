@@ -2,6 +2,11 @@
 // the favourites from the first mobile phones. Pure client-side, no
 // backend: Snake (Nokia), Tetris (brick game), Breakout, Memory match.
 const GameRegistry = [];
+// Phase 208: the Games section is dark green — the 2D canvases
+// share one very-dark-green board colour. Snake and Archery
+// keep their Nokia-LCD green and Flappy keeps its sky: those
+// colours ARE the games' look, and their pieces stay legible.
+const GX_CANVAS_BG = "#0C2115";
 function registerGame(def) { GameRegistry.push(def); }
 
 // Phase 97 (audit): saved game progress belongs to ONE account,
@@ -251,7 +256,7 @@ registerGame({
       draw();
     };
     const draw = () => {
-      ctx.fillStyle = "#14141f";
+      ctx.fillStyle = GX_CANVAS_BG;
       ctx.fillRect(0, 0, cv.width, cv.height);
       grid.forEach((row, y) => row.forEach((c, x) => {
         if (c) { ctx.fillStyle = c; ctx.fillRect(x * C + 1, y * C + 1, C - 2, C - 2); }
@@ -331,7 +336,7 @@ registerGame({
       draw();
     };
     const draw = () => {
-      ctx.fillStyle = "#14141f";
+      ctx.fillStyle = GX_CANVAS_BG;
       ctx.fillRect(0, 0, W, H);
       bricks.forEach(b => {
         if (b.on) { ctx.fillStyle = b.color; ctx.fillRect(b.x, b.y, b.w, b.h); }
@@ -500,7 +505,7 @@ registerGame({
     };
     serve(1);
     const draw = () => {
-      ctx.fillStyle = "#101408";
+      ctx.fillStyle = GX_CANVAS_BG;
       ctx.fillRect(0, 0, W, H);
       ctx.strokeStyle = "rgba(238,242,200,.35)";
       ctx.setLineDash([6, 8]);
@@ -624,7 +629,7 @@ registerGame({
       "Score: " + score + " · Lives: " + "❤️".repeat(Math.max(0, lives)) +
       " · Wave " + wave);
     const draw = () => {
-      ctx.fillStyle = "#070714";
+      ctx.fillStyle = GX_CANVAS_BG;
       ctx.fillRect(0, 0, W, H);
       ctx.fillStyle = "#fff";
       for (let i = 0; i < 40; i++)
@@ -640,7 +645,7 @@ registerGame({
       ctx.fillStyle = "#FF5C7A";
       enemyShots.forEach(s => ctx.fillRect(s.x - 1.5, s.y, 3, 9));
       if (over) {
-        ctx.fillStyle = "rgba(7,7,20,.85)";
+        ctx.fillStyle = "rgba(12,33,21,.85)";
         ctx.fillRect(0, H / 2 - 26, W, 52);
         ctx.fillStyle = "#eef2c8"; ctx.font = "bold 17px monospace";
         ctx.fillText("GAME OVER", W / 2, H / 2 + 6);
@@ -1140,7 +1145,7 @@ registerGame({
       "Score: " + score + " · Lives: " + "❤️".repeat(Math.max(0, lives)) +
       " · Level " + level);
     const draw = () => {
-      ctx.fillStyle = "#0B1035";
+      ctx.fillStyle = GX_CANVAS_BG;
       ctx.fillRect(0, 0, cv.width, cv.height);
       ctx.fillStyle = "#2B3A8F";
       walls.forEach(i => {
@@ -1177,7 +1182,7 @@ registerGame({
               ang + (2 - mouth) * Math.PI);
       ctx.closePath(); ctx.fill();
       if (over) {
-        ctx.fillStyle = "rgba(7,7,20,.85)";
+        ctx.fillStyle = "rgba(12,33,21,.85)";
         ctx.fillRect(0, cv.height / 2 - 24, cv.width, 48);
         ctx.fillStyle = "#eef2c8";
         ctx.font = "bold 16px monospace"; ctx.textAlign = "center";
