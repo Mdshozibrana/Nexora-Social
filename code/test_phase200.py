@@ -235,11 +235,11 @@ assert r.status_code == 200, r.text
 print("API OK (notif prefs + portfolio/privacy toggles + wallet)")
 
 # --- 6. Version pins + routes + backup + health ---------------------
-assert HTML.count("?v=205") == 10, HTML.count("?v=205")
-assert "app.js?v=205" in HTML and "games.js?v=205" in HTML
+assert HTML.count("?v=206") == 10, HTML.count("?v=206")
+assert "app.js?v=206" in HTML and "games.js?v=206" in HTML
 assert ("?v=20" + "0") not in HTML
 BOT = open(os.path.join(ROOT, "code/app/bot.py")).read()
-assert 'menu_url.rstrip("/") + "/?v=205"' in BOT
+assert 'menu_url.rstrip("/") + "/?v=206"' in BOT
 assert ("/?v=19" + "9") not in BOT
 paths = set()
 for route in app.routes:
@@ -250,12 +250,12 @@ try:
     r = c.get("/admin/health")
     assert r.status_code == 200, r.text
     h = r.json()
-    assert h["version"] == 205, h["version"]
+    assert h["version"] == 206, h["version"]
 finally:
     app.dependency_overrides.clear()
 assert len(_BACKUP_TABLES) == 55, len(_BACKUP_TABLES)
 # Phase 199 RLS gap: do NOT touch the role script's grant list.
 ROLE = open(os.path.join(ROOT, "code/migrations/phase164_rls_role.sql")).read()
 assert "portfolios" in ROLE and "portfolio_items" in ROLE
-print("version ?v=205 + routes 189 + backup 54 OK")
+print("version ?v=206 + routes 189 + backup 54 OK")
 print("PHASE 200 ALL OK")

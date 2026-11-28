@@ -274,10 +274,10 @@ for f in ("webapp/app.js", "webapp/games.js"):
                        capture_output=True, text=True,
                        cwd=os.path.join(ROOT, "code"))
     assert r.returncode == 0, (f, r.stderr)
-assert HTML.count("?v=205") == 10, HTML.count("?v=205")
-assert "app.js?v=205" in HTML and "games.js?v=205" in HTML
+assert HTML.count("?v=206") == 10, HTML.count("?v=206")
+assert "app.js?v=206" in HTML and "games.js?v=206" in HTML
 BOT = open(os.path.join(ROOT, "code/app/bot.py")).read()
-assert 'menu_url.rstrip("/") + "/?v=205"' in BOT
-assert h["version"] == 205, h["version"]
-print("version ?v=205 + routes 184 + backup 52 OK")
+assert 'menu_url.rstrip("/") + "/?v=206"' in BOT
+assert h["version"] == 206, h["version"]
+print("version ?v=206 + routes 184 + backup 52 OK")
 print("PHASE 191 ALL OK")

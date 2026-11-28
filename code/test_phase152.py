@@ -215,7 +215,7 @@ assert "distance_km" in MAIN and "me_shares" in MAIN
 print("Museum removal + neighbours OK")
 
 # 6. Version.
-assert HTML.count("?v=205") == 10, HTML.count("?v=205")
+assert HTML.count("?v=206") == 10, HTML.count("?v=206")
 assert "?v=15" + "1" not in HTML
-assert 'menu_url.rstrip("/") + "/?v=205"' in BOT
+assert 'menu_url.rstrip("/") + "/?v=206"' in BOT
 print("PHASE 152 OK")

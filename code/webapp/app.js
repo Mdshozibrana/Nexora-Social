@@ -8242,7 +8242,15 @@ async function loadNotifications(reset) {
         dot.className = "notif-dot";
         row.appendChild(dot);
       }
-      if (n.actor_id) {
+      // Phase 206: a notification whose target is a post opens
+      // the post, not the actor's profile. like / comment / reply /
+      // repost / mention / post share / post_live all carry post_id;
+      // follow / follow_request / message / blood / skill rows have
+      // no post_id and keep opening the actor's profile.
+      if (n.post_id) {
+        row.style.cursor = "pointer";
+        row.onclick = () => openTopPost(n.post_id);
+      } else if (n.actor_id) {
         row.style.cursor = "pointer";
         row.onclick = () => openProfile(n.actor_id);
       }
