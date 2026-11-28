@@ -560,10 +560,10 @@ settings.GEMINI_API_KEY = ""
 print("L14 banned-word prompt + history roles OK")
 
 # --- version, routes, backup --------------------------------------------------
-assert HTML.count("?v=208") == 10, HTML.count("?v=208")
+assert HTML.count("?v=209") == 10, HTML.count("?v=209")
 assert "?v=18" + "2" not in HTML
 BOT = open(os.path.join(ROOT, "code/app/bot.py")).read()
-assert "/?v=208" in BOT and "/?v=18" + "2" not in BOT
+assert "/?v=209" in BOT and "/?v=18" + "2" not in BOT
 paths = {rt.path for rt in app.routes}
 assert len(paths) == 191, len(paths)
 assert "/assistant/reply" not in paths
@@ -574,7 +574,7 @@ assert r.status_code == 200, r.text
 assert len(r.json()["tables"]) == 55, len(r.json()["tables"])
 assert len(_BACKUP_TABLES) == 55, len(_BACKUP_TABLES)
 r = c.get("/admin/health", headers=ADMIN)
-assert r.json()["version"] == 208, r.json()
+assert r.json()["version"] == 209, r.json()
 print("version + routes 181 + backup 52 OK")
 
 print("PHASE 183 OK")

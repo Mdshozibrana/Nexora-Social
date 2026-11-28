@@ -1,7 +1,7 @@
 """Phase-198 tests: clear recognizable game icons (owner, Nov 27, 15:37).
 
 Every game's icon must say what the game is at a glance, without its
-label. The 13 registerGame defs moved from a single emoji to a small
+label. The 14 registerGame defs moved from a single emoji to a small
 inline-SVG mini-scene tile (viewBox 0 0 64 64): snake, tetromino
 stack, bricks + ball + paddle, two cards, paddles + ball, pixel
 alien, mine grid + bomb, bird + pipes, numbered tiles, pac with
@@ -12,8 +12,8 @@ list order change. No backend/schema change.
 
 Checks: per-game icon SVG + scene markers + XML well-formedness,
 no old emoji icon anywhere in games.js, titles plain, list renders
-all 13 cards with the SVG icon, openGame renders icon + title in
-the head, version ?v=208 everywhere, CSS sizing rules present.
+all 14 cards with the SVG icon, openGame renders icon + title in
+the head, version ?v=209 everywhere, CSS sizing rules present.
 """
 import os
 import re
@@ -41,6 +41,7 @@ EXPECTED = {
     "archery": ("Archery — Aim Less, Shoot More", ["E5484D", "8B5E34"]),
     "forest-drive": ("Forest Drive", ["E5484D", "6B7280", "BFE3F2"]),
     "runner-rush": ("Runner Rush", ["F97316", "1F2937"]),
+    "plane-landing": ("Island Plane Landing", ["0D9488", "F59E0B", "0C2115"]),
 }
 
 
@@ -50,7 +51,7 @@ def _extract_defs():
         r'id: "([\w-]+)", icon: \'(<svg.*?</svg>)\', name: "([^"]+)",'
         r'\s*title: "([^"]+)",', re.DOTALL)
     defs = pat.findall(js)
-    assert len(defs) == 13, "13 game defs, got %d" % len(defs)
+    assert len(defs) == 14, "14 game defs, got %d" % len(defs)
     return js, defs
 
 
@@ -78,19 +79,19 @@ def test_icons_static():
     assert '_gi.innerHTML = def.icon;' in js, "head must render the SVG icon"
     assert '$("game-title").textContent = def.title;' not in js, \
         "head must not render emoji text title"
-    print("icons static OK (13 SVG tiles, no old emoji)")
+    print("icons static OK (14 SVG tiles, no old emoji)")
 
 
 def test_version():
     html = open(os.path.join(ROOT, "webapp/index.html"),
                 encoding="utf-8").read()
-    assert html.count("?v=208") == 10, html.count("?v=208")
-    assert "app.js?v=208" in html and "games.js?v=208" in html
-    assert "?v=19" + "7" not in html, "stale ?v=208 in shell"
+    assert html.count("?v=209") == 10, html.count("?v=209")
+    assert "app.js?v=209" in html and "games.js?v=209" in html
+    assert "?v=19" + "7" not in html, "stale ?v=209 in shell"
     bot = open(os.path.join(ROOT, "app/bot.py"), encoding="utf-8").read()
-    assert '/?v=208' in bot, "menu button URL not ?v=208"
-    assert "?v=19" + "7" not in bot, "stale ?v=208 in bot.py"
-    print("version ?v=208 OK")
+    assert '/?v=209' in bot, "menu button URL not ?v=209"
+    assert "?v=19" + "7" not in bot, "stale ?v=209 in bot.py"
+    print("version ?v=209 OK")
 
 
 def test_css():
@@ -134,9 +135,9 @@ function showView() {}
 '''
 
 HARNESS_MAIN = r'''
-assert(GameRegistry.length === 13, "13 games registered, got " + GameRegistry.length);
+assert(GameRegistry.length === 14, "14 games registered, got " + GameRegistry.length);
 const grid = $("game-grid");
-assert(grid.children.length === 13, "13 cards rendered, got " + grid.children.length);
+assert(grid.children.length === 14, "14 cards rendered, got " + grid.children.length);
 const EXPECT = {
   "snake": ["2FA84F", "E5484D"], "tetris": ["7C5CFF", "FFC53D"],
   "breakout": ["E5484D", "FFC53D"], "memory": ["3E8FD0", "FFC53D"],
@@ -145,6 +146,7 @@ const EXPECT = {
   "g2048": ["776E65", "F59563"], "pacman": ["232946", "FFD93D"],
   "archery": ["E5484D", "8B5E34"], "forest-drive": ["E5484D", "6B7280"],
   "runner-rush": ["F97316", "1F2937"],
+  "plane-landing": ["0D9488", "F59E0B", "0C2115"],
 };
 GameRegistry.forEach((g, i) => {
   const card = grid.children[i];
@@ -187,7 +189,7 @@ def test_node_harness():
                        timeout=30)
     assert r.returncode == 0, "harness failed:\n" + r.stdout + r.stderr
     assert "HARNESS OK" in r.stdout, r.stdout
-    print("games node harness OK (13 cards render SVG icons, head icon+title)")
+    print("games node harness OK (14 cards render SVG icons, head icon+title)")
 
 
 def main():
@@ -195,7 +197,7 @@ def main():
     test_version()
     test_css()
     test_node_harness()
-    print("phase198 OK: 13 clear SVG icons, grid + head render, ?v=208")
+    print("phase198 OK: 14 clear SVG icons, grid + head render, ?v=209")
 
 
 if __name__ == "__main__":

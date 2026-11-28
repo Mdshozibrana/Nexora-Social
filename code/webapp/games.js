@@ -3195,6 +3195,604 @@ registerGame({
   }
 });
 
+
+// --------------------------------------------- Phase 209: Island Plane Landing --
+// Owner (Nov 27, 23:14 Dhaka): "এই গেমটি এড করবা" — the "Crazy Plane
+// Landing" video's jet game, rebuilt in our stack (vanilla JS +
+// vendored Three.js r149, no React, no CDN): a teal-and-gold jet on
+// a tropical island runway — taxi, take off, thread three golden
+// rings over the lagoon and the palms, then land gently back on the
+// runway. Yoke bottom-left (drag to steer, ← → keys), throttle
+// slider bottom-right (drag, ↑ ↓ keys). The video's look (white jet
+// with a red tail, hands on the controls, "Crazy Plane Landing"
+// title) is NOT copied: our jet wears a teal + gold livery, the
+// island is deep emerald green to match the Games section, the HUD
+// is dark-green glass, and the loop adds rings + a scored landing
+// (centreline + gentle touchdown) with a crash on a hard or
+// off-runway touchdown. Best score is stored per account
+// (nxGet/nxSet), like Forest Drive's best — games award no points.
+// The loop pauses on visibilitychange; cleanup cancels rAF, removes
+// listeners and disposes the renderer.
+registerGame({
+  id: "plane-landing", icon: '<svg viewBox="0 0 64 64"><rect x="2" y="2" width="60" height="60" rx="14" fill="#BFE3F2"/><circle cx="50" cy="14" r="6" fill="#FFD93D"/><path d="M2 44 Q32 38 62 44 L62 62 L2 62z" fill="#1E7A46"/><rect x="28" y="40" width="8" height="22" fill="#0C2115"/><line x1="32" y1="44" x2="32" y2="60" stroke="#F9FAFB" stroke-width="1.6" stroke-dasharray="3 3"/><path d="M32 8 l3 6 -3 22 -3-22z" fill="#0D9488"/><path d="M29 20 h6 l1 4 h-8z" fill="#F59E0B"/><path d="M20 26 l12-4 12 4 -12 3z" fill="#0D9488"/><circle cx="32" cy="14" r="2.4" fill="#F8FAFC"/></svg>', name: "Island Plane Landing",
+  title: "Island Plane Landing",
+  desc: "Taxi the teal jet down the island runway, lift off, thread the golden rings, then land her home — smooth and on the centreline.",
+  help: "Throttle: drag the slider or hold ↑ / ↓. Steer: drag the yoke or use ← →. Take off, fly the 3 rings, then land gently on the runway.",
+  start(stage, setScore) {
+    if (typeof THREE === "undefined" || !window.WebGLRenderingContext) {
+      const p = document.createElement("p");
+      p.className = "hint";
+      p.textContent = "3D is not available on this device — try another phone or browser.";
+      stage.appendChild(p);
+      return () => {};
+    }
+    // --- deterministic world: the same island on every load ---
+    let seed = 209209;
+    const rng = () => {
+      seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+      let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+    const WORLD = 260, ISLAND_R = 122;
+    const RW = { z0: -85, z1: 85, half: 4.5 };
+    const RINGS = [
+      { x: 0, y: 20, z: -112 },
+      { x: -55, y: 26, z: -45 },
+      { x: 48, y: 22, z: 35 },
+    ];
+    const MOUNTAIN = { x: -75, z: -75, r: 14, h: 20 };
+    const LAGOON = { x: 55, z: -55, r: 16 };
+    // --- ground: emerald grass + sand ring + the runway ---
+    const groundTex = (() => {
+      const c = document.createElement("canvas");
+      c.width = 1024; c.height = 1024;
+      const g = c.getContext("2d");
+      g.fillStyle = "#1E7A46"; g.fillRect(0, 0, 1024, 1024);
+      const leaf = ["#17663A", "#2A9155", "#14522D", "#35995E"];
+      for (let i = 0; i < 1600; i++) {
+        g.fillStyle = leaf[(rng() * leaf.length) | 0];
+        g.beginPath();
+        g.arc(rng() * 1024, rng() * 1024, 1 + rng() * 3, 0, 6.2832);
+        g.fill();
+      }
+      const S = 1024 / WORLD;
+      g.strokeStyle = "#E8D9A8"; g.lineWidth = 9 * S;
+      g.beginPath();
+      g.arc(512, 512, ISLAND_R * S, 0, 6.2832);
+      g.stroke();
+      const rx = 512, rz0 = (RW.z0 + 130) * S, rz1 = (RW.z1 + 130) * S;
+      g.fillStyle = "#3A3F45";
+      g.fillRect(rx - RW.half * S - 3, rz0, RW.half * 2 * S + 6, rz1 - rz0);
+      g.fillStyle = "#F5F5F5";
+      for (let z = RW.z0 + 6; z < RW.z1 - 4; z += 12) {
+        g.fillRect(rx - 1, (z + 130) * S, 2, 7 * S);
+      }
+      g.fillRect(rx - RW.half * S, rz0 + 2, RW.half * 2 * S, 3);
+      g.fillRect(rx - RW.half * S, rz1 - 5, RW.half * 2 * S, 3);
+      const tex = new THREE.CanvasTexture(c);
+      tex.encoding = THREE.sRGBEncoding;
+      return tex;
+    })();
+    // --- palms (seeded, clear of runway / lagoon / mountain / start) ---
+    const palms = [];
+    let guard = 0;
+    while (palms.length < 42 && guard++ < 1500) {
+      const x = (rng() * 2 - 1) * 112, z = (rng() * 2 - 1) * 112;
+      if (Math.hypot(x, z) > 114) continue;
+      if (Math.abs(x) < 9 && z > RW.z0 - 8 && z < RW.z1 + 8) continue;
+      if (Math.hypot(x - LAGOON.x, z - LAGOON.z) < LAGOON.r + 5) continue;
+      if (Math.hypot(x - MOUNTAIN.x, z - MOUNTAIN.z) < MOUNTAIN.r + 5) continue;
+      if (Math.hypot(x, z - 70) < 8) continue;
+      let near = false;
+      for (const t of palms) if (Math.hypot(t.x - x, t.z - z) < 6) { near = true; break; }
+      if (near) continue;
+      palms.push({ x, z, s: 0.8 + rng() * 0.7, lean: (rng() - 0.5) * 0.3 });
+    }
+
+    // --- DOM: canvas + HUD (panel, phase, speed, minimap, yoke, throttle, overlay) ---
+    const wrap = document.createElement("div");
+    wrap.className = "pl-wrap";
+    stage.appendChild(wrap);
+    const cv = document.createElement("canvas");
+    cv.className = "pl-canvas";
+    wrap.appendChild(cv);
+    const panel = document.createElement("div");
+    panel.className = "pl-panel";
+    const pTitle = document.createElement("b");
+    pTitle.textContent = "Controls";
+    const pClose = document.createElement("button");
+    pClose.className = "pl-x";
+    pClose.textContent = "×";
+    pClose.onclick = () => { panel.hidden = true; };
+    panel.append(pTitle, pClose);
+    [["↑ / ↓", "Throttle"], ["← →", "Steer (yoke)"],
+     ["Drag yoke", "steer on touch"], ["Drag slider", "throttle on touch"]].forEach((r) => {
+      const row = document.createElement("div");
+      row.className = "pl-row";
+      const k = document.createElement("span");
+      k.className = "pl-key";
+      k.textContent = r[0];
+      const v = document.createElement("span");
+      v.textContent = r[1];
+      row.append(k, v);
+      panel.appendChild(row);
+    });
+    wrap.appendChild(panel);
+    const phaseEl = document.createElement("div");
+    phaseEl.className = "pl-phase";
+    const phaseMain = document.createElement("b");
+    const phaseSub = document.createElement("span");
+    phaseEl.append(phaseMain, phaseSub);
+    wrap.appendChild(phaseEl);
+    const speedEl = document.createElement("div");
+    speedEl.className = "pl-speed";
+    const speedNum = document.createElement("b");
+    speedNum.textContent = "0";
+    const speedUnit = document.createElement("span");
+    speedUnit.textContent = "kt";
+    const altEl = document.createElement("div");
+    altEl.className = "pl-alt";
+    altEl.textContent = "ALT 0 m · RINGS 0/3";
+    speedEl.append(speedNum, speedUnit, altEl);
+    wrap.appendChild(speedEl);
+    const mapCv = document.createElement("canvas");
+    mapCv.className = "pl-map";
+    mapCv.width = 104; mapCv.height = 104;
+    wrap.appendChild(mapCv);
+    const mapCtx = mapCv.getContext("2d");
+    const touch = document.createElement("div");
+    touch.className = "pl-touch";
+    const yoke = document.createElement("div");
+    yoke.className = "pl-yoke";
+    yoke.innerHTML = '<svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="44" fill="none" stroke="#E2E8F0" stroke-width="7"/><line x1="50" y1="50" x2="50" y2="8" stroke="#CBD5E1" stroke-width="6" stroke-linecap="round"/><line x1="50" y1="50" x2="14" y2="71" stroke="#CBD5E1" stroke-width="6" stroke-linecap="round"/><line x1="50" y1="50" x2="86" y2="71" stroke="#CBD5E1" stroke-width="6" stroke-linecap="round"/><circle cx="50" cy="50" r="12" fill="#94A3B8"/><circle cx="50" cy="50" r="6" fill="#0D9488"/></svg>';
+    const thr = document.createElement("div");
+    thr.className = "pl-throttle";
+    const thrTrack = document.createElement("div");
+    thrTrack.className = "pl-thr-track";
+    const thrHandle = document.createElement("div");
+    thrHandle.className = "pl-thr-handle";
+    thrTrack.appendChild(thrHandle);
+    const thrLabel = document.createElement("div");
+    thrLabel.className = "pl-thr-label";
+    thrLabel.textContent = "THROTTLE";
+    thr.append(thrTrack, thrLabel);
+    touch.append(yoke, thr);
+    wrap.appendChild(touch);
+    const over = document.createElement("div");
+    over.className = "pl-over";
+    over.hidden = true;
+    const overTitle = document.createElement("b");
+    const overDetail = document.createElement("div");
+    overDetail.className = "pl-over-detail";
+    const overScore = document.createElement("div");
+    overScore.className = "pl-over-score";
+    const retryBtn = document.createElement("button");
+    retryBtn.className = "pl-retry";
+    retryBtn.textContent = "Retry";
+    over.append(overTitle, overDetail, overScore, retryBtn);
+    wrap.appendChild(over);
+    // --- input: yoke drag (steer), throttle drag, keyboard ---
+    const input = { left: false, right: false, thrUp: false, thrDown: false, yoke: 0 };
+    let throttle = 0;
+    let yokeStartX = null, yokeStart = 0;
+    yoke.addEventListener("pointerdown", (e) => {
+      if (e) e.preventDefault();
+      yokeStartX = e.clientX; yokeStart = input.yoke;
+      try { yoke.setPointerCapture(e.pointerId); } catch (err) {}
+    });
+    yoke.addEventListener("pointermove", (e) => {
+      if (yokeStartX === null) return;
+      input.yoke = Math.max(-1, Math.min(1, yokeStart + (e.clientX - yokeStartX) / 70));
+    });
+    const yokeEnd = () => { yokeStartX = null; input.yoke = 0; };
+    yoke.addEventListener("pointerup", yokeEnd);
+    yoke.addEventListener("pointercancel", yokeEnd);
+    let thrDrag = false;
+    const thrSet = (e) => {
+      const r = thrTrack.getBoundingClientRect ? thrTrack.getBoundingClientRect() : { top: 0, height: 148 };
+      const h = r.height || 148;
+      throttle = Math.max(0, Math.min(1, 1 - (e.clientY - r.top) / h));
+    };
+    thrTrack.addEventListener("pointerdown", (e) => {
+      if (e) e.preventDefault();
+      thrDrag = true; thrSet(e);
+      try { thrTrack.setPointerCapture(e.pointerId); } catch (err) {}
+    });
+    thrTrack.addEventListener("pointermove", (e) => { if (thrDrag) thrSet(e); });
+    const thrEnd = () => { thrDrag = false; };
+    thrTrack.addEventListener("pointerup", thrEnd);
+    thrTrack.addEventListener("pointercancel", thrEnd);
+    // --- Three.js scene ---
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x8ED6F2);
+    scene.fog = new THREE.Fog(0x8ED6F2, 90, 260);
+    const camera = new THREE.PerspectiveCamera(62, 3 / 2, 0.1, 500);
+    const renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: true, powerPreference: "low-power" });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.outputEncoding = THREE.sRGBEncoding;
+    scene.add(new THREE.HemisphereLight(0xBFE3F2, 0x1E7A46, 0.95));
+    const sun = new THREE.DirectionalLight(0xFFF2CC, 0.9);
+    sun.position.set(60, 80, 40);
+    scene.add(sun);
+    const ground = new THREE.Mesh(
+      new THREE.CircleGeometry(ISLAND_R, 48),
+      new THREE.MeshLambertMaterial({ map: groundTex }));
+    ground.rotation.x = -Math.PI / 2;
+    scene.add(ground);
+    const sea = new THREE.Mesh(
+      new THREE.CircleGeometry(400, 48),
+      new THREE.MeshLambertMaterial({ color: 0x35B5C9, emissive: 0x0E5A66 }));
+    sea.rotation.x = -Math.PI / 2;
+    sea.position.y = -0.15;
+    scene.add(sea);
+    const lagoon = new THREE.Mesh(
+      new THREE.CircleGeometry(LAGOON.r, 28),
+      new THREE.MeshLambertMaterial({ color: 0x3EC6C6, emissive: 0x0E5A66 }));
+    lagoon.rotation.x = -Math.PI / 2;
+    lagoon.position.set(LAGOON.x, 0.05, LAGOON.z);
+    scene.add(lagoon);
+    const mountain = new THREE.Mesh(
+      new THREE.ConeGeometry(MOUNTAIN.r, MOUNTAIN.h, 9),
+      new THREE.MeshLambertMaterial({ color: 0x5B7A4A, flatShading: true }));
+    mountain.position.set(MOUNTAIN.x, MOUNTAIN.h / 2, MOUNTAIN.z);
+    scene.add(mountain);
+    const trunkGeo = new THREE.CylinderGeometry(0.22, 0.34, 3.6, 6);
+    const trunkMat = new THREE.MeshLambertMaterial({ color: 0x6B4226 });
+    const frondGeo = new THREE.ConeGeometry(0.55, 3.2, 4);
+    const frondMat = new THREE.MeshLambertMaterial({ color: 0x2F8F4E, flatShading: true });
+    for (const t of palms) {
+      const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+      trunk.position.set(t.x, 1.8 * t.s, t.z);
+      trunk.scale.setScalar(t.s);
+      trunk.rotation.z = t.lean;
+      scene.add(trunk);
+      for (let i = 0; i < 4; i++) {
+        const frond = new THREE.Mesh(frondGeo, frondMat);
+        const a = i * Math.PI / 2 + 0.4;
+        frond.position.set(t.x + Math.cos(a) * 1.1 * t.s, 4.0 * t.s, t.z + Math.sin(a) * 1.1 * t.s);
+        frond.scale.setScalar(t.s);
+        frond.rotation.z = Math.cos(a) * 1.1;
+        frond.rotation.x = -Math.sin(a) * 1.1;
+        scene.add(frond);
+      }
+    }
+    const cloudMat = new THREE.MeshLambertMaterial({ color: 0xFFFFFF, emissive: 0x888888 });
+    for (let i = 0; i < 8; i++) {
+      const cx = (rng() * 2 - 1) * 120, cz = (rng() * 2 - 1) * 120, cy = 42 + rng() * 16;
+      const c1 = new THREE.Mesh(new THREE.SphereGeometry(4 + rng() * 3, 8, 6), cloudMat);
+      c1.position.set(cx, cy, cz); c1.scale.y = 0.45;
+      const c2 = new THREE.Mesh(new THREE.SphereGeometry(3 + rng() * 2, 8, 6), cloudMat);
+      c2.position.set(cx + 5, cy + 0.5, cz + 1); c2.scale.y = 0.45;
+      scene.add(c1, c2);
+    }
+    // --- the teal-and-gold jet (primitives, nose faces +Z) ---
+    const jet = new THREE.Group();
+    const tealMat = new THREE.MeshLambertMaterial({ color: 0x0D9488 });
+    const goldMat = new THREE.MeshLambertMaterial({ color: 0xF59E0B });
+    const whiteMat = new THREE.MeshLambertMaterial({ color: 0xF8FAFC });
+    const darkMat = new THREE.MeshLambertMaterial({ color: 0x1F2937 });
+    const engineMat = new THREE.MeshLambertMaterial({ color: 0x334155 });
+    const add = (geo, mat, x, y, z) => {
+      const m = new THREE.Mesh(geo, mat);
+      m.position.set(x, y, z);
+      jet.add(m);
+      return m;
+    };
+    const fus = add(new THREE.CylinderGeometry(0.55, 0.75, 5.2, 10), tealMat, 0, 1.0, 0);
+    fus.rotation.x = Math.PI / 2;
+    const nose = add(new THREE.ConeGeometry(0.55, 1.6, 10), tealMat, 0, 1.0, 3.4);
+    nose.rotation.x = Math.PI / 2;
+    const tailCone = add(new THREE.ConeGeometry(0.75, 1.2, 10), tealMat, 0, 1.0, -3.0);
+    tailCone.rotation.x = -Math.PI / 2;
+    add(new THREE.BoxGeometry(0.9, 0.5, 1.2), darkMat, 0, 1.45, 2.2);
+    add(new THREE.BoxGeometry(7.6, 0.18, 1.5), whiteMat, 0, 0.85, 0.4);
+    add(new THREE.BoxGeometry(3.0, 0.14, 0.9), whiteMat, 0, 1.0, -2.6);
+    add(new THREE.BoxGeometry(0.16, 1.6, 1.2), goldMat, 0, 1.9, -2.7);
+    add(new THREE.BoxGeometry(0.3, 0.2, 1.5), goldMat, -3.7, 0.85, 0.4);
+    add(new THREE.BoxGeometry(0.3, 0.2, 1.5), goldMat, 3.7, 0.85, 0.4);
+    [[-1.6, 0.6], [1.6, 0.6]].forEach((e) => {
+      const eng = add(new THREE.CylinderGeometry(0.42, 0.42, 1.6, 10), engineMat, e[0], 0.55, e[1]);
+      eng.rotation.x = Math.PI / 2;
+    });
+    const wheelGeo = new THREE.CylinderGeometry(0.28, 0.28, 0.2, 10);
+    [[0, 2.2], [-0.8, -0.6], [0.8, -0.6]].forEach((w) => {
+      const wh = add(wheelGeo, darkMat, w[0], 0.28, w[1]);
+      wh.rotation.z = Math.PI / 2;
+    });
+    scene.add(jet);
+    // --- the three golden rings ---
+    const ringMeshes = RINGS.map((r) => {
+      const mat = new THREE.MeshLambertMaterial({ color: 0xF59E0B, emissive: 0x7A4A00 });
+      const mesh = new THREE.Mesh(new THREE.TorusGeometry(6, 0.5, 8, 24), mat);
+      mesh.position.set(r.x, r.y, r.z);
+      scene.add(mesh);
+      return mesh;
+    });
+
+    // --- arcade flight model + chase camera + HUD ---
+    let best = +(nxGet("nx_planelanding_best") || 0);
+    setScore("✈️ Score: 0 · Best: " + best);
+    const pos = { x: 0, z: 70 };
+    let y = 0, heading = Math.PI, speed = 0, vy = 0;
+    let airborne = false, phase = "TAXI", score = 0, ringsGot = 0, steerVis = 0;
+    const camTarget = new THREE.Vector3(0, 4.5, 81);
+    camera.position.set(0, 4.5, 81);
+    camera.lookAt(0, 1, 62);
+    const addScore = (n) => {
+      score += n;
+      if (score > best) { best = score; nxSet("nx_planelanding_best", best); }
+      setScore("✈️ Score: " + score + " · Best: " + best);
+    };
+    const showOver = (title, detail) => {
+      over.hidden = false;
+      overTitle.textContent = title;
+      overDetail.textContent = detail;
+      overScore.textContent = "Score: " + score + " · Best: " + best;
+    };
+    const crash = (reason) => {
+      if (phase === "CRASH" || phase === "DONE") return;
+      phase = "CRASH";
+      showOver("Crashed!", reason);
+    };
+    const finish = () => {
+      if (phase === "DONE") return;
+      phase = "DONE";
+      showOver("Landed!", "Smooth touchdown — welcome to the island!");
+    };
+    const reset = () => {
+      pos.x = 0; pos.z = 70; y = 0; heading = Math.PI; speed = 0; vy = 0;
+      throttle = 0; input.yoke = 0;
+      score = 0; ringsGot = 0; airborne = false; phase = "TAXI";
+      for (let i = 0; i < RINGS.length; i++) {
+        RINGS[i].done = false;
+        ringMeshes[i].material.color.set(0xF59E0B);
+      }
+      over.hidden = true;
+      setScore("✈️ Score: 0 · Best: " + best);
+    };
+    retryBtn.onclick = () => reset();
+    const PHASE_TEXT = {
+      TAXI: ["Taxi", "Throttle up — roll down the runway"],
+      TAKEOFF: ["Takeoff!", "Keep her straight"],
+      FLY: ["Fly the rings", ""],
+      LAND: ["Land now", "Gentle — on the centreline"],
+      ROLLOUT: ["Rolling out…", ""],
+      DONE: ["Landed!", ""],
+      CRASH: ["Crashed!", ""],
+    };
+    const ARROWS = ["↑", "↗", "→", "↘", "↓", "↙", "←", "↖"];
+    const nextTarget = () => {
+      for (let i = 0; i < RINGS.length; i++) {
+        if (!RINGS[i].done) return { x: RINGS[i].x, z: RINGS[i].z, label: "Ring " + (i + 1) };
+      }
+      return { x: 0, z: 0, label: "Runway" };
+    };
+    let lastKt = -1, lastAlt = "", lastPhaseMain = "", lastPhaseSub = "";
+    const syncHud = () => {
+      const kt = Math.round(speed * 1.94);
+      if (kt !== lastKt) { lastKt = kt; speedNum.textContent = String(kt); }
+      const altTxt = "ALT " + Math.round(y) + " m · RINGS " + ringsGot + "/3";
+      if (altTxt !== lastAlt) { lastAlt = altTxt; altEl.textContent = altTxt; }
+      const ph = PHASE_TEXT[phase] || PHASE_TEXT.TAXI;
+      const tgt = nextTarget();
+      const bearing = Math.atan2(tgt.x - pos.x, tgt.z - pos.z);
+      let rel = heading - bearing;
+      while (rel > Math.PI) rel -= 2 * Math.PI;
+      while (rel < -Math.PI) rel += 2 * Math.PI;
+      const ai = ((Math.round(rel / (Math.PI / 4)) % 8) + 8) % 8;
+      const sub = (phase === "FLY" || phase === "LAND")
+        ? ARROWS[ai] + " " + tgt.label + " · " + Math.round(Math.hypot(tgt.x - pos.x, tgt.z - pos.z)) + " m"
+        : ph[1];
+      const main = ph[0] + (phase === "FLY" ? " " + ringsGot + "/3" : "");
+      if (main !== lastPhaseMain) { lastPhaseMain = main; phaseMain.textContent = main; }
+      if (sub !== lastPhaseSub) { lastPhaseSub = sub; phaseSub.textContent = sub; }
+      yoke.style.transform = "rotate(" + Math.round(steerVis * 65) + "deg)";
+      const th = thrTrack.clientHeight || 148;
+      thrHandle.style.top = Math.round((1 - throttle) * (th - 34)) + "px";
+    };
+    const drawMinimap = () => {
+      const S = 104 / WORLD;
+      mapCtx.clearRect(0, 0, 104, 104);
+      mapCtx.fillStyle = "rgba(6, 26, 17, 0.78)";
+      mapCtx.fillRect(0, 0, 104, 104);
+      mapCtx.fillStyle = "#1E7A46";
+      mapCtx.beginPath();
+      mapCtx.arc(52, 52, ISLAND_R * S, 0, 6.2832);
+      mapCtx.fill();
+      mapCtx.fillStyle = "#3EC6C6";
+      mapCtx.beginPath();
+      mapCtx.arc((LAGOON.x + 130) * S, (LAGOON.z + 130) * S, LAGOON.r * S, 0, 6.2832);
+      mapCtx.fill();
+      mapCtx.fillStyle = "#3A3F45";
+      mapCtx.fillRect((0 + 130) * S - 2, (RW.z0 + 130) * S, 4, (RW.z1 - RW.z0) * S);
+      mapCtx.fillStyle = "#2F8F4E";
+      for (const t of palms) mapCtx.fillRect((t.x + 130) * S - 1, (t.z + 130) * S - 1, 2, 2);
+      for (let i = 0; i < RINGS.length; i++) {
+        const r = RINGS[i];
+        mapCtx.fillStyle = r.done ? "#22C55E" : "#F59E0B";
+        mapCtx.beginPath();
+        mapCtx.arc((r.x + 130) * S, (r.z + 130) * S, 3.5, 0, 6.2832);
+        mapCtx.fill();
+      }
+      const jx = (pos.x + 130) * S, jz = (pos.z + 130) * S;
+      mapCtx.strokeStyle = "#FFFFFF";
+      mapCtx.lineWidth = 1.5;
+      mapCtx.beginPath();
+      mapCtx.moveTo(jx, jz);
+      mapCtx.lineTo(jx + Math.sin(heading) * 7, jz + Math.cos(heading) * 7);
+      mapCtx.stroke();
+      mapCtx.fillStyle = "#F8FAFC";
+      mapCtx.beginPath();
+      mapCtx.arc(jx, jz, 3, 0, 6.2832);
+      mapCtx.fill();
+    };
+    const step = (dt) => {
+      if (phase === "CRASH" || phase === "DONE") {
+        renderer.render(scene, camera);
+        return;
+      }
+      const steerKey = (input.right ? 1 : 0) - (input.left ? 1 : 0);
+      const steer = Math.max(-1, Math.min(1, steerKey + input.yoke));
+      steerVis = steer;
+      if (input.thrUp) throttle = Math.min(1, throttle + 0.7 * dt);
+      if (input.thrDown) throttle = Math.max(0, throttle - 0.7 * dt);
+      const turn = airborne
+        ? 0.55 * (0.45 + Math.min(1, speed / 42))
+        : 0.5 * (0.35 + Math.min(1, speed / 30));
+      heading -= steer * turn * dt;
+      const fx = Math.sin(heading), fz = Math.cos(heading);
+      if (!airborne) {
+        if (phase === "ROLLOUT") {
+          speed = Math.max(0, speed - 14 * dt);
+          if (speed < 0.5) finish();
+        } else {
+          speed += throttle * 18 * dt;
+          speed -= speed * 0.22 * dt;
+          if (speed > 30) speed = 30;
+          if (speed < 0) speed = 0;
+          if (speed >= 26 && throttle >= 0.55) {
+            airborne = true; vy = 2.5; phase = "FLY";
+          }
+        }
+      } else {
+        const target = 12 + throttle * 30;
+        speed += Math.max(-10 * dt, Math.min(10 * dt, target - speed));
+        const vyT = Math.max(-8, Math.min(8, (throttle - 0.52) * 16));
+        vy += Math.max(-6 * dt, Math.min(6 * dt, vyT - vy));
+        if (y > 60 && vy > 0) vy = 0;
+        y += vy * dt;
+      }
+      pos.x += fx * speed * dt;
+      pos.z += fz * speed * dt;
+      if (phase === "TAXI" && speed > 5) phase = "TAKEOFF";
+      if (airborne) {
+        for (let i = 0; i < RINGS.length; i++) {
+          const r = RINGS[i];
+          if (!r.done) {
+            const d = Math.hypot(pos.x - r.x, y - r.y, pos.z - r.z);
+            if (d < 7) {
+              r.done = true;
+              ringMeshes[i].material.color.set(0x22C55E);
+              addScore(100);
+              ringsGot++;
+              if (ringsGot === RINGS.length) phase = "LAND";
+            }
+          }
+        }
+        if (y < 7) {
+          for (const t of palms) {
+            if (Math.hypot(pos.x - t.x, pos.z - t.z) < 2.4) {
+              crash("You hit a palm tree!");
+              break;
+            }
+          }
+        }
+        if (phase !== "CRASH" && y < 20 &&
+            Math.hypot(pos.x - MOUNTAIN.x, pos.z - MOUNTAIN.z) < MOUNTAIN.r) {
+          crash("You hit the mountain!");
+        }
+        if (phase !== "CRASH" && y <= 0 && vy < 0) {
+          y = 0;
+          const overSea = Math.hypot(pos.x, pos.z) > ISLAND_R + 4;
+          const onRunway = Math.abs(pos.x) <= RW.half && pos.z >= RW.z0 && pos.z <= RW.z1;
+          if (overSea) crash("Ditched in the sea!");
+          else if (!onRunway) crash("Off the runway!");
+          else if (vy < -5) crash("Too hard — the landing gear gave way!");
+          else {
+            const bonus = Math.max(100, Math.round(500 - Math.abs(pos.x) * 45 - Math.abs(vy) * 55));
+            addScore(bonus);
+            airborne = false; vy = 0; phase = "ROLLOUT";
+          }
+        }
+      }
+      jet.position.set(pos.x, y, pos.z);
+      jet.rotation.y = heading;
+      jet.rotation.z = steerVis * 0.45;
+      jet.rotation.x = -vy * 0.02;
+      camTarget.set(pos.x - fx * 11, 4.5 + y * 0.55, pos.z - fz * 11);
+      camera.position.lerp(camTarget, 1 - Math.pow(0.001, dt));
+      camera.lookAt(pos.x + fx * 8, 1 + y * 0.8, pos.z + fz * 8);
+      syncHud();
+      drawMinimap();
+      renderer.render(scene, camera);
+    };
+    const KEYS = { KeyW: "thrUp", ArrowUp: "thrUp", KeyS: "thrDown", ArrowDown: "thrDown",
+                   KeyA: "left", ArrowLeft: "left", KeyD: "right", ArrowRight: "right" };
+    const onKeyDown = (e) => {
+      const k = KEYS[e.code];
+      if (!k) return;
+      e.preventDefault();
+      input[k] = true;
+    };
+    const onKeyUp = (e) => {
+      const k = KEYS[e.code];
+      if (k) input[k] = false;
+    };
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    const sizeRenderer = () => {
+      const w = wrap.clientWidth || 360;
+      // Phase 197: in the immersive game view the wrap fills
+      // the screen, so the canvas fills the wrap instead of a
+      // fixed 3:2 box. The node harness has no getElementById
+      // — guard it — and fall back to 3:2 whenever the wrap
+      // has no laid-out height yet.
+      const _vg209 = (typeof document !== "undefined" && document.getElementById)
+        ? document.getElementById("view-game") : null;
+      const _imm209 = !!(_vg209 && _vg209.classList && _vg209.classList.contains("immersive"));
+      const h = (_imm209 && wrap.clientHeight > 0)
+        ? wrap.clientHeight : Math.round(w * 2 / 3);
+      renderer.setSize(w, h, false);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    };
+    sizeRenderer();
+    const onResize = () => sizeRenderer();
+    window.addEventListener("resize", onResize);
+    let raf = 0, dead = false, paused = false, last = 0;
+    const loop = (t) => {
+      if (dead || paused) return;
+      const dt = Math.min(0.05, Math.max(0, last ? (t - last) / 1000 : 0.016));
+      last = t;
+      step(dt);
+      raf = requestAnimationFrame(loop);
+    };
+    const onVis = () => {
+      if (document.hidden) { paused = true; cancelAnimationFrame(raf); }
+      else if (!dead) { paused = false; last = 0; raf = requestAnimationFrame(loop); }
+    };
+    document.addEventListener("visibilitychange", onVis);
+    raf = requestAnimationFrame(loop);
+    const cleanup = () => {
+      dead = true;
+      cancelAnimationFrame(raf);
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("resize", onResize);
+      renderer.dispose();
+      scene.traverse((o) => {
+        if (o.geometry && o.geometry.dispose) o.geometry.dispose();
+        if (o.material) {
+          const ms = Array.isArray(o.material) ? o.material : [o.material];
+          ms.forEach((m) => { if (m.map && m.map.dispose) m.map.dispose(); if (m.dispose) m.dispose(); });
+        }
+      });
+    };
+    // Test hook (handy while tuning too): read-only state + teleport.
+    cleanup._pl = {
+      state: () => ({ x: pos.x, y, z: pos.z, speed, vy, throttle, heading, airborne, phase, rings: ringsGot, score, best }),
+      setInput: (k, v) => { input[k] = v; },
+      setThrottle: (v) => { throttle = v; },
+      teleport: (x, yy, z, h) => { pos.x = x; y = yy; pos.z = z; if (typeof h === "number") heading = h; speed = 0; vy = 0; if (yy > 0) airborne = true; },
+      palms: () => palms.map((t) => ({ x: t.x, z: t.z, s: t.s })),
+      rings: () => RINGS.map((r) => ({ x: r.x, y: r.y, z: r.z, done: r.done })),
+    };
+    return cleanup;
+  }
+});
+
 // Built last: every game above must be registered first.
 (function buildGrid() {
   const grid = $("game-grid");

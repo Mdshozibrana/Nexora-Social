@@ -104,17 +104,17 @@ assert "color: #" not in block, block
 print("2. CSS: two card designs, theme-var based OK")
 
 # --- 3. Version pins + routes + backup + health. ----------------------
-assert HTML.count("?v=208") == 10, HTML.count("?v=208")
-assert "?v=20" + "7" not in HTML
-assert "app.js?v=208" in HTML and "games.js?v=208" in HTML
-assert "style.css?v=208" in HTML
-assert 'menu_url.rstrip("/") + "/?v=208"' in BOT
-assert ("/?v=20" + "7") not in BOT
+assert HTML.count("?v=209") == 10, HTML.count("?v=209")
+assert "?v=20" + "8" not in HTML
+assert "app.js?v=209" in HTML and "games.js?v=209" in HTML
+assert "style.css?v=209" in HTML
+assert 'menu_url.rstrip("/") + "/?v=209"' in BOT
+assert ("/?v=20" + "8") not in BOT
 paths = {rt.path for rt in app.routes}
 assert len(paths) == 191, len(paths)
 assert len(_BACKUP_TABLES) == 55, len(_BACKUP_TABLES)
-assert _health_version() == 208, _health_version()
-print("3. version ?v=208, routes 191, backup 55, health 207 OK")
+assert _health_version() == 209, _health_version()
+print("3. version ?v=209, routes 191, backup 55, health 207 OK")
 
 # --- 4. app.js still parses + the Node harness proves the cards. -----
 r = subprocess.run(["node", "--check",

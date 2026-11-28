@@ -17,7 +17,7 @@ uses wrap.clientHeight instead of the fixed 3:2 box). (4) Game
 buttons get vivid gradients + white bold labels + a pressed state —
 with wrap/stage-qualified selectors that beat `html[data-theme]
 button`. Mini-games keep their designed canvas sizes, centred in the
-stage — no exception needed, the shell applies to all 13 games.
+stage — no exception needed, the shell applies to all 14 games.
 """
 import hashlib
 import hmac
@@ -480,7 +480,7 @@ def _test_immersive_css():
     assert "#view-game.immersive .fd-wrap, #view-game.immersive .rr-wrap" in css
     assert "#view-game.immersive .fd-canvas, #view-game.immersive .rr-canvas" in css
     assert "#view-game.immersive .fd-touch, #view-game.immersive .rr-touch" in css
-    m = re.search(r"#view-game\.immersive \.fd-touch, #view-game\.immersive \.rr-touch \{([^}]*)\}", css)
+    m = re.search(r"#view-game\.immersive \.fd-touch, #view-game\.immersive \.rr-touch(?:, #view-game\.immersive \.pl-touch)? \{([^}]*)\}", css)
     assert m and "position: absolute" in m.group(1) and "bottom: 12px" in m.group(1), m
     # 4. RR HUD scrolls sideways instead of wrapping.
     assert ".rr-hud { overflow-x: auto;" in css
@@ -538,7 +538,7 @@ def _test_hud_geometry():
     map_rule = re.search(r"\.fd-map \{([^}]*)\}", css).group(1)
     map_bottom = int(re.search(r"bottom: (\d+)px", map_rule).group(1))
     map_size = int(re.search(r"width: (\d+)px", map_rule).group(1))
-    touch_rule = re.search(r"#view-game\.immersive \.fd-touch, #view-game\.immersive \.rr-touch \{([^}]*)\}", css).group(1)
+    touch_rule = re.search(r"#view-game\.immersive \.fd-touch, #view-game\.immersive \.rr-touch(?:, #view-game\.immersive \.pl-touch)? \{([^}]*)\}", css).group(1)
     touch_bottom = int(re.search(r"bottom: (\d+)px", touch_rule).group(1))
     touch_h = int(re.search(r"\.fd-btn \{[^}]*height: (\d+)px", css).group(1))
     speed_rule = re.search(r"\.fd-speed \{([^}]*)\}", css).group(1)
@@ -591,13 +591,13 @@ def _test_showview_source():
 
 def _test_size_renderer_source():
     js = open(os.path.join(ROOT, "webapp/games.js")).read()
-    assert js.count('classList.contains("immersive")') == 2, \
-        "both 3D sizeRenderers must read the immersive class"
-    assert js.count("wrap.clientHeight") == 4, \
-        "both 3D sizeRenderers must size from wrap.clientHeight (2x each: guard + value)"
-    assert js.count("typeof document !== \"undefined\" && document.getElementById") == 2, \
-        "both guards must survive the node harness (no getElementById)"
-    print("sizeRenderer source OK (FD + RR immersive sizing with harness guard)")
+    assert js.count('classList.contains("immersive")') == 3, \
+        "all three 3D sizeRenderers must read the immersive class"
+    assert js.count("wrap.clientHeight") == 6, \
+        "all three 3D sizeRenderers must size from wrap.clientHeight (2x each: guard + value)"
+    assert js.count("typeof document !== \"undefined\" && document.getElementById") == 3, \
+        "all three guards must survive the node harness (no getElementById)"
+    print("sizeRenderer source OK (FD + RR + PL immersive sizing with harness guard)")
 
 
 with TestClient(app) as c:
@@ -620,19 +620,19 @@ with TestClient(app) as c:
     _test_showview_source()
     _test_size_renderer_source()
 
-    # 5. Static: 13 games still registered, no points, no new game.
+    # 5. Static: 14 games registered, no points, one new game (Phase 209).
     games_js = open(os.path.join(ROOT, "webapp/games.js")).read()
-    assert games_js.count("registerGame({") == 13, games_js.count("registerGame({")
+    assert games_js.count("registerGame({") == 14, games_js.count("registerGame({")
     js = open(os.path.join(ROOT, "webapp/app.js")).read()
-    assert "13 games are built in" in js, "mascot tip must say 13 games"
-    print("static OK (13 games registered; no new game; no mechanics change)")
+    assert "14 games are built in" in js, "mascot tip must say 14 games"
+    print("static OK (14 games registered; plane game added; FD/RR mechanics unchanged)")
 
     # 6. Served assets: version + markers + neighbours.
     html = c.get("/webapp/").text
-    assert html.count("?v=208") == 10, html.count("?v=208")
+    assert html.count("?v=209") == 10, html.count("?v=209")
     assert "?v=19" + "6" not in html
-    assert "app.js?v=208" in html and "style.css?v=208" in html
-    assert "games.js?v=208" in html and "three.min.js?v=208" in html
+    assert "app.js?v=209" in html and "style.css?v=209" in html
+    assert "games.js?v=209" in html and "three.min.js?v=209" in html
     served_games = c.get("/webapp/games.js").text
     for marker in ("forest-drive", "runner-rush", "_imm197",
                    "wrap.clientHeight", "fd-map", "fd-speed", "fd-touch",
@@ -642,7 +642,7 @@ with TestClient(app) as c:
     served_js = c.get("/webapp/app.js").text
     assert 'toggle("immersive"' in served_js, "served app.js must toggle immersive"
     assert 'toggle("game-open"' in served_js, "served app.js must toggle game-open"
-    assert "13 games are built in" in served_js
+    assert "14 games are built in" in served_js
     css = c.get("/webapp/style.css").text
     for marker in ("#view-game.immersive", ".fd-wrap .fd-gas",
                    ".fd-wrap .fd-brake", ".rr-wrap .rr-steer",
@@ -652,12 +652,12 @@ with TestClient(app) as c:
     paths = {rt.path for rt in app.routes}
     assert len(paths) == 191, len(paths)
     h = c.get("/admin/health", headers=ADMIN).json()
-    assert h["version"] == 208, h
+    assert h["version"] == 209, h
     r = c.get("/admin/backup", headers=ADMIN)
     assert r.status_code == 200, r.text
     assert len(r.json()["tables"]) == 55, len(r.json()["tables"])
     bot_src = open(os.path.join(ROOT, "app/bot.py")).read()
-    assert 'menu_url.rstrip("/") + "/?v=208"' in bot_src
-    print("neighbours + version + routes OK (184 routes, 52 tables, ?v=208)")
+    assert 'menu_url.rstrip("/") + "/?v=209"' in bot_src
+    print("neighbours + version + routes OK (184 routes, 52 tables, ?v=209)")
 
 print("PHASE 197 OK")

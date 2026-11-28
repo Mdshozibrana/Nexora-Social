@@ -248,17 +248,17 @@ for _src in (MAIN, SERVICES):
 print("3. API returns post_id; record() post_id inventory clean OK")
 
 # --- 4. Version pins + routes + backup + health. -----------------------
-assert HTML.count("?v=208") == 10, HTML.count("?v=208")
+assert HTML.count("?v=209") == 10, HTML.count("?v=209")
 assert "?v=20" + "7" not in HTML
-assert "app.js?v=208" in HTML and "games.js?v=208" in HTML
-assert "style.css?v=208" in HTML
-assert 'menu_url.rstrip("/") + "/?v=208"' in BOT
+assert "app.js?v=209" in HTML and "games.js?v=209" in HTML
+assert "style.css?v=209" in HTML
+assert 'menu_url.rstrip("/") + "/?v=209"' in BOT
 assert ("/?v=20" + "7") not in BOT
 paths = {rt.path for rt in app.routes}
 assert len(paths) == 191, len(paths)
 assert len(_BACKUP_TABLES) == 55, len(_BACKUP_TABLES)
-assert _health_version() == 208, _health_version()
-print("4. version ?v=208, routes 191, backup 55, health 206 OK")
+assert _health_version() == 209, _health_version()
+print("4. version ?v=209, routes 191, backup 55, health 206 OK")
 
 # --- 5. app.js still parses + the Node harness proves the tap routing. -
 r = subprocess.run(["node", "--check",

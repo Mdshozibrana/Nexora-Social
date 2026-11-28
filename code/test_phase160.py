@@ -16,7 +16,7 @@ Members browse, admin detail, Nearby list, story author +
 viewers); the old text-" ✓" ticks are gone (blue badge
 everywhere); 360px geometry for the 6 main sites with the
 owner's long name; Trending reuses postCard; neighbours; backup
-44 tables; routes 163; ?v=208 x10, no old-version literals.
+44 tables; routes 163; ?v=209 x10, no old-version literals.
 """
 import hashlib, hmac, json, os, re, subprocess, time, urllib.parse
 
@@ -283,7 +283,7 @@ for bit in ("loadBloodDonors", "openNearby", "loadSkills", "sendNexa",
             "loadMessages", "loadNotifications", "loadTrending",
             "nbPaintPeople", "paintStory", "openStoryViewers"):
     assert bit in JS or bit in GAMES or bit in CSS, bit
-assert GAMES.count("registerGame({") == 13, "games count changed"
+assert GAMES.count("registerGame({") == 14, "games count changed"
 print("neighbours OK")
 
 # 11. No new endpoints, no schema change: routes still 163,
@@ -298,12 +298,12 @@ assert len(paths) == 191, len(paths)
 print("routes: 163 OK (no new endpoints)")
 
 # 12. Version.
-assert HTML.count("?v=208") == 10, HTML.count("?v=208")
+assert HTML.count("?v=209") == 10, HTML.count("?v=209")
 assert "?v=15" + "9" not in HTML
-assert "app.js?v=208" in HTML and "games.js?v=208" in HTML
-assert 'menu_url.rstrip("/") + "/?v=208"' in BOT
+assert "app.js?v=209" in HTML and "games.js?v=209" in HTML
+assert 'menu_url.rstrip("/") + "/?v=209"' in BOT
 assert "Phase 160" in CSS and "Phase 160" in JS and "Phase 160" in HTML
-print("version OK (?v=208 x10, no old-version literals)")
+print("version OK (?v=209 x10, no old-version literals)")
 
 # 13. Phase 162: the tick HUGS the name (owner: "blu tick naam
 # theke dure keno?"). Phase 160's .vname-text had flex-grow 1,
@@ -358,8 +358,8 @@ assert size == 12, size
 assert tick_left == 139, tick_left
 # Resize re-fit: a wider line re-grows the name to its base size.
 assert fit_size(em_width(LONG), 16, 300) == 16, "re-grow on resize"
-# Version: shell on ?v=208, no ?v=208 literal left anywhere.
-assert HTML.count("?v=208") == 10, HTML.count("?v=208")
+# Version: shell on ?v=209, no ?v=209 literal left anywhere.
+assert HTML.count("?v=209") == 10, HTML.count("?v=209")
 assert "?v=16" + "1" not in HTML
 print("Phase 162 hug OK (tick 5px after the name at all 6 sites)")
 

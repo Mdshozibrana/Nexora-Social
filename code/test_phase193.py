@@ -30,7 +30,7 @@ needing Postgres in CI):
     (id 1 parent id 2) — both restore in the right order.
 (f) endpoint: POST /admin/restore with the chain payload returns
     200 and the rows land (the live path, FK-enforced).
-(g) version pins: shell ?v=208 (x10), old version gone, bot menu
+(g) version pins: shell ?v=209 (x10), old version gone, bot menu
     URL bumped, /admin/health version 193, backup 52 tables.
 No BACKUP_ENCRYPTION_KEY in this env, so plaintext restores are
 accepted (same as test_phase107/192). Plain script (run.sh runs
@@ -246,19 +246,19 @@ print("endpoint restore OK (FK-enforced, 200)")
 with TestClient(app, raise_server_exceptions=False) as c:
     r = c.get("/health")
     assert r.status_code == 200, r.text
-    assert HTML.count("?v=208") == 10, HTML.count("?v=208")
-    assert "app.js?v=208" in HTML and "games.js?v=208" in HTML
+    assert HTML.count("?v=209") == 10, HTML.count("?v=209")
+    assert "app.js?v=209" in HTML and "games.js?v=209" in HTML
     assert ("?v=19" + "2") not in HTML
     BOT = open(os.path.join(BASE, "app", "bot.py")).read()
-    assert 'menu_url.rstrip("/") + "/?v=208"' in BOT
+    assert 'menu_url.rstrip("/") + "/?v=209"' in BOT
     app.dependency_overrides[admin_user] = lambda: object()
     try:
         r = c.get("/admin/health")
         assert r.status_code == 200, r.text
         h = r.json()
-        assert h["version"] == 208, h["version"]
+        assert h["version"] == 209, h["version"]
     finally:
         app.dependency_overrides.clear()
 assert len(main_mod._BACKUP_TABLES) == 55, len(main_mod._BACKUP_TABLES)
-print("version ?v=208 + routes 184 + backup 52 OK")
+print("version ?v=209 + routes 184 + backup 52 OK")
 print("PHASE 193 ALL OK")

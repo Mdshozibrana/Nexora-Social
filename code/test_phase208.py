@@ -61,8 +61,8 @@ assert GAMES.count('ctx.fillStyle = "rgba(12,33,21,.85)";') == 2, \
 # Kept palettes: Snake's Nokia-LCD green, Flappy's sky.
 assert GAMES.count('"#b7c25e"') == 1, GAMES.count('"#b7c25e"')
 assert GAMES.count('"#8ED6F2"') == 1, GAMES.count('"#8ED6F2"')
-# All 13 games still registered; 197 buttons + 198 icons wired.
-assert GAMES.count("registerGame({") == 13, GAMES.count("registerGame({")
+# All 14 games still registered; 197 buttons + 198 icons wired.
+assert GAMES.count("registerGame({") == 14, GAMES.count("registerGame({")
 for m in ("fd-gas", "fd-brake", "fd-left", "fd-right", "rr-steer",
           "g-icon", "game-card"):
     assert m in GAMES, f"Phase 197/198 marker lost: {m}"
@@ -106,17 +106,17 @@ assert ".game-card .g-icon svg { width: 44px; height: 44px;" in CSS, \
 print("2. CSS: dark-green room, var discipline, buttons/icons kept OK")
 
 # --- 3. Version pins + routes + backup + health. ----------------------
-assert HTML.count("?v=208") == 10, HTML.count("?v=208")
-assert "?v=20" + "7" not in HTML
-assert "app.js?v=208" in HTML and "games.js?v=208" in HTML
-assert "style.css?v=208" in HTML
-assert 'menu_url.rstrip("/") + "/?v=208"' in BOT
-assert ("/?v=20" + "7") not in BOT
+assert HTML.count("?v=209") == 10, HTML.count("?v=209")
+assert "?v=20" + "8" not in HTML
+assert "app.js?v=209" in HTML and "games.js?v=209" in HTML
+assert "style.css?v=209" in HTML
+assert 'menu_url.rstrip("/") + "/?v=209"' in BOT
+assert ("/?v=20" + "8") not in BOT
 paths = {rt.path for rt in app.routes}
 assert len(paths) == 191, len(paths)
 assert len(_BACKUP_TABLES) == 55, len(_BACKUP_TABLES)
-assert _health_version() == 208, _health_version()
-print("3. version ?v=208, routes 191, backup 55, health 208 OK")
+assert _health_version() == 209, _health_version()
+print("3. version ?v=209, routes 191, backup 55, health 208 OK")
 
 # --- 4. JS still parses + the Node harness proves the dark green. ----
 for name in ("app.js", "games.js"):

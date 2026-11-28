@@ -3284,9 +3284,9 @@ body.game-open #mascot-wrap { display: none; }
    the touch rows float over the canvas bottom instead of sitting in
    the page flow below it. Mini-games keep their designed sizes and
    stay centred in the stage — the immersive shell still applies. */
-#view-game.immersive .fd-wrap, #view-game.immersive .rr-wrap { flex: 1 1 auto; min-height: 0; width: 100%; height: 100%; }
-#view-game.immersive .fd-canvas, #view-game.immersive .rr-canvas { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 12px; }
-#view-game.immersive .fd-touch, #view-game.immersive .rr-touch { position: absolute; left: 12px; right: 12px; bottom: 12px; margin-top: 0; z-index: 3; }
+#view-game.immersive .fd-wrap, #view-game.immersive .rr-wrap, #view-game.immersive .pl-wrap { flex: 1 1 auto; min-height: 0; width: 100%; height: 100%; }
+#view-game.immersive .fd-canvas, #view-game.immersive .rr-canvas, #view-game.immersive .pl-canvas { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 12px; }
+#view-game.immersive .fd-touch, #view-game.immersive .rr-touch, #view-game.immersive .pl-touch { position: absolute; left: 12px; right: 12px; bottom: 12px; margin-top: 0; z-index: 3; }
 #view-game.immersive .fd-map { left: 12px; }
 /* 3. Runner Rush HUD must not wrap or overflow: one line, sideways
    scroll when the chips exceed the width (progress bar stays put). */
@@ -3439,4 +3439,47 @@ body.game-open #mascot-wrap { display: none; }
 /* 3D HUD glass retinted from navy-dark to green-dark. */
 .fd-panel { background: rgba(6, 26, 17, .78); }
 .fd-speed { background: rgba(6, 26, 17, .72); }
+
+/* ================================================================
+   Phase 209 — Island Plane Landing (owner order Nov 27, 23:14):
+   the 14th game — a teal-and-gold jet on a tropical island runway.
+   Yoke bottom-left, throttle slider bottom-right, dark-green glass
+   HUD to match the Phase 208 Games section. The Phase 197
+   immersive rules are extended to the .pl-* classes (see the
+   selector lines above) so the game fills the screen like Forest
+   Drive and Runner Rush. The controls panel hides in immersive
+   mode, like the Forest Drive panel; the phase pill, speed chip
+   and minimap stay visible while playing.
+   ================================================================ */
+.pl-wrap { position: relative; width: 100%; }
+.pl-canvas { display: block; width: 100%; height: auto; border-radius: 12px; background: #0C2115; touch-action: none; }
+.pl-panel { position: absolute; top: 8px; left: 8px; background: rgba(6, 26, 17, .78); border: 1px solid rgba(255, 255, 255, .14); border-radius: 10px; padding: 8px 10px; color: #F1F5F9; font-size: 11.5px; line-height: 1.5; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); max-width: 52%; }
+.pl-panel b { font-size: 12.5px; }
+.pl-x { float: right; background: none; border: none; color: #F1F5F9; font-size: 16px; line-height: 1; padding: 0 0 0 8px; cursor: pointer; }
+.pl-row { display: flex; gap: 8px; }
+.pl-key { flex: none; background: rgba(255, 255, 255, .14); border-radius: 5px; padding: 0 5px; font-weight: 700; }
+.pl-phase { position: absolute; top: 64px; right: 12px; background: rgba(6, 26, 17, .78); border: 1px solid rgba(255, 255, 255, .14); border-radius: 10px; padding: 5px 10px; color: #EAF7EE; font-size: 12px; text-align: right; line-height: 1.35; max-width: 44%; }
+.pl-phase b { display: block; font-size: 13px; }
+.pl-phase span { opacity: .85; }
+.pl-speed { position: absolute; top: 10px; right: 12px; bottom: auto; color: #fff; text-shadow: 0 1px 6px rgba(0, 0, 0, .7); text-align: right; line-height: 1; background: rgba(6, 26, 17, .72); border: 1px solid rgba(255, 255, 255, .18); border-radius: 10px; padding: 6px 10px; }
+.pl-speed b { font-size: 30px; font-weight: 800; }
+.pl-speed span { font-size: 12px; margin-left: 3px; opacity: .85; }
+.pl-alt { font-size: 11px; margin-top: 3px; opacity: .9; text-shadow: 0 1px 4px rgba(0, 0, 0, .7); }
+.pl-map { position: absolute; left: 50%; transform: translateX(-50%); bottom: 88px; width: 96px; height: 96px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, .35); box-shadow: 0 2px 10px rgba(0, 0, 0, .45); }
+.pl-touch { display: flex; justify-content: space-between; align-items: flex-end; gap: 10px; margin-top: 10px; }
+.pl-yoke { width: 112px; height: 112px; touch-action: none; user-select: none; -webkit-user-select: none; flex: none; }
+.pl-yoke svg { width: 100%; height: 100%; display: block; filter: drop-shadow(0 4px 10px rgba(0, 0, 0, .45)); }
+.pl-throttle { flex: none; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.pl-thr-track { position: relative; width: 56px; height: 148px; background: rgba(6, 26, 17, .78); border: 1px solid rgba(255, 255, 255, .22); border-radius: 12px; touch-action: none; }
+.pl-thr-handle { position: absolute; left: 6px; right: 6px; height: 34px; border-radius: 10px; background: linear-gradient(180deg, #22C55E, #15803D); border: 1px solid rgba(255, 255, 255, .45); box-shadow: 0 4px 14px rgba(21, 128, 61, .45); }
+.pl-thr-label { font-size: 10px; font-weight: 800; letter-spacing: 1px; color: #EAF7EE; opacity: .85; }
+.pl-over { position: absolute; left: 50%; top: 38%; transform: translate(-50%, -50%); background: rgba(6, 26, 17, .92); border: 1px solid rgba(255, 255, 255, .2); border-radius: 16px; padding: 16px 20px; text-align: center; color: #EAF7EE; min-width: 220px; box-shadow: 0 8px 30px rgba(0, 0, 0, .5); }
+.pl-over b { font-size: 20px; }
+.pl-over-detail { font-size: 13px; margin-top: 6px; opacity: .9; }
+.pl-over-score { font-size: 14px; font-weight: 700; margin-top: 8px; color: #FDE68A; }
+.pl-retry { margin-top: 12px; min-width: 110px; height: 44px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, .45); background: linear-gradient(180deg, #22C55E, #15803D); color: #fff; font-size: 16px; font-weight: 800; cursor: pointer; }
+.pl-retry:active { background: #15803D; transform: scale(.96); }
+#view-game.immersive .pl-panel { display: none; }
+#view-game.immersive .pl-map { width: 64px; height: 64px; bottom: 80px; }
+@media (max-width: 380px) { .pl-map { width: 84px; height: 84px; } .pl-yoke { width: 96px; height: 96px; } .pl-thr-track { height: 132px; } .pl-speed b { font-size: 26px; } }
 
